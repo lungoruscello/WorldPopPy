@@ -100,7 +100,7 @@ class WorldPopDownloader:
 
         # assemble URLs and local paths
         data = mdf[['product_name', 'iso3', 'year']].values
-        local_paths = [self.directory / build_local_fname(*tup) for tup in data]
+        local_paths = [self.directory / self._build_local_fname(*tup) for tup in data]
         remote_paths = mdf['remote_path'].tolist()
 
         # prepare arguments for parallel download
