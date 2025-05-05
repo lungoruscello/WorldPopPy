@@ -163,7 +163,9 @@ def build_global_manifest(overwrite=False):
 
 def filter_global_manifest(product_name, iso3_codes, years=None):
     """
-    TODO
+    Filter the global WorldPop manifest based on given product name, one or more country
+    codes (ISO3 codes), and one or more years of interest (for annual data products).
+    Return a DataFrame containing only the manifest rows that match the filter criteria.
 
     Parameters
     ----------
@@ -183,8 +185,7 @@ def filter_global_manifest(product_name, iso3_codes, years=None):
     Raises
     ------
     ValueError
-        If the requested data product is not available for all combinations of
-        countries and years.
+        If the requested data product is not available for all combinations of countries and years.
     """
     if isinstance(years, (int, float)):
         years = [years]
