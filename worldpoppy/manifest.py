@@ -1,5 +1,5 @@
 """
-Utilities to download, clean, and filter the global WorldPop data manifest.
+Functions to download, clean, and filter the global WorldPop data manifest.
 """
 
 import ftplib
@@ -14,6 +14,8 @@ from tempfile import NamedTemporaryFile
 
 import pandas as pd
 
+from worldpoppy.config import ASSET_DIR
+
 __all__ = [
     "load_global_manifest",
     "filter_global_manifest",
@@ -25,8 +27,7 @@ __all__ = [
 ]
 
 FIRST_YEAR = 2000
-ROOT_DIR = Path(__file__).parent
-ASSET_DIR = ROOT_DIR / 'assets'
+
 
 _year_pattern = re.compile(r'_\d{4}')
 _raw_hash_fpath = ASSET_DIR / 'raw_manifest_hash.txt'
