@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import ClassVar, List
 
 import backoff
+import geopandas
 import httpx
 import nest_asyncio
 import pandas as pd
@@ -25,6 +26,7 @@ from httpx import HTTPError
 from pqdm.threads import pqdm
 from tqdm.auto import tqdm
 
+from worldpoppy.borders import load_country_borders
 from worldpoppy.config import *
 from worldpoppy.manifest import filter_global_manifest
 
@@ -52,11 +54,13 @@ class WorldPopDownloader:
 
     def __init__(self, directory=None):
         """
+        Create a new WorldPopDownloader instance.
+
         Parameters
         ----------
-        directory: Path, optional
+        directory: str or Path, optional
             Local directory to which to download WorldPop rasters. If None is
-            provided (default), rasters are downloaded into the central cache
+            provided (default), rasters are downloaded into the local cache
             directory (see `get_cache_dir`).
         """
         nest_asyncio.apply()
@@ -66,7 +70,7 @@ class WorldPopDownloader:
     def download(
             self,
             product_name,
-            iso3_codes,
+            countries,
             years=None,
             skip_download_if_exists=True
     ):
@@ -76,15 +80,21 @@ class WorldPopDownloader:
         Parameters
         ----------
         product_name : str
-            The name of the WorldPop product of interest.
-        iso3_codes : str or List[str]
-            The three-letter ISO code (or ISO codes) of the country (or countries) of interest.
+            The name of the WorldPop data product of interest.
+        countries : str or List[str] or geopandas.GeoDataFrame
+
+            The countries for which to download WorldPop data. Users can specify
+            these countries using:
+                - one or more three-letter country codes (alpha-3 IS0 codes), or
+                - a geopandas GeoDataFrame. In this case, WorldPop data is downloaded
+                  for all countries that intersect with the GeoDataFrame's geometries,
+                even if this intersection is only small.
+
         years : int or List[int], optional
-            For annual data products, the year (or years) of interest. For static data products,
-            this argument must be None (default).
+            For annual data products, the year (or years) of interest. For static data
+            products, this argument must be None (default).
         skip_download_if_exists : bool, optional, default=True
             Whether to skip downloading raster files that already exist locally.
-
 
         Returns
         -------
@@ -95,12 +105,25 @@ class WorldPopDownloader:
         # delete artefacts from previously interrupted downloads
         repair_cache()
 
-        # fetch the manifest (will validate the user query)
+        if isinstance(countries, geopandas.GeoDataFrame):
+            # find country codes that intersect with the user-provided geometries
+            world = load_country_borders()
+            joined = geopandas.sjoin(
+                world,
+                countries.to_crs(WGS84_CRS),
+                predicate='intersects',
+                how='right'
+            )
+            iso3_codes = sorted(joined.iso3.unique())
+        else:
+            iso3_codes = countries
+
+        # fetch the download manifest (will validate the query arguments)
         mdf = filter_global_manifest(product_name, iso3_codes, years)
 
         # assemble URLs and local paths
         data = mdf[['product_name', 'iso3', 'year']].values
-        local_paths = [self.directory / self._build_local_fname(*tup) for tup in data]
+        local_paths = [self.build_local_fpath(*tup) for tup in data]
         remote_paths = mdf['remote_path'].tolist()
 
         # prepare arguments for parallel download
@@ -173,16 +196,15 @@ class WorldPopDownloader:
         # local cache.
         tmp_path.rename(local_path)
 
-    @staticmethod
-    def _build_local_fname(product_name, iso3, year=None):
-        """Return the file name used to store a single downloaded Worldpop raster"""
+    def build_local_fpath(self, product_name, iso3, year=None):
+        """Return the file path used to store a single downloaded Worldpop raster"""
 
         if pd.isnull(year):  # catches both None and np.NaN
             fname = f'{product_name}_{iso3}.tif'
         else:
             fname = f'{product_name}_{iso3}_{int(year)}.tif'
 
-        return fname
+        return self.directory / fname
 
 
 def repair_cache():
@@ -199,15 +221,18 @@ def repair_cache():
             print(f"Failed to delete cached file at {path}: {e}")
 
 
-def purge_cache(dry_run=True):
+def purge_cache(dry_run=True, keep_country_borders=True):
     """
-    Delete all .tif files in the local cache directory and any of its subdirectories.
+    Purge the local cache directory and any of its subdirectories.
 
     Parameters
     ----------
     dry_run : bool, optional
         If True (default), do not delete any files and simply report what would be
         deleted without the `dry_run` flag.
+    keep_country_borders : bool, optional
+        If True (default), do not delete any cached data related to country borders.
+        We assume that only this data includes the 'level0' keyword in the file name.
 
     Returns
     -------
@@ -215,23 +240,26 @@ def purge_cache(dry_run=True):
         Summary of how many files and total size (bytes) would be or were deleted.
     """
     cache_dir = get_cache_dir()
-    fpaths = list(cache_dir.glob('**/*.tif'))
+    fpaths = list(cache_dir.glob('**/*'))
 
-    total_size = 0
-    actual_deleted = 0
+    total_size = num_matched = num_deleted = 0
     for path in fpaths:
+        if keep_country_borders and 'level0' in path.name:
+            continue
+
+        num_matched += 1
         total_size += path.stat().st_size
 
         if not dry_run:
             try:
                 path.unlink()
-                actual_deleted += 1
+                num_deleted += 1
             except Exception as e:
                 print(f"Failed to delete cached file at {path}: {e}")
 
     return {
         "dry_run": dry_run,
-        "matched_files": len(fpaths),
-        "deleted_files": actual_deleted if not dry_run else 0,
+        "matched_files": num_matched,
+        "deleted_files": num_deleted,
         "total_size_mb": round(total_size / 1e6, 2)
     }
