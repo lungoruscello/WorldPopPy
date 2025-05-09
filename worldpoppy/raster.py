@@ -262,7 +262,7 @@ def geolocate_name(nomatim_query):
     Raises
         If the Nominatim query has returned None.
     """
-    geolocator = Nominatim(user_agent="MyLocationCacher")
+    geolocator = Nominatim(user_agent="MyLocationCacher", timeout=2)
     located = geolocator.geocode(nomatim_query)
 
     if located is None:
