@@ -248,8 +248,10 @@ def merge_rasters(
 
     # read country rasters into a list
     rasters = []
-    fill_val = None
-    scale_factor = None
+    fill_val_ref = None
+    scaling_ref = None
+    crs_ref = None
+
     for i, path in enumerate(raster_fpaths):
         try:
             da = rioxarray.open_rasterio(
@@ -265,22 +267,33 @@ def merge_rasters(
                 "file and trigger the download again."
             )
 
-        # ensure masking and scaling attributes are aligned
+        # ensure consistent CRS
+        this_crs = da.rio.crs
+        if crs_ref is None:
+            crs_ref = this_crs
+        elif this_crs != crs_ref:
+            raise ValueError(
+                f"Input rasters do not share the same CRS. Found mismatch: {this_crs} != {crs_ref}.\n"
+                "Ensure all rasters have the same projection before merging."
+            )
+
+        # ensure consistent _FillValue (if any)
         if '_FillValue' in da.attrs:
-            if fill_val is None:
-                fill_val = da.attrs['_FillValue']
+            if fill_val_ref is None:
+                fill_val_ref = da.attrs['_FillValue']
             else:
-                if da.attrs['_FillValue'] != fill_val:
+                if da.attrs['_FillValue'] != fill_val_ref:
                     raise ValueError(
                         "Country rasters do not use the same '_FillValue'. Try calling "
                         "this function again by setting 'mask_and_scale' to True."
                     )
 
+        # ensure consistent scale_factor (if any)
         if 'scale_factor' in da.attrs:
-            if scale_factor is None:
-                scale_factor = da.attrs['scale_factor']
+            if scaling_ref is None:
+                scaling_ref = da.attrs['scale_factor']
             else:
-                if da.attrs['scale_factor'] != scale_factor:
+                if da.attrs['scale_factor'] != scaling_ref:
                     raise ValueError(
                         "Country rasters do not use the same 'scale_factor'. Try calling "
                         "this function again by setting 'mask_and_scale' to True."
