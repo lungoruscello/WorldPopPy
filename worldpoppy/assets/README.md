@@ -11,3 +11,13 @@ Simplified country borders were extracted from WorldPop's [*level0_100m*](https:
 after down-sampling these by a factor of 10. The full data-processing code can be found 
 in `worldpoppy.borders`. The original WorldPop *level0_100m* rasters are licenced under the 
 [Creative Commons Attribution 4.0 International License](https://hub.worldpop.org/data/licence.txt). 
+
+ 
+### boundaries_ita_simplified.feather
+
+This file contains a GeoDataFrame with simplified admin-1 boundaries for Italy, which are used 
+in some of the worked examples in the WorldPopPy documentation.  
+
+Simplified admin-1 boundaries for Italy were generated based on high-resolution shapefiles hosted 
+on the [Humanitarian Data Exchange](https://data.humdata.org/dataset/kontur-boundaries-italy). The original shapefiles are likewise licenced under the 
+Creative Commons Attribution 4.0 International License.
