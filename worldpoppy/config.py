@@ -31,7 +31,7 @@ def get_cache_dir():
     Users can override the default directory by setting the "worldpoppy_CACHE_DIR"
     environment variable.
     """
-    cache_dir = os.getenv("worldpoppy_CACHE_DIR", str(DEFAULT_CACHE_DIR))
+    cache_dir = os.getenv("WORLDPOPPY_CACHE_DIR", str(DEFAULT_CACHE_DIR))
     cache_dir = Path(cache_dir)
     return cache_dir
 
@@ -43,4 +43,4 @@ def get_max_concurrency():
     Users can override the default directory by setting the "worldpoppy_MAX_CONCURRENCY"
     environment variable.
     """
-    return os.getenv("worldpoppy_MAX_CONCURRENCY", DEFAULT_MAX_CONCURRENCY)
+    return os.getenv("WORLDPOPPY_MAX_CONCURRENCY", DEFAULT_MAX_CONCURRENCY)
