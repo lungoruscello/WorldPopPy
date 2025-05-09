@@ -32,6 +32,8 @@ from worldpoppy.utils import validate_bbox
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["wp_raster", "bbox_from_location", "geolocate_name"]
+
 
 def wp_raster(
         product_name,
@@ -158,6 +160,87 @@ def wp_raster(
             combine_attrs='drop_conflicts'
         )
         return time_series.squeeze()
+
+
+def bbox_from_location(location, width_degrees=None, width_km=None):
+    """
+    Create a bounding box around a named location or GPS coordinate.
+
+    Parameters
+    ----------
+    location : str or tuple(float, float)
+        Either a human-readable location name (e.g., "Nairobi, Kenya")
+        or a tuple of (longitude, latitude).
+    width_degrees : float, optional
+        Width/height of the bounding box in decimal degrees.
+    width_km : float, optional
+        Width/height of the bounding box in kilometers. If provided, this
+        is converted into degrees assuming ~111 km/degree at the equator.
+        Must be None if `width_degrees` is specified.
+
+    Returns
+    -------
+    Tuple[float, float, float, float]
+        GPS coordinates of the bounding box using the format
+        (min_lon, min_lat, max_lon, max_lat).
+
+    Raises
+    ------
+    ValueError
+        If either both or neither of `width_degrees` and `width_km` are specified.
+    """
+
+    # handle location
+    if isinstance(location, str):
+        lon, lat = geolocate_name(location)
+    elif isinstance(location, tuple) and len(location) == 2:
+        lon, lat = location
+    else:
+        raise ValueError("Location must be a string or a (lon, lat) tuple.")
+
+    # handle bbox width
+    num_provided = (width_degrees is None) + (width_km is None)
+    if num_provided != 1:
+        raise ValueError("You must specify exactly one of 'width_degrees' or 'width_km'.")
+
+    # handle bbox width
+    if width_degrees is not None:
+        half_width = width_degrees / 2
+    else:
+        half_width = (width_km / 111.11) / 2
+
+    # build bbox
+    min_x, min_y = lon - half_width, lat - half_width
+    max_x, max_y = lon + half_width, lat + half_width
+
+    # TODO Make anti-meridian safe
+    return min_x, min_y, max_x, max_y
+
+
+@lru_cache(maxsize=1024)
+@backoff.on_exception(backoff.expo, GeocoderTimedOut, max_tries=5)
+def geolocate_name(nomatim_query):
+    """
+    Return the point coordinate (lon, lat) associated with a given location
+    name, based on search results from OSM's 'Nominatim' service.
+
+    Returns
+    -------
+    Tuple[float, float]
+        Longitude and latitude of the geolocated location name.
+
+    Raises
+    ------
+    Raises
+        If the Nominatim query has returned None.
+    """
+    geolocator = Nominatim(user_agent="MyLocationCacher")
+    located = geolocator.geocode(nomatim_query)
+
+    if located is None:
+        raise RuntimeError(f"Nomatim search for location name '{nomatim_query}' returned no hit.")
+
+    return located.point.longitude, located.point.latitude
 
 
 def _merge_rasters(
