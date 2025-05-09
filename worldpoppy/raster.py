@@ -1,6 +1,6 @@
 """
-Provides functions to obtain raster data from WorldPop, with several
-alternative ways to specify the areas of interest and multi-year support.
+Provides functions to obtain raster data from WorldPop, with flexible
+specification of areas of interest as well as multi-year support.
 
 Note
 ----
@@ -36,6 +36,7 @@ from tempfile import TemporaryDirectory
 from typing import List, Tuple
 
 import backoff
+import geopandas
 import geopandas as gpd
 import rioxarray
 import shapely
@@ -45,6 +46,7 @@ from geopy.geocoders import Nominatim
 from rioxarray.merge import merge_arrays
 from tqdm.auto import tqdm
 
+from worldpoppy.borders import load_country_borders
 from worldpoppy.config import *
 from worldpoppy.download import WorldPopDownloader
 from worldpoppy.manifest import extract_year
@@ -75,8 +77,8 @@ def wp_raster(
         **merge_kwargs
 ):
     """
-    Return WorldPop data for the specified area of interest (AOI) and the
-    specified years (for annual raster products only).
+    Return WorldPop data for the user-defined area of interest (AOI) and the
+    specified years (where applicable).
 
     Parameters
     ----------
@@ -138,16 +140,36 @@ def wp_raster(
     """
     other_read_kwargs = {} if other_read_kwargs is None else other_read_kwargs
 
-    aoi = _format_aoi(aoi)
-    clipping_gdf = aoi if isinstance(aoi, gpd.GeoDataFrame) else None
-    shared_opts = dict(
-        masked=masked,
-        mask_and_scale=mask_and_scale,
-        other_read_kwargs=other_read_kwargs,
-        res=res,
-        clipping_gdf=clipping_gdf,
-    )
-    shared_opts.update(**merge_kwargs)
+    # parse the area of interest
+    if isinstance(aoi, (list, tuple)):
+        if not isinstance(aoi[0], str):
+            # convert bounding box to GeoDataFrame
+            _validate_bbox(aoi)
+            box_poly = shapely.box(*aoi)
+            aoi = gpd.GeoDataFrame(geometry=[box_poly], crs=WGS84_CRS)
+
+    if isinstance(aoi, gpd.GeoDataFrame):
+        # find the ISO codes of countries intersecting the GeoDataFrame
+        world = load_country_borders()
+        joined = geopandas.sjoin(
+            world,
+            aoi.to_crs(WGS84_CRS),
+            predicate='intersects',
+            how='right'
+        )
+        iso3_codes = sorted(joined.iso3.unique())
+    else:
+        # ensure that country codes were passed
+        if isinstance(aoi, str):
+            iso3_codes = [aoi]
+        else:
+            if not isinstance(aoi[0], str):
+                raise ValueError(
+                    "Cannot parse 'aoi'. Please pass one or more country codes, "
+                    "a GeoDataFrame with one or more polygons, or a bounding box "
+                    "specifying (min_lon, min_lat, max_lon, max_lat)."
+                )
+            iso3_codes = aoi
 
     if not cache_downloads and skip_download_if_exists:
         skip_download_if_exists = False
@@ -155,11 +177,22 @@ def wp_raster(
             "'skip_download_if_exists' has no effect is 'cache_downloads' is set to False'."
         )
 
+    # prepare shared merge arguments
+    clipping_gdf = aoi if isinstance(aoi, gpd.GeoDataFrame) else None
+    shared_merge_opts = dict(
+        masked=masked,
+        mask_and_scale=mask_and_scale,
+        other_read_kwargs=other_read_kwargs,
+        res=res,
+        clipping_gdf=clipping_gdf,
+    )
+    shared_merge_opts.update(**merge_kwargs)
+
     with (TemporaryDirectory() if not cache_downloads else get_cache_dir() as d):
-        # download all rasters
+        # download all required rasters
         all_raster_paths = WorldPopDownloader(directory=d).download(
             product_name,
-            aoi,
+            iso3_codes,
             years,
             skip_download_if_exists,
             dry_run=download_dry_run
@@ -170,28 +203,30 @@ def wp_raster(
 
         if years is None:
             # static product: merge only once
-            merged = merge_rasters(all_raster_paths, **shared_opts)
+            merged = merge_rasters(all_raster_paths, **shared_merge_opts)
             return merged.squeeze()
 
-        # annual product: split raster paths by year
+        # annual product
+        # > split raster paths by year
         paths_by_year = defaultdict(list)
         for path in all_raster_paths:
             year = extract_year(path.name)
             paths_by_year[year].append(path)
 
-        # merge rasters separately by year
+        # > merge rasters separately by year
         annual_rasters = []
         pbar = tqdm(
             paths_by_year.items(),
             total=len(paths_by_year),
-            desc="Processing years..."
+            desc="Processing years...",
+            leave=False,
         )
         for year, year_paths in pbar:
-            merged = merge_rasters(year_paths, **shared_opts)
+            merged = merge_rasters(year_paths, **shared_merge_opts)
             merged['year'] = year
             annual_rasters.append(merged)
 
-        # stack years
+        # > stack years
         time_series = _concat_with_warning(
             annual_rasters,
             dim='year',
@@ -408,38 +443,6 @@ def _concat_with_warning(objs, **kwargs):
             "`xarray` concatenation. (pip install bottleneck)"
         )
     return xr.concat(objs, **kwargs)
-
-
-def _format_aoi(aoi):
-    """
-    Standardise a user-specified area of interest (AOI).
-
-    Parameters
-    ----------
-    aoi : str, list, tuple, or geopandas.GeoDataFrame
-        The area of interest for which to obtain WorldPop data.
-
-    Returns
-    -------
-    geopandas.GeoDataFrame or original value
-        A standardised AOI representation suitable for use with `wp_raster`.
-    """
-    if isinstance(aoi, gpd.GeoDataFrame):
-        # handle GeoDataFrame
-        if aoi.crs != WGS84_CRS:
-            aoi = aoi.to_crs(WGS84_CRS)  # ensure proper CRS
-
-    elif isinstance(aoi, (list, tuple)):
-        # handle bounding box
-        if not isinstance(aoi[0], str):
-            _validate_bbox(aoi)  # check range of lat/lon values
-            box_poly = shapely.box(*aoi)
-            aoi = gpd.GeoDataFrame(geometry=[box_poly], crs=WGS84_CRS)  # convert to GeoDataFrame
-
-    else:
-        pass  # ISO3 string(s) — handled elsewhere
-
-    return aoi
 
 
 def _validate_bbox(bbox):

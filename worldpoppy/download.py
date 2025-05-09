@@ -31,7 +31,6 @@ from pathlib import Path
 from typing import ClassVar, Optional, Any
 
 import backoff
-import geopandas
 import httpx
 import nest_asyncio
 import pandas as pd
@@ -39,7 +38,6 @@ from httpx import HTTPError
 from pqdm.threads import pqdm
 from tqdm.auto import tqdm
 
-from worldpoppy.borders import load_country_borders
 from worldpoppy.config import *
 from worldpoppy.manifest import wp_manifest_download
 
@@ -103,7 +101,7 @@ class WorldPopDownloader:
     def download(
             self,
             product_name,
-            countries,
+            iso3_codes,
             years=None,
             skip_download_if_exists=True,
             dry_run=False
@@ -115,15 +113,8 @@ class WorldPopDownloader:
         ----------
         product_name : str
             The name of the WorldPop data product of interest.
-        countries : str, List[str], or geopandas.GeoDataFrame
-
-            The countries for which to download WorldPop data. Users can specify
-            these countries using:
-                - one or more three-letter country codes (alpha-3 IS0 codes), or
-                - a geopandas GeoDataFrame. In this case, WorldPop data is downloaded
-                  for all countries that intersect with the GeoDataFrame's geometries,
-                  regardless of how large this intersection is.
-
+        iso3_codes : str or List[str]
+            One or more three-letter ISO codes, denoting the countries of interest.
         years : int or List[int], optional
             For annual data products, the year (or years) of interest. For static data
             products, this argument must be None (default).
@@ -147,19 +138,6 @@ class WorldPopDownloader:
 
         # delete artefacts from previously interrupted downloads
         _repair_cache()
-
-        if isinstance(countries, geopandas.GeoDataFrame):
-            # find country codes that intersect with the user-provided geometries
-            world = load_country_borders()
-            joined = geopandas.sjoin(
-                world,
-                countries.to_crs(WGS84_CRS),
-                predicate='intersects',
-                how='right'
-            )
-            iso3_codes = sorted(joined.iso3.unique())
-        else:
-            iso3_codes = countries
 
         # fetch download manifest (will validate user query)
         filtered_mdf = wp_manifest_download(product_name, iso3_codes, years)
@@ -186,10 +164,7 @@ class WorldPopDownloader:
 
             if errors := [r.error for r in res if not r.success]:
                 formatted = '\n'.join(f"- {e}" for e in errors)
-                raise RuntimeError(
-                    f"{len(errors)} HEAD requests failed with an HTTPStatusError. "
-                    f"Error messages:\n{formatted}"
-                )
+                raise RuntimeError(f"{len(errors)} HEAD requests failed. Details:\n{formatted}")
 
             total_size = sum(r.value for r in res if r.success and r.value > 0)
             total_files = sum(1 for r in res if r.success and r.value > 0)
@@ -209,10 +184,7 @@ class WorldPopDownloader:
 
             if errors := [r.error for r in res if not r.success]:
                 formatted = '\n'.join(f"- {e}" for e in errors)
-                raise RuntimeError(
-                    f"{len(errors)} downloads failed with an HTTPStatusError.\n"
-                    f"Details:\n{formatted}"
-                )
+                raise RuntimeError(f"{len(errors)} downloads failed. Details:\n{formatted}")
 
             assert len(res) == len(local_paths)
 
@@ -268,7 +240,7 @@ class WorldPopDownloader:
                         for chunk in response.iter_raw():
                             f.write(chunk)
                             pbar.update(len(chunk))
-        except httpx.HTTPStatusError as e:
+        except Exception as e:
             return DownloadResult(success=False, error=e)
         else:
             # only after the download has finished do we rename the temporary file to
@@ -313,7 +285,7 @@ class WorldPopDownloader:
             response = httpx.head(remote_url, follow_redirects=True)
             response.raise_for_status()
             size = int(response.headers.get("Content-Length", 0))
-        except httpx.HTTPStatusError as e:
+        except Exception as e:
             return DownloadResult(success=False, error=e)
         else:
             return DownloadResult(success=True, value=size)
@@ -329,7 +301,7 @@ class WorldPopDownloader:
         return self.directory / fname
 
 
-def purge_cache(dry_run=True, keep_country_borders=True):
+def purge_cache(dry_run=True, keep_country_borders=False):
     """
     Purge the local cache directory and any of its subdirectories.
 
@@ -338,9 +310,10 @@ def purge_cache(dry_run=True, keep_country_borders=True):
     dry_run : bool, optional
         If True (default), do not delete any files and simply report what would be
         deleted without the `dry_run` flag.
-    keep_country_borders : bool, optional
-        If True (default), do not delete any cached data related to country borders.
-        We assume that only this data includes the 'level0' keyword in the file name.
+    keep_country_borders : bool, optional, default=False
+        If True, do not delete any cached data related to country borders. This
+        data is assumed to be the only one which includes the 'level0' keyword
+        in a file name.
 
     Returns
     -------

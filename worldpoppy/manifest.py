@@ -145,11 +145,11 @@ def wp_manifest_download(product_name, iso3_codes, years=None):
     iso3_codes : str or List[str]
         One or more three-letter ISO codes indicating the countries of interest.
     years : int or List[int] or str, optional
-        For annual data products, either one or more years (int or List[int]) for
-        which to retain manifest entries or the 'all' keyword (str) indicating that
-        all available years for annual datasets should be retained. For static data
-        products, this argument must be None (default). Passing any other value
-        will drop manifest entries for all static datasets.
+        For annual data products, either one or more years (int or List[int]), or
+        the 'all' keyword (str) indicating that manifest entries for all annual
+        datasets should be retained. To retain static data products, this argument
+        must be None (default). Passing any other value will drop manifest entries
+        for all static datasets.
 
     Returns
     -------

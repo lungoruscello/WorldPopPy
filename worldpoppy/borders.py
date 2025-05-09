@@ -115,7 +115,7 @@ def build_country_borders(overwrite=False):
 
     # download high-resolution country rasters from WorldPop
     _ = WorldPopDownloader().download(
-        'level0_100m_2000_2020', countries=get_all_isos()
+        'level0_100m_2000_2020', iso3_codes=get_all_isos()
     )
 
     # asynchronously downsample the raster data and convert
