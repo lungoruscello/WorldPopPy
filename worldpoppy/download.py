@@ -28,7 +28,7 @@ purge_cache
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar, List
+from typing import ClassVar, Optional, Any
 
 import backoff
 import geopandas
@@ -41,10 +41,29 @@ from tqdm.auto import tqdm
 
 from worldpoppy.borders import load_country_borders
 from worldpoppy.config import *
+from worldpoppy.manifest import wp_manifest_download
 
 __all__ = ["WorldPopDownloader", "purge_cache"]
 
-from worldpoppy.manifest import wp_manifest_download
+
+@dataclass
+class DownloadResult:
+    """
+    Represents the outcome of a download-related operation, such as downloading
+    a WorldPop file or querying the file's size with a HEAD request.
+
+    Attributes
+    ----------
+    success : bool
+        Indicates whether the operation completed successfully.
+    value : Any or None
+        Optional payload returned by the operation. None if not applicable.
+    error : Exception or None
+        An exception raised during the operation. None if not applicable.
+    """
+    success: bool
+    value: Optional[Any] = None
+    error: Optional[Exception] = None
 
 
 @dataclass
@@ -163,18 +182,15 @@ class WorldPopDownloader:
                 leave=False
             )
 
-            # check for HTTPStatusError's
-            msgs = [x for x in res if type(x) != int]
-            if msgs:
-                formatted = '\n'.join(f"- {msg}" for msg in msgs)
+            if errors := [r.error for r in res if not r.success]:
+                formatted = '\n'.join(f"- {e}" for e in errors)
                 raise RuntimeError(
-                    f"{len(msgs)} HEAD requests failed with an HTTPStatusError. "
-                    "Error messages are listed below:\n"
-                    f"{formatted}."
+                    f"{len(errors)} HEAD requests failed with an HTTPStatusError. "
+                    f"Error messages:\n{formatted}"
                 )
 
-            total_size = sum(res)
-            total_files = sum([x > 0 for x in res])
+            total_size = sum(r.value for r in res if r.success and r.value > 0)
+            total_files = sum(1 for r in res if r.success and r.value > 0)
 
             print(f"No. of files to download: {total_files}")
             print(f"Total est. download size: {round(total_size / 1e6, 2):,} MB")
@@ -189,14 +205,11 @@ class WorldPopDownloader:
                 leave=False
             )
 
-            # check for HTTPStatusError's
-            msgs = [x for x in res if x is not None]
-            if msgs:
-                formatted = '\n'.join(f"- {msg}" for msg in msgs)
+            if errors := [r.error for r in res if not r.success]:
+                formatted = '\n'.join(f"- {e}" for e in errors)
                 raise RuntimeError(
-                    f"{len(msgs)} file downloads failed with an HTTPStatusError. "
-                    "Error messages are listed below:\n"
-                    f"{formatted}."
+                    f"{len(errors)} downloads failed with an HTTPStatusError.\n"
+                    f"Details:\n{formatted}"
                 )
 
             assert len(res) == len(local_paths)
@@ -230,7 +243,7 @@ class WorldPopDownloader:
         """
         if local_path.is_file() and skip_if_exists:
             # nothing to do
-            return None
+            return DownloadResult(success=True)
 
         remote_url = f"{self.URL}/{remote_path}"
         remote_fname = remote_path.split("/")[-1]
@@ -254,13 +267,13 @@ class WorldPopDownloader:
                             f.write(chunk)
                             pbar.update(len(chunk))
         except httpx.HTTPStatusError as e:
-            return e
+            return DownloadResult(success=False, error=e)
         else:
             # only after the download has finished do we rename the temporary file to
-            # its proper name. In this way, interrupting or crashing downloads will
-            #  not corrupt the local cache.
+            # its proper name. In this way, crashing downloads will  not corrupt the
+            # local cache.
             tmp_path.rename(local_path)
-            return None
+            return DownloadResult(success=True)
 
     def _get_required_file_download_size(
             self,
@@ -291,16 +304,17 @@ class WorldPopDownloader:
 
         """
         if local_path.exists() and skip_download_if_exists:
-            return 0
+            return DownloadResult(success=True, value=0)
 
         try:
             remote_url = f"{self.URL}/{remote_path}"
             response = httpx.head(remote_url, follow_redirects=True)
             response.raise_for_status()
+            size = int(response.headers.get("Content-Length", 0))
         except httpx.HTTPStatusError as e:
-            return e
+            return DownloadResult(success=False, error=e)
         else:
-            return int(response.headers.get("Content-Length", 0))
+            return DownloadResult(success=True, value=size)
 
     def _build_local_fpath(self, product_name, iso3, year=None):
         """Return the local file path used to store a single downloaded Worldpop raster"""
