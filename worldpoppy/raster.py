@@ -30,19 +30,16 @@ geolocate_name
 """
 import logging
 from collections import defaultdict
-from functools import lru_cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import List, Tuple
 
-import backoff
 import geopandas
 import geopandas as gpd
 import rioxarray
 import shapely
 import xarray as xr
-from geopy.exc import GeocoderTimedOut
-from geopy.geocoders import Nominatim
+from pyproj import CRS, Transformer
 from rioxarray.merge import merge_arrays
 from tqdm.auto import tqdm
 
@@ -50,14 +47,13 @@ from worldpoppy.borders import load_country_borders
 from worldpoppy.config import *
 from worldpoppy.download import WorldPopDownloader
 from worldpoppy.manifest import extract_year
-from worldpoppy.utils import module_available
+from worldpoppy.utils import module_available, geolocate_name
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "wp_raster",
     "bbox_from_location",
-    "geolocate_name",
     "merge_rasters"
 ]
 
@@ -354,11 +350,11 @@ def bbox_from_location(location, width_degrees=None, width_km=None):
         Either a human-readable location name (e.g., "Nairobi, Kenya")
         or a tuple of (longitude, latitude).
     width_degrees : float, optional
-        Width/height of the bounding box in decimal degrees.
+        Width/height of the bounding box in decimal degrees. Must be
+        None if `width_km` is specified.
     width_km : float, optional
-        Width/height of the bounding box in kilometers. If provided, this
-        is converted into degrees assuming ~111 km/degree at the equator.
-        Must be None if `width_degrees` is specified.
+        Width/height of the bounding box in kilometers. Must be None if
+        `width_degrees` is specified.
 
     Returns
     -------
@@ -385,44 +381,31 @@ def bbox_from_location(location, width_degrees=None, width_km=None):
     if num_provided != 1:
         raise ValueError("You must specify exactly one of 'width_degrees' or 'width_km'.")
 
-    # handle bbox width
     if width_degrees is not None:
+        # distance specified in degrees
         half_width = width_degrees / 2
-    else:
-        half_width = (width_km / 111.11) / 2
+        return (
+            lon - half_width, lat - half_width,
+            lon + half_width, lat + half_width
+        )
 
-    # build bbox
-    min_x, min_y = lon - half_width, lat - half_width
-    max_x, max_y = lon + half_width, lat + half_width
+    # define a local Azimuthal Equidistant projection
+    proj4_str = f"+proj=aeqd +lon_0={lon} +lat_0={lat} +x_0=0 +y_0=0 +datum=WGS84 +units=m"
+    local_aeqd_crs = CRS(proj4_str)
 
-    # TODO Make anti-meridian safe
-    return min_x, min_y, max_x, max_y
+    # Compute box corners in kilometres
+    # Note: Under our Azimuthal CRS, the centre point always
+    # has the coordinate (0, 0). The bounding box is thus trivial.
+    half_width_m = (width_km * 1_000) / 2
+    x_min, y_min = -half_width_m, -half_width_m
+    x_max, y_max = half_width_m, half_width_m
 
+    # transform corners back to lon/lat
+    from_proj = Transformer.from_crs(local_aeqd_crs, WGS84_CRS, always_xy=True)
+    min_lon, min_lat = from_proj.transform(x_min, y_min)
+    max_lon, max_lat = from_proj.transform(x_max, y_max)
 
-@lru_cache(maxsize=1024)
-@backoff.on_exception(backoff.expo, GeocoderTimedOut, max_tries=5)
-def geolocate_name(nomatim_query):
-    """
-    Return the point coordinate (lon, lat) associated with a given location
-    name, based on search results from OSM's 'Nominatim' service.
-
-    Returns
-    -------
-    Tuple[float, float]
-        Longitude and latitude of the geolocated location name.
-
-    Raises
-    ------
-    Raises
-        If the Nominatim query has returned None.
-    """
-    geolocator = Nominatim(user_agent="MyLocationCacher", timeout=2)
-    located = geolocator.geocode(nomatim_query)
-
-    if located is None:
-        raise RuntimeError(f"Nomatim search for location name '{nomatim_query}' returned no hit.")
-
-    return located.point.longitude, located.point.latitude
+    return min_lon, min_lat, max_lon, max_lat
 
 
 def _concat_with_warning(objs, **kwargs):
