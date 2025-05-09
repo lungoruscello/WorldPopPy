@@ -130,7 +130,9 @@ class WorldPopDownloader:
         skip_download_if_exists : bool, optional, default=True
             Whether to skip downloading raster files that already exist locally.
         dry_run : bool, optional, default=False
-            TODO
+            If True, only check how many files would need to be downloaded if `dry_run`
+            was False. Report the number and size of required file downloads, but do not
+            actually fetch or return any data.
 
         Returns
         -------

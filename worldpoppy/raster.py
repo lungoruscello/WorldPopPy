@@ -113,7 +113,10 @@ def wp_raster(
         raster is used. If a single value is passed, output pixels will be
         square. This argument is passed to `rioxarray.merge.merge_arrays`.
     download_dry_run : bool, optional, default=False
-        TODO
+        If True, only check how many raster files would need to be downloaded
+        from WorldPop if `download_dry_run` was False. Report the number and
+        size of required file downloads, but do not actually fetch or process
+        any files.
     **merge_kwargs : keyword arguments
         Additional arguments passed to `rioxarray.merge.merge_arrays`,
         which give more control over how input rasters should be
@@ -122,8 +125,8 @@ def wp_raster(
     Returns
     -------
     xr.Dataset or None
-        The combined raster data for several countries and years (where applicable)
-        if `download_dry_run` is False. None otherwise.
+        The combined raster data for several countries and years (where applicable),
+        or None if `download_dry_run` is True.
 
     """
     other_read_kwargs = {} if other_read_kwargs is None else other_read_kwargs
