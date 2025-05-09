@@ -1,34 +1,52 @@
 """
-Functions to combine WorldPop rasters for several countries and years.
+Provides functions to obtain raster data from WorldPop, with several
+alternative ways to specify the areas of interest and multi-year support.
 
-Note:
-    This module is a port of the "raster.py" module from the `blackmarblepy`
-    package by Gabriel Stefanini Vicente and Robert Marty. `blackmarblepy` is
-    licensed under the Mozilla Public License (MPL-2.0), as is the present
-    modified version.
+Note
+----
+    The present implementation draws on the "raster.py" module from the
+    `blackmarblepy` package by Gabriel Stefanini Vicente and Robert Marty.
+    `blackmarblepy` is licensed under the Mozilla Public License (MPL-2.0),
+    as is the present Python module.
 
     Links:
     - https://github.com/worldbank/blackmarblepy
     - https://github.com/worldbank/blackmarblepy/blob/main/LICENSE
-"""
 
+
+Main user-facing methods
+------------------------
+wp_raster
+    Retrieve WorldPop data for arbitrary areas of interest (AOIs) and
+    multiple years (for annual data products only).
+bbox_from_location
+    Generate a bounding box from a location name or GPS coordinate.
+    The result can be used specify the AOI for `wp_raster`.
+geolocate_name
+    Find the GPS location for a location name through a `Nomatim` query.
+
+"""
 import logging
 from collections import defaultdict
+from functools import lru_cache
+from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import List
+from typing import List, Tuple
 
+import backoff
 import geopandas as gpd
 import rioxarray
+import shapely
 import xarray as xr
+from geopy.exc import GeocoderTimedOut
+from geopy.geocoders import Nominatim
 from rioxarray.merge import merge_arrays
-from shapely import box
-from shapely.geometry import mapping
 from tqdm.auto import tqdm
 
 from worldpoppy.config import *
 from worldpoppy.download import WorldPopDownloader
 from worldpoppy.manifest import extract_year
-from worldpoppy.utils import validate_bbox
+from worldpoppy.utils import module_available
 
 logger = logging.getLogger(__name__)
 
@@ -46,26 +64,28 @@ def wp_raster(
         mask_and_scale=False,
         other_read_kwargs=None,
         res=None,
+        download_dry_run=False,
         **merge_kwargs
 ):
     """
-    Merge a collection of country-specific rasters and stack different years (if any)
-    along the time dimension.
+    Return WorldPop data for the specified area of interest (AOI) and the
+    specified years (for annual raster products only).
 
     Parameters
     ----------
     product_name : str
         The name of the WorldPop data product of interest.
-    aoi : str or List[str] or geopandas.GeoDataFrame
+    aoi : str, List[str], List[float], Tuple[float], or geopandas.GeoDataFrame
 
         The area of interest (AOI) for which to obtain the raster data. Users can specify
         this area using:
             - one or more three-letter country codes (alpha-3 IS0 codes);
             - a GeoDataFrame with one or more polygonal geometries; or
             - a bounding box of the format (min_lon, min_lat, max_lon, max_lat).
-            In the latter two cases, WorldPop data is first downloaded and merged for all
-            countries that intersect the area of interest, even if this intersection is
-            only small. Subsequently, the merged raster is clipped using the AOI.
+            In the latter two cases, WorldPop data is first downloaded and merged for
+            all countries that intersect the area of interest, regardless of how large
+            this intersection is. Subsequently, the merged raster is then clipped using
+            the AOI.
 
     years : int or List[int], optional
         For annual data products, one or more years of interest. For static data products,
@@ -92,19 +112,23 @@ def wp_raster(
         reference system. If not set, the resolution of the first source
         raster is used. If a single value is passed, output pixels will be
         square. This argument is passed to `rioxarray.merge.merge_arrays`.
-     **merge_kwargs : keyword arguments
+    download_dry_run : bool, optional, default=False
+        TODO
+    **merge_kwargs : keyword arguments
         Additional arguments passed to `rioxarray.merge.merge_arrays`,
         which give more control over how input rasters should be
         merged (e.g., `method` or `bounds`).
 
     Returns
     -------
-    xr.Dataset
-        The combined raster data for several countries and years (where applicable).
+    xr.Dataset or None
+        The combined raster data for several countries and years (where applicable)
+        if `download_dry_run` is False. None otherwise.
+
     """
     other_read_kwargs = {} if other_read_kwargs is None else other_read_kwargs
 
-    aoi = _format_user_aoi(aoi)
+    aoi = _format_aoi(aoi)
     clipping_gdf = aoi if isinstance(aoi, gpd.GeoDataFrame) else None
     shared_opts = dict(
         masked=masked,
@@ -127,8 +151,12 @@ def wp_raster(
             product_name,
             aoi,
             years,
-            skip_download_if_exists
+            skip_download_if_exists,
+            dry_run=download_dry_run
         )
+
+        if download_dry_run:
+            return None
 
         if years is None:
             # static product: merge only once
@@ -141,7 +169,7 @@ def wp_raster(
             year = extract_year(path.name)
             paths_by_year[year].append(path)
 
-        # merge years separately
+        # merge rasters separately by year
         annual_rasters = []
         pbar = tqdm(
             paths_by_year.items(),
@@ -334,9 +362,8 @@ def _merge_rasters(
     da = merge_arrays(rasters, **merge_kwargs)
 
     if clipping_gdf is not None:
-        geoms = clipping_gdf.geometry.apply(mapping)
-        da = da.rio.clip(geoms, clipping_gdf.crs, drop=True)
-
+        geoms = clipping_gdf.geometry.apply(shapely.geometry.mapping)
+        da = da.rio.clip(geoms, clipping_gdf.crs, drop=True, all_touched=True)
     return da
 
 
@@ -352,7 +379,7 @@ def _concat_with_warning(objs, **kwargs):
     **kwargs : keyword arguments
         Additional arguments passed to `xarray.concat`.
     """
-    if not _module_available("bottleneck"):
+    if not module_available("bottleneck"):
         logger.warning(
             "Installing the optional `bottleneck` module will accelerate "
             "`xarray` concatenation. (pip install bottleneck)"
@@ -360,31 +387,64 @@ def _concat_with_warning(objs, **kwargs):
     return xr.concat(objs, **kwargs)
 
 
-def _format_user_aoi(aoi):
-    """ TODO """
+def _format_aoi(aoi):
+    """
+    Standardise a user-specified area of interest (AOI).
+
+    Parameters
+    ----------
+    aoi : str, list, tuple, or geopandas.GeoDataFrame
+        The area of interest for which to obtain WorldPop data.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame or original value
+        A standardised AOI representation suitable for use with `wp_raster`.
+    """
     if isinstance(aoi, gpd.GeoDataFrame):
-        # GeoDataFrame was passed
+        # handle GeoDataFrame
         if aoi.crs != WGS84_CRS:
             aoi = aoi.to_crs(WGS84_CRS)  # ensure proper CRS
 
     elif isinstance(aoi, (list, tuple)):
-        # bounding box was passed
+        # handle bounding box
         if not isinstance(aoi[0], str):
-            validate_bbox(aoi)  # check lat/lon values are in range
-            aoi = gpd.GeoDataFrame(geometry=[box(*aoi)], crs=WGS84_CRS)  # convert to GeoDataFrame
+            _validate_bbox(aoi)  # check range of lat/lon values
+            box_poly = shapely.box(*aoi)
+            aoi = gpd.GeoDataFrame(geometry=[box_poly], crs=WGS84_CRS)  # convert to GeoDataFrame
 
     else:
-        # nothing to do
-        pass
+        pass  # ISO3 string(s) — handled elsewhere
 
     return aoi
 
 
-def _module_available(module_name):
-    """Check if a Python module is available for import."""
-    try:
-        exec(f"import {module_name}")
-    except ModuleNotFoundError:
-        return False
-    else:
-        return True
+def _validate_bbox(bbox):
+    """
+    Validate a bounding box in the format (min_lon, min_lat, max_lon, max_lat).
+
+    Raises
+    ------
+    ValueError
+        If the bounding box is invalid.
+    """
+    if not isinstance(bbox, (list, tuple)):
+        raise ValueError("Bounding box must be a list or tuple.")
+
+    if len(bbox) != 4 or not all([isinstance(x, (int, float)) for x in bbox]):
+        raise ValueError(
+            "Bounding box must contain exactly four numeric values: "
+            "(min_lon, min_lat, max_lon, max_lat)."
+        )
+
+    min_lon, min_lat, max_lon, max_lat = bbox
+
+    if min_lon >= max_lon:
+        raise ValueError("Bad bounding box. min_lon must be less than max_lon.")
+    if min_lat >= max_lat:
+        raise ValueError("Bad bounding box. min_lat must be less than max_lat.")
+
+    if not (-180 <= min_lon <= 180 and -180 <= max_lon <= 180):
+        raise ValueError("Bad bounding box. Longitude must be between -180 and 180 degrees.")
+    if not (-90 <= min_lat <= 90 and -90 <= max_lat <= 90):
+        raise ValueError("Bad bounding box. Latitude must be between -90 and 90 degrees.")

@@ -33,8 +33,17 @@ def test_looks_like_annual_name():
     assert _looks_like_annual_name('foo') is False
 
 
-def test_good_manifest_filter_annual():
-    from worldpoppy.manifest import filter_global_manifest
+def test_good_manifest_filter_drop_static():
+    from worldpoppy.manifest import wp_manifest
+
+    mdf = wp_manifest()  # full manifest
+    expected = mdf[mdf.is_annual]
+    actual = wp_manifest(years='all')
+    assert np.all(expected.idx == actual.idx)
+
+
+def test_good_manifest_filter_annual_combo():
+    from worldpoppy.manifest import wp_manifest
 
     def _check_result():
         assert np.all(mdf.product_name == product_name)
@@ -45,19 +54,19 @@ def test_good_manifest_filter_annual():
     iso3_codes = ['COD', 'CAF', 'SSD', 'SDN']
     product_name = 'ppp'
     years = [2018, 2019, 2020]
-    mdf = filter_global_manifest(product_name, iso3_codes, years=years)
+    mdf = wp_manifest(product_name, iso3_codes, years=years)
     _check_result()
 
     # example 2
     iso3_codes = ['DNK', 'NOR', 'SWE', 'FIN']
     product_name = 'agesex_f_60_constrained_UNadj'
     years = [2020]
-    mdf = filter_global_manifest(product_name, iso3_codes, years=years)
+    mdf = wp_manifest(product_name, iso3_codes, years=years)
     _check_result()
 
 
-def test_good_manifest_filter_static():
-    from worldpoppy.manifest import filter_global_manifest
+def test_good_manifest_filter_static_combo():
+    from worldpoppy.manifest import wp_manifest
 
     def _check_result():
         assert np.all(mdf.product_name == product_name)
@@ -67,35 +76,37 @@ def test_good_manifest_filter_static():
     # example 1
     iso3_codes = ['USA', 'CAN', 'MEX']
     product_name = 'srtm_slope_100m'
-    mdf = filter_global_manifest(product_name, iso3_codes, years=None)
+    mdf = wp_manifest(product_name, iso3_codes, years=None)
     _check_result()
 
     # example 2
     iso3_codes = ['MYS', 'SGP', 'IDN']
     product_name = 'dst_coastline_100m_2000_2020'
-    mdf = filter_global_manifest(product_name, iso3_codes, years=None)
+    mdf = wp_manifest(product_name, iso3_codes, years=None)
     _check_result()
 
 
-def test_bad_manifest_filter_raises():
-    from worldpoppy.manifest import filter_global_manifest
+def test_bad_manifest_filters_raise():
+    from worldpoppy.manifest import wp_manifest
 
     with pytest.raises(ValueError):
-        # bad ISO code
-        filter_global_manifest('bad_iso', 'ppp', years=2020)
+        wp_manifest(product_name='no_real_product')
 
     with pytest.raises(ValueError):
-        # bad product name
-        filter_global_manifest('NZL', 'bad_product', years=2020)
+        wp_manifest(iso3_codes='fantasia')
 
     with pytest.raises(ValueError):
-        # un-stripped year identifier in annual product name
-        filter_global_manifest('NZL', 'ppp_2020', years=2020)
+        wp_manifest(years=1900)
+
+
+def test_incomplete_manifest_coverage_raises():
+    from worldpoppy.manifest import wp_manifest, wp_manifest_download
+    eg_prod, eg_iso, eg_year = 'viirs_100m', 'NZL' , 2020
+
+    wp_manifest(product_name=eg_prod)
+    wp_manifest(iso3_codes=eg_iso)
+    wp_manifest(years=eg_year)
 
     with pytest.raises(ValueError):
-        # missing year for annual product
-        filter_global_manifest('NZL', 'ppp', years=None)
-
-    with pytest.raises(ValueError):
-        # incomplete coverage
-        filter_global_manifest('NZL', 'ppp', years=[2020, 2099])
+        # empty combo (incomplete coverage)
+        wp_manifest_download(product_name=eg_prod, iso3_codes=eg_iso, years=eg_year)

@@ -3,14 +3,27 @@ Functions to download WorldPop data asynchronously, with logic for automatic
 retry and file caching.
 
 Note:
-    This module is a port of the "download.py" module from the `blackmarblepy`
-    package by Gabriel Stefanini Vicente and Robert Marty. `blackmarblepy` is
-    licensed under the Mozilla Public License (MPL-2.0), as is the present
-    modified version.
+----
+    The present implementation draws on the "download.py" module from the
+    `blackmarblepy` package by Gabriel Stefanini Vicente and Robert Marty.
+    `blackmarblepy` is licensed under the Mozilla Public License (MPL-2.0),
+    as is the present Python module.
 
     Links:
     - https://github.com/worldbank/blackmarblepy
     - https://github.com/worldbank/blackmarblepy/blob/main/LICENSE
+
+
+Main user-facing classes
+------------------------
+WorldPopDownloader
+    Asynchronous downloader for WorldPop raster data.
+
+Main user-facing methods
+------------------------
+purge_cache
+    Delete all files in the WorldPop local cache directory, with optional dry-run.
+
 """
 
 from dataclasses import dataclass
@@ -28,9 +41,10 @@ from tqdm.auto import tqdm
 
 from worldpoppy.borders import load_country_borders
 from worldpoppy.config import *
-from worldpoppy.manifest import filter_global_manifest
 
-__all__ = ["WorldPopDownloader", "repair_cache", "purge_cache"]
+__all__ = ["WorldPopDownloader", "purge_cache"]
+
+from worldpoppy.manifest import wp_manifest_download
 
 
 @dataclass
@@ -72,7 +86,8 @@ class WorldPopDownloader:
             product_name,
             countries,
             years=None,
-            skip_download_if_exists=True
+            skip_download_if_exists=True,
+            dry_run=False
     ):
         """
         Asynchronously download a collection of country-specific WorldPop rasters.
@@ -81,29 +96,36 @@ class WorldPopDownloader:
         ----------
         product_name : str
             The name of the WorldPop data product of interest.
-        countries : str or List[str] or geopandas.GeoDataFrame
+        countries : str, List[str], or geopandas.GeoDataFrame
 
             The countries for which to download WorldPop data. Users can specify
             these countries using:
                 - one or more three-letter country codes (alpha-3 IS0 codes), or
                 - a geopandas GeoDataFrame. In this case, WorldPop data is downloaded
                   for all countries that intersect with the GeoDataFrame's geometries,
-                even if this intersection is only small.
+                  regardless of how large this intersection is.
 
         years : int or List[int], optional
             For annual data products, the year (or years) of interest. For static data
             products, this argument must be None (default).
         skip_download_if_exists : bool, optional, default=True
             Whether to skip downloading raster files that already exist locally.
+        dry_run : bool, optional, default=False
+            TODO
 
         Returns
         -------
         list of pathlib.Path
             A lexically sorted list of local download paths.
+
+        Raises
+        ------
+        RuntimeError
+            If not all requested files were successfully downloaded
         """
 
         # delete artefacts from previously interrupted downloads
-        repair_cache()
+        _repair_cache()
 
         if isinstance(countries, geopandas.GeoDataFrame):
             # find country codes that intersect with the user-provided geometries
@@ -118,26 +140,66 @@ class WorldPopDownloader:
         else:
             iso3_codes = countries
 
-        # fetch the download manifest (will validate the query arguments)
-        mdf = filter_global_manifest(product_name, iso3_codes, years)
+        # fetch download manifest (will validate user query)
+        filtered_mdf = wp_manifest_download(product_name, iso3_codes, years)
 
         # assemble URLs and local paths
-        data = mdf[['product_name', 'iso3', 'year']].values
-        local_paths = [self.build_local_fpath(*tup) for tup in data]
-        remote_paths = mdf['remote_path'].tolist()
+        data = filtered_mdf[['product_name', 'iso3', 'year']].values
+        local_paths = [self._build_local_fpath(*tup) for tup in data]
+        remote_paths = filtered_mdf['remote_path'].tolist()
 
-        # prepare arguments for parallel download
-        args = [(remote, local, skip_download_if_exists) for remote, local in zip(remote_paths, local_paths)]
+        # prepare arguments for parallel processing
+        args = [(r, l, skip_download_if_exists) for r, l in zip(remote_paths, local_paths)]
 
-        res = pqdm(
-            args,
-            self._download_file,
-            n_jobs=get_max_concurrency(),
-            argument_type="args",
-            desc="Downloading...",
-            leave=False
-        )
-        assert len(res) == len(local_paths)
+        if dry_run:
+            print("Dry run: calculating number and size of files to download...\n")
+
+            res = pqdm(
+                args,
+                self._get_required_file_download_size,  # noqa
+                n_jobs=get_max_concurrency() * 4,  # these jobs are cheap
+                argument_type="args",
+                desc="Checking download sizes...",
+                leave=False
+            )
+
+            # check for HTTPStatusError's
+            msgs = [x for x in res if type(x) != int]
+            if msgs:
+                formatted = '\n'.join(f"- {msg}" for msg in msgs)
+                raise RuntimeError(
+                    f"{len(msgs)} HEAD requests failed with an HTTPStatusError. "
+                    "Error messages are listed below:\n"
+                    f"{formatted}."
+                )
+
+            total_size = sum(res)
+            total_files = sum([x > 0 for x in res])
+
+            print(f"No. of files to download: {total_files}")
+            print(f"Total est. download size: {round(total_size / 1e6, 2):,} MB")
+
+        else:
+            res = pqdm(
+                args,
+                self._download_file,
+                n_jobs=get_max_concurrency(),
+                argument_type="args",
+                desc="Downloading...",
+                leave=False
+            )
+
+            # check for HTTPStatusError's
+            msgs = [x for x in res if x is not None]
+            if msgs:
+                formatted = '\n'.join(f"- {msg}" for msg in msgs)
+                raise RuntimeError(
+                    f"{len(msgs)} file downloads failed with an HTTPStatusError. "
+                    "Error messages are listed below:\n"
+                    f"{formatted}."
+                )
+
+            assert len(res) == len(local_paths)
 
         return sorted(local_paths)
 
@@ -162,9 +224,9 @@ class WorldPopDownloader:
 
         Returns
         -------
-        None
-            This method does not return any value. If the file already exists
-            and `skip_if_exists` is True, no action is taken.
+        None or str
+            None if the file download did not raise a httpx.HTTPStatusError.
+            Otherwise, the error message (str).
         """
         if local_path.is_file() and skip_if_exists:
             # nothing to do
@@ -177,27 +239,71 @@ class WorldPopDownloader:
         # download the raster to a temporary path in the same directory
         tmp_path = local_path.with_suffix(local_path.suffix + ".download")
 
-        with open(tmp_path, "wb+") as f:
-            with httpx.stream("GET", remote_url) as response:
-                total = int(response.headers["Content-Length"])
-                with tqdm(
-                        total=total,
-                        unit="B",
-                        unit_scale=True,
-                        leave=False
-                ) as pbar:
-                    pbar.set_description(f"Downloading {remote_fname}...")
-                    for chunk in response.iter_raw():
-                        f.write(chunk)
-                        pbar.update(len(chunk))
+        try:
+            with open(tmp_path, "wb+") as f:
+                with httpx.stream("GET", remote_url) as response:
+                    total = int(response.headers["Content-Length"])
+                    with tqdm(
+                            total=total,
+                            unit="B",
+                            unit_scale=True,
+                            leave=False
+                    ) as pbar:
+                        pbar.set_description(f"Downloading {remote_fname}...")
+                        for chunk in response.iter_raw():
+                            f.write(chunk)
+                            pbar.update(len(chunk))
+        except httpx.HTTPStatusError as e:
+            return e
+        else:
+            # only after the download has finished do we rename the temporary file to
+            # its proper name. In this way, interrupting or crashing downloads will
+            #  not corrupt the local cache.
+            tmp_path.rename(local_path)
+            return None
 
-        # only after the download has finished do we rename the temporary file to
-        # its proper name. In this way, interrupting downloads will not corrupt the
-        # local cache.
-        tmp_path.rename(local_path)
+    def _get_required_file_download_size(
+            self,
+            remote_path,
+            local_path,
+            skip_download_if_exists=True
+    ):
+        """
+        Get the required download size for one file in bytes using a HEAD request.
 
-    def build_local_fpath(self, product_name, iso3, year=None):
-        """Return the file path used to store a single downloaded Worldpop raster"""
+        Returns a size of 0 if the remote file does not need to be downloaded at
+        all since a local version exists.
+
+        Parameters
+        ----------
+        remote_path : str
+            Relative path to the remote WorldPop file.
+        local_path : Path
+            The local file path where a cached version of the file may exist.
+        skip_download_if_exists : bool, optional, default=True
+            Whether to skip downloading files that already exist locally.
+
+        Returns
+        -------
+        int or str
+            The size of the required file download in bytes (int) if the HEAD request
+            did not raise a httpx.HTTPStatusError. Otherwise, the error message (str).
+
+        """
+        if local_path.exists() and skip_download_if_exists:
+            return 0
+
+        try:
+            remote_url = f"{self.URL}/{remote_path}"
+            response = httpx.head(remote_url, follow_redirects=True)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            return e
+        else:
+            return int(response.headers.get("Content-Length", 0))
+
+    def _build_local_fpath(self, product_name, iso3, year=None):
+        """Return the local file path used to store a single downloaded Worldpop raster"""
 
         if pd.isnull(year):  # catches both None and np.NaN
             fname = f'{product_name}_{iso3}.tif'
@@ -205,20 +311,6 @@ class WorldPopDownloader:
             fname = f'{product_name}_{iso3}_{int(year)}.tif'
 
         return self.directory / fname
-
-
-def repair_cache():
-    """
-    Delete all files ending on '.download' in the local cache directory and any of its subdirectories.
-    """
-    cache_dir = get_cache_dir()
-    fpaths = list(cache_dir.glob('**/*.download'))
-
-    for path in fpaths:
-        try:
-            path.unlink()
-        except Exception as e:
-            print(f"Failed to delete cached file at {path}: {e}")
 
 
 def purge_cache(dry_run=True, keep_country_borders=True):
@@ -263,3 +355,18 @@ def purge_cache(dry_run=True, keep_country_borders=True):
         "deleted_files": num_deleted,
         "total_size_mb": round(total_size / 1e6, 2)
     }
+
+
+def _repair_cache():
+    """
+    Delete all files ending on '.download' in the local cache directory
+    and any of its subdirectories.
+    """
+    cache_dir = get_cache_dir()
+    fpaths = list(cache_dir.glob('**/*.download'))
+
+    for path in fpaths:
+        try:
+            path.unlink()
+        except Exception as e:
+            print(f"Failed to delete cached file at {path}: {e}")
