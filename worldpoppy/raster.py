@@ -70,6 +70,7 @@ def wp_raster(
         other_read_kwargs=None,
         res=None,
         download_dry_run=False,
+        to_crs=None,
         **merge_kwargs
 ):
     """
@@ -122,6 +123,10 @@ def wp_raster(
         from WorldPop if `download_dry_run` was False. Report the number and
         size of required file downloads, but do not actually fetch or process
         any files.
+    to_crs : str or pyproj.CRS, optional
+        Coordinate reference system (CRS) to reproject the merged raster into.
+        Re-projection is applied *after* merging (and clipping, if requested).
+        If `to_crs` is not provided, raster data remains in the source CRS.
     **merge_kwargs : keyword arguments
         Additional arguments passed to `rioxarray.merge.merge_arrays`,
         which give more control over how input rasters should be
@@ -181,6 +186,7 @@ def wp_raster(
         other_read_kwargs=other_read_kwargs,
         res=res,
         clipping_gdf=clipping_gdf,
+        to_crs=to_crs
     )
     shared_merge_opts.update(**merge_kwargs)
 
@@ -237,6 +243,7 @@ def merge_rasters(
         mask_and_scale=False,
         other_read_kwargs=None,
         clipping_gdf=None,
+        to_crs=None,
         **merge_kwargs
 ):
     """
@@ -261,6 +268,10 @@ def merge_rasters(
         or `band_as_variable`).
     clipping_gdf : geopandas.GeoDataFrame, optional
         GeoDataFrame with geometries used to clip the merged raster.
+    to_crs : str or pyproj.CRS, optional
+        Coordinate reference system (CRS) to reproject the merged raster into.
+        Re-projection is applied *after* merging (and clipping, if requested).
+        If `to_crs` is not provided, raster data remains in the source CRS.
     **merge_kwargs : keyword arguments
         Additional arguments passed to `rioxarray.merge.merge_arrays`,
         which give more control over how input rasters should be merged
@@ -334,9 +345,16 @@ def merge_rasters(
 
     da = merge_arrays(rasters, **merge_kwargs)
 
+    # optional clipping
     if clipping_gdf is not None:
         geoms = clipping_gdf.geometry.apply(shapely.geometry.mapping)
         da = da.rio.clip(geoms, clipping_gdf.crs, drop=True, all_touched=True)
+
+    # optional re-projection
+    if to_crs is not None:
+        to_crs = CRS(to_crs)  # force format errors
+        da = da.rio.reproject(to_crs)
+
     return da
 
 
