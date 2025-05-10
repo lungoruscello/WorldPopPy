@@ -1,8 +1,8 @@
 """
 Example 1: Visualise population changes around Accra and Lomé from 2000 to 2020.
 
-Demonstrates multi-year WorldPop data selection using a bounding box across
-countries as well as handling of different Coordinate Reference Systems.
+Illustrates WorldPop data selection using a bounding box across countries, support for
+multi-year requests, and re-projection to a user-provided Coordinate Reference System.
 """
 
 import matplotlib.pyplot as plt
@@ -30,8 +30,8 @@ lowres = pop_data.coarsen(x=10, y=10, year=1, boundary='trim').reduce(np.sum)  #
 pop_change = lowres.sel(year=2020) - lowres.sel(year=2000)
 
 # PLOT
-pop_change.plot(cmap='coolwarm', vmin=-1_000, vmax=1_000, cbar_kwargs=dict(shrink=0.85))
-clean_axis(title='Est. population change (2020 - 2000)', remove_xy_ticks=True)
+pop_change.plot(cmap='coolwarm', vmax=1_000, cbar_kwargs=dict(shrink=0.85))
+clean_axis(title='Est. population change (2000 to 2020)', remove_xy_ticks=True)
 
 # Add visual references
 plot_country_borders(['GHA', 'TOG', 'BEN'], edgecolor='white', to_crs=aeqa_africa)

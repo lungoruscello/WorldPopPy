@@ -7,7 +7,7 @@ Illustrates WorldPop data selection using a GeoDataFrame.
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
-from worldpoppy import *
+from worldpoppy import wp_raster, clean_axis
 from worldpoppy.examples import load_italian_regions
 
 italy = load_italian_regions()

@@ -7,18 +7,20 @@ Illustrates WorldPop data selection using simple country codes.
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
-from worldpoppy import *
+from worldpoppy import wp_raster, clean_axis
 
-# Fetch data
+# Fetch Night-Light data for the Korean Peninsula
 viirs_data = wp_raster(
     product_name='viirs_100m',
-    aoi=['PRK', 'KOR'],
+    aoi=['PRK', 'KOR'],  # three-letter country codes for North and South Korea
     years=2015,
-    masked=True,
+    masked=True,  # mask missing values with NaN (instead of WorldPop's default fill value),
 )
 
-# PLOT
+# Downsample
 lowres = viirs_data.coarsen(x=5, y=5, boundary='trim').mean()
+
+# Plot
 lowres.plot(vmin=0.1, cmap='inferno', norm=LogNorm())
 clean_axis(title='Night Lights (2015)\nKorean Peninsula')
 
