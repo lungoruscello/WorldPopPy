@@ -115,9 +115,11 @@ class WorldPopDownloader:
             The name of the WorldPop data product of interest.
         iso3_codes : str or List[str]
             One or more three-letter ISO codes, denoting the countries of interest.
-        years : int or List[int], optional
-            For annual data products, the year (or years) of interest. For static data
-            products, this argument must be None (default).
+        years : int or List[int] or str, optional
+            For annual data products, the year (or years) of interest, or the 'all'
+            keyword (str) indicating that all available years for the requested data
+            product should be downloaded. For static data products, this argument
+            must be None (default).
         skip_download_if_exists : bool, optional, default=True
             Whether to skip downloading raster files that already exist locally.
         dry_run : bool, optional, default=False

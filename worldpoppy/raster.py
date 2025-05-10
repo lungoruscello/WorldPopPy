@@ -93,9 +93,9 @@ def wp_raster(
             this intersection is. Subsequently, the merged raster is then clipped using
             the AOI.
 
-    years : int or List[int], optional
-        For annual data products, one or more years of interest. For static data products,
-        this argument must be None (default).
+    years : int or List[int] or str, optional
+        For annual data products, one or more years of interest or the 'all' keyword
+        (str). For static data products, this argument must be None (default).
     cache_downloads: bool, optional, default=True
         Whether to cache downloaded source rasters.
     skip_download_if_exists : bool, optional, default=True

@@ -150,7 +150,7 @@ def plot_location_markers(
                 name,
                 lon_lat,
                 textcoords=textcoords,
-                xytext=xytext,
+                xytext=xytext,  # noqa
                 ha=ha,
                 va=va,
                 **other_annotate_kwargs,
@@ -182,6 +182,7 @@ def clean_axis(ax=None, title=None, remove_xy_ticks=False):
     if remove_xy_ticks:
         ax.set_xticks([])
         ax.set_yticks([])
+
 
 def module_available(module_name):
     """Check if a named Python module is available for import."""
