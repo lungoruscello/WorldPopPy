@@ -41,7 +41,22 @@ from tqdm.auto import tqdm
 from worldpoppy.config import *
 from worldpoppy.manifest import wp_manifest_download
 
-__all__ = ["WorldPopDownloader", "purge_cache"]
+__all__ = [
+    "DownloadSizeCheckError",
+    "DownloadError",
+    "WorldPopDownloader",
+    "purge_cache"
+]
+
+
+class DownloadSizeCheckError(Exception):
+    """Raised when one or more HEAD requests fail during dry-run size checking."""
+    pass
+
+
+class DownloadError(Exception):
+    """Raised when one or more files fail to download."""
+    pass
 
 
 @dataclass
@@ -166,7 +181,9 @@ class WorldPopDownloader:
 
             if errors := [r.error for r in res if not r.success]:
                 formatted = '\n'.join(f"- {e}" for e in errors)
-                raise RuntimeError(f"{len(errors)} HEAD requests failed. Details:\n{formatted}")
+                raise DownloadSizeCheckError(
+                    f"{len(errors)} HEAD requests failed. Details:\n{formatted}"
+                )
 
             total_size = sum(r.value for r in res if r.success and r.value > 0)
             total_files = sum(1 for r in res if r.success and r.value > 0)
@@ -186,7 +203,9 @@ class WorldPopDownloader:
 
             if errors := [r.error for r in res if not r.success]:
                 formatted = '\n'.join(f"- {e}" for e in errors)
-                raise RuntimeError(f"{len(errors)} downloads failed. Details:\n{formatted}")
+                raise DownloadError(
+                    f"{len(errors)} downloads failed. Details:\n{formatted}"
+                )
 
             assert len(res) == len(local_paths)
 

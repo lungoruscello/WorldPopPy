@@ -52,10 +52,22 @@ from worldpoppy.utils import module_available, geolocate_name
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "RasterReadError",
+    "IncompatibleRasterError",
     "wp_raster",
     "bbox_from_location",
     "merge_rasters"
 ]
+
+
+class RasterReadError(Exception):
+    """Raised when reading a WorldPop source raster fails."""
+    pass
+
+
+class IncompatibleRasterError(Exception):
+    """Raised when trying to merge incompatible WorldPop source rasters."""
+    pass
 
 
 def wp_raster(
@@ -284,8 +296,12 @@ def merge_rasters(
 
     Raises
     ------
-    ValueError
-        If input rasters have mismatched`_FillValue` or `scale_factor` attributes.
+    RasterReadError
+        If reading an input raster fails.
+
+    RasterMergeError
+        - If input rasters have mismatched Coordinate Reference Systems.
+        - If input rasters have mismatched `_FillValue` or `scale_factor` attributes.
     """
 
     # read country rasters into a list
@@ -303,7 +319,7 @@ def merge_rasters(
                 **other_read_kwargs
             )
         except Exception as e:
-            raise ValueError(
+            raise RasterReadError(
                 f"Failed to read raster file at {path}. Error: {e}\n"
                 "If you suspect a corrupted cache, please try to delete the affected "
                 "file and trigger the download again."
@@ -314,7 +330,7 @@ def merge_rasters(
         if crs_ref is None:
             crs_ref = this_crs
         elif this_crs != crs_ref:
-            raise ValueError(
+            raise IncompatibleRasterError(
                 f"Input rasters do not share the same CRS. Found mismatch: {this_crs} != {crs_ref}.\n"
                 "Ensure all rasters have the same projection before merging."
             )
@@ -325,9 +341,9 @@ def merge_rasters(
                 fill_val_ref = da.attrs['_FillValue']
             else:
                 if da.attrs['_FillValue'] != fill_val_ref:
-                    raise ValueError(
-                        "Country rasters do not use the same '_FillValue'. Try calling "
-                        "this function again by setting 'mask_and_scale' to True."
+                    raise IncompatibleRasterError(
+                        "Country rasters do not use the same '_FillValue'. Please try again "
+                        "with either the 'masked' or 'mask_and_scale' argument set to True."
                     )
 
         # ensure consistent scale_factor (if any)
@@ -336,9 +352,9 @@ def merge_rasters(
                 scaling_ref = da.attrs['scale_factor']
             else:
                 if da.attrs['scale_factor'] != scaling_ref:
-                    raise ValueError(
-                        "Country rasters do not use the same 'scale_factor'. Try calling "
-                        "this function again by setting 'mask_and_scale' to True."
+                    raise IncompatibleRasterError(
+                        "Country rasters do not use the same 'scale_factor'. Please try again "
+                        "with the 'mask_and_scale' argument set to True."
                     )
 
         rasters.append(da)
