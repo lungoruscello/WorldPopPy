@@ -374,13 +374,22 @@ def merge_rasters(
     return da
 
 
-def bbox_from_location(location, width_degrees=None, width_km=None):
+def bbox_from_location(centre, width_degrees=None, width_km=None):
     """
-    Create a bounding box around a named location or GPS coordinate.
+    Construct a bounding box centered on a given geographic location.
+
+    The `centre` argument can be either a place name (which is geocoded
+    using `geolocate_name`) or a (longitude, latitude) coordinate pair.
+
+    If `width_km` is specified, the bounding box is computed in a local
+    Azimuthal Equidistant projection centered on the specified location,
+    and then reprojected back to WGS84 longitude/latitude coordinates.
+    This method may produce unexpected results near the poles or across
+    the anti-meridian (180° longitude).
 
     Parameters
     ----------
-    location : str or tuple(float, float)
+    centre : str or Tuple(float, float)
         Either a human-readable location name (e.g., "Nairobi, Kenya")
         or a tuple of (longitude, latitude).
     width_degrees : float, optional
@@ -393,8 +402,8 @@ def bbox_from_location(location, width_degrees=None, width_km=None):
     Returns
     -------
     Tuple[float, float, float, float]
-        GPS coordinates of the bounding box using the format
-        (min_lon, min_lat, max_lon, max_lat).
+        Geo-coordinates of the bounding box using the format
+        (min_lon, min_lat, max_lon, max_lat) [WGS84].
 
     Raises
     ------
@@ -403,10 +412,10 @@ def bbox_from_location(location, width_degrees=None, width_km=None):
     """
 
     # handle location
-    if isinstance(location, str):
-        lon, lat = geolocate_name(location)
-    elif isinstance(location, tuple) and len(location) == 2:
-        lon, lat = location
+    if isinstance(centre, str):
+        lon, lat = geolocate_name(centre)
+    elif isinstance(centre, tuple) and len(centre) == 2:
+        lon, lat = centre
     else:
         raise ValueError("Location must be a string or a (lon, lat) tuple.")
 
