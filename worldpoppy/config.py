@@ -43,4 +43,5 @@ def get_max_concurrency():
     Users can override the default directory by setting the "worldpoppy_MAX_CONCURRENCY"
     environment variable.
     """
-    return os.getenv("WORLDPOPPY_MAX_CONCURRENCY", DEFAULT_MAX_CONCURRENCY)
+    num_threads = os.getenv("WORLDPOPPY_MAX_CONCURRENCY", DEFAULT_MAX_CONCURRENCY)
+    return int(num_threads)
