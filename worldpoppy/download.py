@@ -49,13 +49,13 @@ __all__ = [
 ]
 
 
-class DownloadSizeCheckError(Exception):
-    """Raised when one or more HEAD requests fail during dry-run size checking."""
+class DownloadError(Exception):
+    """Raised when one or more files fail to download."""
     pass
 
 
-class DownloadError(Exception):
-    """Raised when one or more files fail to download."""
+class DownloadSizeCheckError(DownloadError):
+    """Raised when one or more HEAD requests fail during dry-run size checking."""
     pass
 
 
@@ -182,7 +182,7 @@ class WorldPopDownloader:
             if errors := [r.error for r in res if not r.success]:
                 formatted = '\n'.join(f"- {e}" for e in errors)
                 raise DownloadSizeCheckError(
-                    f"{len(errors)} HEAD requests failed. Details:\n{formatted}"
+                    f"{len(errors)} HEAD request(s) failed. Details:\n{formatted}"
                 )
 
             total_size = sum(r.value for r in res if r.success and r.value > 0)
@@ -194,7 +194,7 @@ class WorldPopDownloader:
         else:
             res = pqdm(
                 args,
-                self._download_file,
+                self._download_file,  # noqa
                 n_jobs=get_max_concurrency(),
                 argument_type="args",
                 desc="Downloading...",
@@ -204,7 +204,7 @@ class WorldPopDownloader:
             if errors := [r.error for r in res if not r.success]:
                 formatted = '\n'.join(f"- {e}" for e in errors)
                 raise DownloadError(
-                    f"{len(errors)} downloads failed. Details:\n{formatted}"
+                    f"{len(errors)} download(s) failed. Details:\n{formatted}"
                 )
 
             assert len(res) == len(local_paths)
@@ -232,9 +232,7 @@ class WorldPopDownloader:
 
         Returns
         -------
-        None or str
-            None if the file download did not raise a httpx.HTTPStatusError.
-            Otherwise, the error message (str).
+        DownloadResult
         """
         if local_path.is_file() and skip_if_exists:
             # nothing to do
@@ -261,6 +259,7 @@ class WorldPopDownloader:
                         for chunk in response.iter_raw():
                             f.write(chunk)
                             pbar.update(len(chunk))
+                    response.raise_for_status()
         except Exception as e:
             return DownloadResult(success=False, error=e)
         else:
@@ -293,7 +292,7 @@ class WorldPopDownloader:
 
         Returns
         -------
-        int or str
+        DownloadResult
             The size of the required file download in bytes (int) if the HEAD request
             did not raise a httpx.HTTPStatusError. Otherwise, the error message (str).
 
