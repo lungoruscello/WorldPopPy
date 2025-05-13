@@ -1,5 +1,5 @@
 """
-Example 5: Visualise elevation data for a region that includes the Ethiopian Great Rift
+Example 5: Visualise elevation data for the Ethiopian Great Rift
 
 Illustrates usage of a static WorldPop product.
 """

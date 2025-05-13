@@ -51,7 +51,7 @@ clean_axis(title='Night Lights (2015)\nKorean Peninsula')
 plt.show()
 ```
 
-<img src="worldpoppy/assets/korea_viirs.png" alt="Night Lights Korea" width="250"/> 
+<img src="worldpoppy/assets/korea_viirs.png" alt="Night Lights Korea" width="280"/> 
 
 ## More detailed example
 
@@ -96,13 +96,13 @@ plot_location_markers(['Accra', 'Kumasi', 'Lomé'], to_crs=aeqa_africa)
 plt.show()
 ```
 
-<img src="worldpoppy/assets/accra_pop.png" alt="Pop. Change Accra, Lomé" width="350"/> 
+<img src="worldpoppy/assets/accra_pop.png" alt="Pop. Change Accra, Lomé" width="400"/> 
 
 ## Further information
 
 ### Data dimensions
 
-Calling [`wp_raster()`](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/raster.py#L73) will always 
+Calling [`wp_raster()`](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/raster.py#L72) will always 
 return an **`xarray.DataArray`**. The array dimensions, however, depend on the user query. If you request data for more 
 than one year, the returned array will include a *year* dimension in addition to the raster data's two spatial dimensions 
 (*x* and *y*). By contrast, the *year* dimension will be omitted if you request data for a single year only, or if the 
@@ -110,8 +110,8 @@ WorldPop product in question is static anyway (e.g., when requesting [elevation 
 
 ### Managing the local cache
 
-By default, all downloaded source data from WorldPop will be cached on disk. You can disable caching by setting 
-`cache_downloads=False` when calling `wp_raster()`. 
+By default, downloaded source data from WorldPop will be cached on disk. When calling `wp_raster()`, wou can disable 
+caching by setting `cache_downloads=False`. 
 
 The default cache directory is `~/.cache/worldpoppy`, and can be changed by setting an environment variable, as
 shown [here](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/examples/example4.py).
@@ -140,7 +140,7 @@ _ = wp_raster(
     download_dry_run=True
 )
 ```
-In a dry run, no actual WorldPop data will be downloaded or processed. Also, `wp_raster` will return `None`.
+When you request a dry run, no actual WorldPop data will be downloaded or processed and `wp_raster` will return `None`.
 
 
 ### Selecting data with a GeoDataFrame
@@ -149,7 +149,7 @@ In a dry run, no actual WorldPop data will be downloaded or processed. Also, `wp
 
 ### The WorldPop data manifest
 
-Use the `wp_manifest` function to load (and optionally filter) the manifest file that lists all currently available WorldPop 
+Use the `wp_manifest` function to load (and optionally filter) the manifest file listing all currently available WorldPop 
 datasets:
 
 ```python
@@ -159,10 +159,10 @@ full_manifest = wp_manifest()  # returns a `pandas.DataFrame`
 full_manifest.head(2)
 ```
 
-The local manifest file is auto-updated by [comparing it against](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/manifest.py#L250) 
+The local manifest is auto-updated by [comparing it against](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/manifest.py#L250) 
 a remote version that is hosted on WorldPop servers. If needed, the remote manifest is downloaded and cleaned 
 for local use. Note that the remote WorldPop manifest sometimes lists datasets that are not actually available for 
-download. Requesting such datasets will trigger a [`DownloadError`]((https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/download.py#L206)). 
+download. Requesting such datasets will trigger a [`DownloadError`](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/download.py#L206). 
 
 
 ### Downloads only? 
@@ -183,15 +183,13 @@ raster_fpaths = WorldPopDownloader().download(
 
 ## Acknowledgements
 
-**WorldPopPy** is both inspired by, and draws on, the [BlackMarblePy](https://github.com/worldbank/blackmarblepy/tree/main) 
+**WorldPopPy** is inspired by the [BlackMarblePy](https://github.com/worldbank/blackmarblepy/tree/main) 
 package, which simplifies working with daily, monthly, and yearly night-light data from NASA's Black Marble project.
 
 ## Feedback
 
-If you have any feedback, encounter issues, or want to suggest improvements,
-please [open an issue](https://github.com/lungoruscello/WorldPopPy/issues).
-
-*Note*: WorldPopPy is being developed and tested on Linux. Issues encountered on other platforms may take longer to address.
+If you encounter issues, or want to suggest improvements, please [open an issue](https://github.com/lungoruscello/WorldPopPy/issues).
+Note that WorldPopPy is being developed and tested on Linux. Issues encountered on other platforms may take longer to address.
 
 
 ## License
