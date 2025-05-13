@@ -15,7 +15,7 @@ different geographic regions and years.
 * Fetch data for any part of the world by passing GeoDataFrames, country codes, or bounding boxes.
 * Easy handling of annual time-series through integration with [`xarray`](https://docs.xarray.dev/en/stable/).
 * Parallel data downloads with retry mechanism and ability to preview estimated download sizes (dry run).
-* Auto-updating manifest so you stay up-to-date with WorldPop’s latest available datasets.
+* Auto-updating manifest file so you stay up-to-date with WorldPop’s latest available datasets.
 
 ## Installation
 
@@ -183,13 +183,13 @@ raster_fpaths = WorldPopDownloader().download(
 
 ## Acknowledgements
 
-**WorldPopPy** is inspired by the [BlackMarblePy](https://github.com/worldbank/blackmarblepy/tree/main) 
-package, which simplifies working with daily, monthly, and yearly night-light data from NASA's Black Marble project.
+The implementation of **WorldPopPy** draws on the [BlackMarblePy](https://github.com/worldbank/blackmarblepy/tree/main) 
+package, which gives users easy access to night-light data from NASA's Black Marble project.
 
 ## Feedback
 
 If you encounter issues, or want to suggest improvements, please [open an issue](https://github.com/lungoruscello/WorldPopPy/issues).
-Note that WorldPopPy is being developed and tested on Linux. Issues encountered on other platforms may take longer to address.
+Since WorldPopPy is developed and tested on Linux, issues encountered on other platforms may take longer to address.
 
 
 ## License
