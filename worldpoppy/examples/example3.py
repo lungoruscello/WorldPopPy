@@ -21,7 +21,7 @@ viirs_data = wp_raster(
     masked=True,
 )
 
-# PLOT
+# Plot
 lowres = viirs_data.coarsen(x=2, y=2, boundary='trim').mean()
 lowres.plot(vmin=1, cmap='inferno', norm=LogNorm(), cbar_kwargs=dict(shrink=0.875))
 clean_axis(title='Night Lights (2015)\nTuscany & Emilia-Romagna ')

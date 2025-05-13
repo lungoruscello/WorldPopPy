@@ -1,8 +1,8 @@
 """
 Example 4: Check download requirements for a large data request.
 
-Shows how to change the default cache directory and illustrates how
-to preview download requirements with the `download_dry_run` flag.
+Shows how to change the default cache directory and how to preview
+download requirements with the `download_dry_run` flag.
 """
 
 import os
@@ -25,7 +25,7 @@ _ = wp_raster(
 # Setting `download_dry_run=True` will only check download requirements
 # (via asynchronous HEAD requests to the WorldPop server). No data will
 # actually be downloaded or processed. Also, the return type of `wp_raster`
-# will be None
+# will be None.
 
 # revert back to default
 del os.environ['WORLDPOPPY_CACHE_DIR']
