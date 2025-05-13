@@ -34,7 +34,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import List, Tuple
 
-import geopandas
 import geopandas as gpd
 import rioxarray
 import shapely
@@ -164,7 +163,7 @@ def wp_raster(
     if isinstance(aoi, gpd.GeoDataFrame):
         # find the ISO codes of countries intersecting the GeoDataFrame
         world = load_country_borders()
-        joined = geopandas.sjoin(
+        joined = gpd.sjoin(
             world,
             aoi.to_crs(WGS84_CRS),
             predicate='intersects',

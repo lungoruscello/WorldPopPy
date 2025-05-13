@@ -8,6 +8,7 @@ from matplotlib import pyplot as plt
 from pyproj import Transformer
 
 from worldpoppy.config import WGS84_CRS
+from worldpoppy.manifest import get_all_isos
 
 __all__ = [
     "geolocate_name",
@@ -66,7 +67,7 @@ def plot_country_borders(iso3_codes, ax=None, to_crs=None, **kwargs):
     Parameters
     ----------
     iso3_codes : str or list of str
-        One or more ISO3 country codes.
+        One or more ISO3 country codes, or the 'all' keyword.
     ax : matplotlib.axes.Axes, optional
         Axis on which to plot. If None, uses current axis.
     to_crs : pyproj.CRS or str, optional
@@ -77,7 +78,7 @@ def plot_country_borders(iso3_codes, ax=None, to_crs=None, **kwargs):
     from worldpoppy.borders import load_country_borders
 
     if isinstance(iso3_codes, str):
-        iso3_codes = [iso3_codes]
+        iso3_codes = get_all_isos() if iso3_codes == "all" else [iso3_codes]
 
     ax = plt.gca() if ax is None else ax
 

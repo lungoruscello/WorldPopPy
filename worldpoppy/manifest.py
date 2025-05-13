@@ -106,7 +106,7 @@ def wp_manifest(product_name=None, iso3_codes=None, years=None):
         is_annual = is_annual_product(product_name)  # will ensure that product exists
         if not is_annual:
             if years is not None:
-                logger.warning(
+                logger.info(
                     f"Ignoring the 'years' argument since '{product_name}' is a static WorldPop product"
                 )
                 years = None
@@ -160,8 +160,9 @@ def wp_manifest_download(product_name, iso3_codes, years=None):
     ------
     ValueError
         - If the requested data product is not available for all requested countries
-          and years (if applicable).
+          during all years (where applicable).
         - If an annual data product is requested, but the 'years' argument is None.
+        - If a static data product is requested, but the 'years' argument is not None.
     """
 
     if isinstance(iso3_codes, str):
@@ -173,7 +174,7 @@ def wp_manifest_download(product_name, iso3_codes, years=None):
     # fetch the download manifest (will validate query arguments)
     filtered_mdf = wp_manifest(product_name, iso3_codes, years)
 
-    # raise an exception if 'years' is None for an annual dataset
+    # raise an exception if 'years' is None for an annual dataset — and vice versa
     if is_annual_product(product_name):
         if years is None:
             raise ValueError(
@@ -182,9 +183,16 @@ def wp_manifest_download(product_name, iso3_codes, years=None):
                 f"available years for this product, please indicate this "
                 f"using `years='all'`."
             )
+    else:
+        if years is not None:
+            raise ValueError(
+                f"'years' argument must be `None` since '{product_name}' is "
+                f"a static WorldPop product. Note that we count data products "
+                f"as 'static' if they are not explicitly tied to a single year."
+            )
 
-    # raise an informative exception if the requested data product is not available
-    # for all requested countries and years (if any)
+    # raise an informative exception if the requested data product is not
+    # available for any requested country and years (where applicable)
     if is_annual_product(product_name):
         if isinstance(years, str):
             assert years == 'all'
@@ -373,8 +381,8 @@ def extract_year(dataset_name):
         such identifiers.
     """
     bad_format_msg = (
-        f"Bad format ('{dataset_name}'). Name of a dynamic dataset must "
-        "contain exactly one valid year identifier."
+        f"Bad format ('{dataset_name}'). Name of an annual dataset must "
+        "contain exactly one valid year identifier. Perhaps you "
     )
 
     matched = _year_pattern.findall(dataset_name)
@@ -455,7 +463,7 @@ def is_annual_product(product_name):
     if year is not None:
         raise ValueError(
             "'product_name' should never contain a year identifier. For annual data "
-            "productsm please use the separate 'years' argument to specify one or "
+            "products, please use the separate 'years' argument to specify one or "
             "more years of interest."
         )
 
@@ -510,8 +518,8 @@ def _validate_years(years):
     Raises
     ------
     ValueError
-        If the check fails, i.e., if WorldPop has no annual raster data whatsoever for one
-        or more of the requested years.
+        - If the `years` argument cannot be parsed.
+        - If WorldPop has no annual raster data whatsoever for one or more requested years.
     """
     if isinstance(years, str):
         if years != 'all':
@@ -520,15 +528,14 @@ def _validate_years(years):
                 "interest (int or List[int]), or the 'all' keyword (str). You "
                 f"passed the type {type(years)} instead."
             )
-        return None
-
-    if unknown_years := set(years) - set(get_all_annual_product_years()):
-        raise ValueError(
-            f'WorldPop has no annual data whatsoever for the following years: '
-            f'{unknown_years}. You can list all available years as follows:\n\n'
-            f'>>> from worldpoppy.manifest import get_all_annual_product_years\n'
-            f'>>> print(get_all_annual_product_years())'
-        )
+    else:
+        if unknown_years := set(years) - set(get_all_annual_product_years()):
+            raise ValueError(
+                f'WorldPop has no annual data whatsoever for the following years: '
+                f'{unknown_years}. You can list all available years as follows:\n\n'
+                f'>>> from worldpoppy.manifest import get_all_annual_product_years\n'
+                f'>>> print(get_all_annual_product_years())'
+            )
 
 
 def _strip_year(dataset_name):
