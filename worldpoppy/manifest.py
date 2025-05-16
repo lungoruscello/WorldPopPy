@@ -253,7 +253,7 @@ def build_wp_manifest(overwrite=False):
     # download the raw manifest CSV from the WorldPop website,
     # ingest the manifest using pandas, and update the local hash
     with NamedTemporaryFile() as tmp_file:
-        logger.info('Downloading WorldPop source manifest via FTP...')
+        logger.warning('Downloading fresh WorldPop data manifest via FTP...')
         tmp_csv_path = Path(tmp_file.name)
         _worldpop_ftp_download('/assets/wpgpDatasets.csv', tmp_csv_path)
         _update_local_manifest_hash(tmp_csv_path)  # noqa
@@ -288,6 +288,10 @@ def build_wp_manifest(overwrite=False):
 
     # store cleaned manifest for re-use
     mdf.to_feather(_cleaned_manifest_fpath)
+
+    logger.warning(
+        f'Cleaned WorldPop data manifest has been stored locally at: {_cleaned_manifest_fpath}'
+    )
 
     return mdf
 

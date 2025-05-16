@@ -13,7 +13,6 @@ import pandas as pd
 import rioxarray  # noqa
 import xarray as xr
 from pqdm.threads import pqdm
-from rasterio.features import shapes
 from shapely.geometry import shape
 
 from worldpoppy.config import *
@@ -157,7 +156,8 @@ def _extract_simplified_borders(iso3):
         A GeoDataFrame of polygons representing country borders for the given
         ISO code. Includes an 'iso3' column for country identification.
     """
-    from osgeo import gdal  # avoid global dependency
+    from osgeo import gdal  # noqa; avoid global dependency
+    from rasterio.features import shapes  # noqa; ''
 
     # convert target resolution to decimal degrees
     tgt_res = 1 / (3600 / _border_res_arc_secs)

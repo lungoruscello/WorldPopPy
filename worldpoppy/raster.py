@@ -240,7 +240,7 @@ def wp_raster(
             annual_rasters.append(merged)
 
         # > stack years
-        time_series = _concat_with_warning(
+        time_series = _concat_with_info(
             annual_rasters,
             dim='year',
             combine_attrs='drop_conflicts'
@@ -450,9 +450,9 @@ def bbox_from_location(centre, width_degrees=None, width_km=None):
     return min_lon, min_lat, max_lon, max_lat
 
 
-def _concat_with_warning(objs, **kwargs):
+def _concat_with_info(objs, **kwargs):
     """
-    Thin wrapper for `xarray.concat` which logs a warning if the optional
+    Thin wrapper for `xarray.concat` which logs an info message if the optional
     `bottleneck` library is not available.
 
     Parameters
@@ -463,8 +463,8 @@ def _concat_with_warning(objs, **kwargs):
         Additional arguments passed to `xarray.concat`.
     """
     if not module_available("bottleneck"):
-        logger.warning(
-            "Installing the optional `bottleneck` module will accelerate "
+        logger.info(
+            "Installing the optional `bottleneck` module may accelerate "
             "`xarray` concatenation. (pip install bottleneck)"
         )
     return xr.concat(objs, **kwargs)

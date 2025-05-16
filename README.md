@@ -5,8 +5,7 @@
 
 **WorldPopPy** is a Python package that helps you work with data from the [WorldPop project](https://www.worldpop.org/).
 WorldPop offers [global, gridded geo-datasets](https://www.worldpop.org/datacatalog/) on population dynamics, land-cover
-features,
-night-light emissions, and several other attributes of human and natural geography.
+features, night-light emissions, and several other attributes of human and natural geography.
 This package streamlines the process of downloading, combining, and cleaning WorldPop data for
 different geographic regions and years.
 
@@ -74,11 +73,11 @@ aeqa_africa = "ESRI:102022"  # an Albers Equal Area projection optimised for Afr
 
 # Fetch the population data
 pop_data = wp_raster(
-    product_name='ppp',  # name of the WorldPop product (here: est. no. of people per raster cell)
-    aoi=aoi_box,  # you could also pass a GeoDataFrame or official country codes here
+    product_name='ppp',  # name of the WorldPop product (here: # of people per raster cell)
+    aoi=aoi_box,  # you could also pass a GeoDataFrame or official country codes
     years=[2000, 2020],  # the years of interest (for annual WorldPop products only)
-    masked=True,  # mask missing values with NaN (instead of WorldPop's default fill value),
-    to_crs=aeqa_africa  # if None is provided, the CRS of the source data will be kept (EPSG:4326)
+    masked=True,  # mask missing values with NaN (instead of WorldPop's default fill value)
+    to_crs=aeqa_africa  # if None is provided, CRS of the source data will be kept (EPSG:4326)
 )
 
 # Compute population changes on downsampled data
@@ -111,10 +110,10 @@ WorldPop product in question is static anyway (e.g., when requesting [elevation 
 ### Managing the local cache
 
 By default, downloaded source data from WorldPop will be cached on disk for re-use. To disable caching, set `cache_downloads=False` 
-when calling `wp_raster()`. The default cache directory is `~/.cache/worldpoppy`. It can be changed by setting the `WORLDPOPPY_CACHE_DIR` 
-environment variable to the desired location, as shown in [this example](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/examples/example4.py).
+when calling `wp_raster()`. The default cache directory is `~/.cache/worldpoppy`. This can be changed by pointing the `WORLDPOPPY_CACHE_DIR` 
+environment variable to the desired location, as shown [here](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/examples/example4.py).
 
-Use the following function to purge cached data or simply check the local cache size:
+Use the following function to delete all cached data or simply check the local cache size:
 
 ```python
 from worldpoppy import purge_cache
@@ -147,8 +146,8 @@ _ = wp_raster(
 
 ### The WorldPop data manifest
 
-Use the `wp_manifest` function to load and optionally filter the manifest file listing all available WorldPop 
-datasets:
+Use the [`wp_manifest`](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/manifest.py#L46) function 
+to load and optionally filter the manifest file listing all available WorldPop datasets:
 
 ```python
 from worldpoppy import wp_manifest
@@ -157,10 +156,9 @@ full_manifest = wp_manifest()  # returns a `pandas.DataFrame`
 full_manifest.head(2)
 ```
 
-The local manifest file is auto-updated by [comparing it against](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/manifest.py#L250) 
-a remote version hosted on WorldPop servers. If needed, the remote manifest is downloaded and cleaned 
-for local use. Note that the remote WorldPop manifest sometimes lists datasets that are not actually available for 
-download. Requesting such datasets will trigger a [`DownloadError`](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/download.py#L206). 
+The local manifest file is auto-updated by [comparing it](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/manifest.py#L250) against a remote version hosted on WorldPop servers. 
+If needed, the remote manifest is downloaded and cleaned for local use. Note that the remote WorldPop manifest sometimes 
+lists datasets that are not actually available for download. Requesting such datasets will trigger a [`DownloadError`](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/download.py#L206). 
 
 
 ### Downloads only? 
