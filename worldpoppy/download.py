@@ -39,7 +39,7 @@ from pqdm.threads import pqdm
 from tqdm.auto import tqdm
 
 from worldpoppy.config import *
-from worldpoppy.manifest import wp_manifest_download
+from worldpoppy.manifest import wp_manifest_constrained
 
 __all__ = [
     "DownloadSizeCheckError",
@@ -157,7 +157,7 @@ class WorldPopDownloader:
         _repair_cache()
 
         # fetch download manifest (will validate user query)
-        filtered_mdf = wp_manifest_download(product_name, iso3_codes, years)
+        filtered_mdf = wp_manifest_constrained(product_name, iso3_codes, years)
 
         # assemble URLs and local paths
         data = filtered_mdf[['product_name', 'iso3', 'year']].values

@@ -26,7 +26,7 @@ from worldpoppy.config import ASSET_DIR
 
 __all__ = [
     "wp_manifest",
-    "wp_manifest_download",
+    "wp_manifest_constrained",
     "get_all_isos",
     "get_annual_product_names",
     "get_static_product_names",
@@ -128,7 +128,7 @@ def wp_manifest(product_name=None, iso3_codes=None, years=None):
     return mdf
 
 
-def wp_manifest_download(product_name, iso3_codes, years=None):
+def wp_manifest_constrained(product_name, iso3_codes, years=None):
     """
     Load the cleaned WorldPop manifest from local storage and filter the manifest
     for one specific download request.
@@ -251,8 +251,9 @@ def build_wp_manifest(overwrite=False):
                 return None
 
     # download the raw manifest CSV from the WorldPop website,
-    # ingest that manifest using pandas, and update the local hash
+    # ingest the manifest using pandas, and update the local hash
     with NamedTemporaryFile() as tmp_file:
+        logger.info('Downloading WorldPop source manifest via FTP...')
         tmp_csv_path = Path(tmp_file.name)
         _worldpop_ftp_download('/assets/wpgpDatasets.csv', tmp_csv_path)
         _update_local_manifest_hash(tmp_csv_path)  # noqa

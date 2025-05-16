@@ -20,7 +20,7 @@ aeqa_africa = "ESRI:102022"  # an Albers Equal Area projection optimised for Afr
 # Fetch the population data
 pop_data = wp_raster(
     product_name='ppp',  # name of the WorldPop product (here: est. no. of people per raster cell)
-    aoi=aoi_box,  # you could also pass a GeoDataFrame or official country codes
+    aoi=aoi_box,  # you could also pass a GeoDataFrame or official country codes here
     years=[2000, 2020],  # the years of interest (for annual WorldPop products only)
     masked=True,  # mask missing values with NaN (instead of WorldPop's default fill value),
     to_crs=aeqa_africa  # if None is provided, the CRS of the source data will be kept (EPSG:4326)

@@ -100,7 +100,7 @@ def test_bad_manifest_filters_raise():
 
 
 def test_incomplete_manifest_coverage_raises():
-    from worldpoppy.manifest import wp_manifest, wp_manifest_download
+    from worldpoppy.manifest import wp_manifest, wp_manifest_constrained
     eg_prod, eg_iso, eg_year = 'viirs_100m', 'NZL' , 2020
 
     wp_manifest(product_name=eg_prod)
@@ -109,4 +109,4 @@ def test_incomplete_manifest_coverage_raises():
 
     with pytest.raises(ValueError):
         # empty combo (incomplete coverage)
-        wp_manifest_download(product_name=eg_prod, iso3_codes=eg_iso, years=eg_year)
+        wp_manifest_constrained(product_name=eg_prod, iso3_codes=eg_iso, years=eg_year)

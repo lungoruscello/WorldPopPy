@@ -1,4 +1,4 @@
-# WorldPopPy
+# WorldPopPy <img src="worldpoppy/assets/icon.png" alt="icon" width="60" height="60"/>
 
 [![PyPI Latest Release](https://img.shields.io/pypi/v/WorldPopPy.svg)](https://pypi.org/project/WorldPopPy/)
 [![License](https://img.shields.io/pypi/l/WorldPopPy.svg)](https://github.com/lungoruscello/WorldPopPy/blob/master/LICENSE.txt)
@@ -32,14 +32,14 @@ from matplotlib.colors import LogNorm
 
 from worldpoppy import wp_raster, clean_axis
 
-# Fetch night-light data for the Korean Peninsula. Note: Calling 
-# `wp-raster()` returns an `xarray.DataArray` ready for analysis and plotting
+# Fetch night-light data for the Korean Peninsula.
+# Data is returned as an `xarray.DataArray` ready for analysis and plotting
 viirs_data = wp_raster(
     product_name='viirs_100m',  # name of WorldPop's night-light product
     aoi=['PRK', 'KOR'],  # three-letter country codes for North and South Korea  
     years=2015,
     masked=True,  # mask missing values with NaN (instead of WorldPop's default fill value),
-)
+)  
 
 # Downsample the data to speed-up plotting
 lowres = viirs_data.coarsen(x=5, y=5, boundary='trim').mean()
@@ -51,12 +51,12 @@ clean_axis(title='Night Lights (2015)\nKorean Peninsula')
 plt.show()
 ```
 
-<img src="worldpoppy/assets/korea_viirs.png" alt="Night Lights Korea" width="280"/> 
+<img src="https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/assets/korea_viirs.png" alt="Night Lights Korea" width="280"/> 
 
 ## More detailed example
 
-Below, we visualise **population growth** in a patch of West Africa from 2000 to 2020. To select the geographic area 
-of interest, we use a helper function that converts a location name into a bounding box. The example below also shows 
+Below, we visualise **population growth** in a patch of West Africa from 2000 to 2020. The geographic area of interest 
+is selected with a helper function that can convert a location name into a bounding box. The example below also shows
 you how to re-project WorldPop data into a different Coordinate Reference System (CRS).
 
 ```python
@@ -75,7 +75,7 @@ aeqa_africa = "ESRI:102022"  # an Albers Equal Area projection optimised for Afr
 # Fetch the population data
 pop_data = wp_raster(
     product_name='ppp',  # name of the WorldPop product (here: est. no. of people per raster cell)
-    aoi=aoi_box,  # you could also pass a GeoDataFrame or official country codes
+    aoi=aoi_box,  # you could also pass a GeoDataFrame or official country codes here
     years=[2000, 2020],  # the years of interest (for annual WorldPop products only)
     masked=True,  # mask missing values with NaN (instead of WorldPop's default fill value),
     to_crs=aeqa_africa  # if None is provided, the CRS of the source data will be kept (EPSG:4326)
@@ -96,9 +96,9 @@ plot_location_markers(['Accra', 'Kumasi', 'Lomé'], to_crs=aeqa_africa)
 plt.show()
 ```
 
-<img src="worldpoppy/assets/accra_pop.png" alt="Pop. Change Accra, Lomé" width="400"/> 
+<img src="https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/assets/accra_pop.png" alt="Pop. Change Accra, Lomé" width="400"/> 
 
-## Further information
+## Further details
 
 ### Data dimensions
 
@@ -110,25 +110,23 @@ WorldPop product in question is static anyway (e.g., when requesting [elevation 
 
 ### Managing the local cache
 
-By default, downloaded source data from WorldPop will be cached on disk. When calling `wp_raster()`, wou can disable 
-caching by setting `cache_downloads=False`. 
+By default, downloaded source data from WorldPop will be cached on disk for re-use. To disable caching, set `cache_downloads=False` 
+when calling `wp_raster()`. The default cache directory is `~/.cache/worldpoppy`. It can be changed by setting the `WORLDPOPPY_CACHE_DIR` 
+environment variable to the desired location, as shown in [this example](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/examples/example4.py).
 
-The default cache directory is `~/.cache/worldpoppy`, and can be changed by setting an environment variable, as
-shown [here](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/examples/example4.py).
-
-Use the following function to check the local cache size and purge cached data to restore disk space:
+Use the following function to purge cached data or simply check the local cache size:
 
 ```python
 from worldpoppy import purge_cache
 
 purge_cache(dry_run=True)
-# the dry run will not actually delete anything and merely print a cache summary
+# dry run will only print a cache summary and not delete any files
 ```
 
 ### Download dry runs
 
 Before you request data for large geographic areas and/or many years, you may want to check download requirements first. 
-To do so, simply set `download_dry_run=True`:  
+Setting `download_dry_run=True` will check download requirements and print a summary: 
 
 ```python
 from worldpoppy import wp_raster
@@ -136,11 +134,11 @@ from worldpoppy import wp_raster
 _ = wp_raster(
     product_name='ppp',
     aoi='CAN USA MEX'.split(),
-    years='all',  # get all available years for the requested product 
-    download_dry_run=True
+    years='all',  # query all available years for the specified product 
+    download_dry_run=True  # do not actually download anything and merely print a summary  
 )
+# Note that `wp_raster` will return `None` in this case
 ```
-When you request a dry run, no actual WorldPop data will be downloaded or processed and `wp_raster` will return `None`.
 
 
 ### Selecting data with a GeoDataFrame
@@ -149,7 +147,7 @@ When you request a dry run, no actual WorldPop data will be downloaded or proces
 
 ### The WorldPop data manifest
 
-Use the `wp_manifest` function to load (and optionally filter) the manifest file listing all currently available WorldPop 
+Use the `wp_manifest` function to load and optionally filter the manifest file listing all available WorldPop 
 datasets:
 
 ```python
@@ -159,15 +157,16 @@ full_manifest = wp_manifest()  # returns a `pandas.DataFrame`
 full_manifest.head(2)
 ```
 
-The local manifest is auto-updated by [comparing it against](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/manifest.py#L250) 
-a remote version that is hosted on WorldPop servers. If needed, the remote manifest is downloaded and cleaned 
+The local manifest file is auto-updated by [comparing it against](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/manifest.py#L250) 
+a remote version hosted on WorldPop servers. If needed, the remote manifest is downloaded and cleaned 
 for local use. Note that the remote WorldPop manifest sometimes lists datasets that are not actually available for 
 download. Requesting such datasets will trigger a [`DownloadError`](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/download.py#L206). 
 
 
 ### Downloads only? 
 
-If you are only interested in asynchronous country-data downloads, without any further functionality, use the `WorldPopDownloader` class:
+If you are only interested in asynchronous country-data downloads from WorldPop, without any other functionality, 
+use the `WorldPopDownloader` class:
 
 ```python
 from worldpoppy import WorldPopDownloader
@@ -178,21 +177,18 @@ raster_fpaths = WorldPopDownloader().download(
 )
 ```
 
-
-## Dependencies
-
 ## Acknowledgements
 
-The implementation of **WorldPopPy** draws on the [BlackMarblePy](https://github.com/worldbank/blackmarblepy/tree/main) 
+The implementation of **WorldPopPy** draws on the World Bank's [BlackMarblePy](https://github.com/worldbank/blackmarblepy/tree/main) 
 package, which gives users easy access to night-light data from NASA's Black Marble project.
 
 ## Feedback
 
-If you encounter issues, or want to suggest improvements, please [open an issue](https://github.com/lungoruscello/WorldPopPy/issues).
-Since WorldPopPy is developed and tested on Linux, issues encountered on other platforms may take longer to address.
+If you would like to give feedback, encounter issues, or want to suggest improvements, please [open an issue](https://github.com/lungoruscello/WorldPopPy/issues).
+Since this package is developed and tested on Linux, issues encountered on other platforms may take longer to address.
 
 
 ## License
 
 This projects is licensed under the [Mozilla Public License](https://www.mozilla.org/en-US/MPL/2.0/).
-See [LICENSE.txt](LICENSE.txt)  for details.
+See [LICENSE.txt](https://github.com/lungoruscello/WorldPopPy/blob/master/LICENSE.txt)  for details.
