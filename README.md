@@ -1,7 +1,7 @@
 # WorldPopPy <img src="worldpoppy/assets/icon.png" alt="icon" width="60" height="60"/>
 
 [![PyPI Latest Release](https://img.shields.io/pypi/v/WorldPopPy.svg)](https://pypi.org/project/WorldPopPy/)
-[![License](https://img.shields.io/pypi/l/WorldPopPy.svg)](https://github.com/lungoruscello/WorldPopPy/blob/master/LICENSE.txt)
+[![MIT License](https://img.shields.io/badge/license-MPL_2.0-green.svg)](https://github.com/lungoruscello/WorldPopPy/blob/master/LICENSE.txt)
 
 **WorldPopPy** is a Python package that helps you work with data from the [WorldPop project](https://www.worldpop.org/).
 WorldPop offers [global, gridded geo-datasets](https://www.worldpop.org/datacatalog/) on population dynamics, land-cover
