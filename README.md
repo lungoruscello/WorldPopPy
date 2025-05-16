@@ -86,7 +86,7 @@ pop_change = lowres.sel(year=2020) - lowres.sel(year=2000)
 
 # Plot
 pop_change.plot(cmap='coolwarm', vmax=1_000, cbar_kwargs=dict(shrink=0.85))
-clean_axis(title='Estimated population change (2000 to 2020)')
+clean_axis(title='Estimated population change (2000 to 2020)', remove_xy_ticks=True)
 
 # Add visual references
 plot_country_borders(['GHA', 'TOG', 'BEN'], edgecolor='white', to_crs=aeqa_africa)
