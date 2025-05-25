@@ -1,7 +1,7 @@
 # WorldPopPy <img src="worldpoppy/assets/icon.png" alt="icon" width="60" height="60"/>
 
 [![PyPI Latest Release](https://img.shields.io/pypi/v/WorldPopPy.svg)](https://pypi.org/project/WorldPopPy/)
-[![MIT License](https://img.shields.io/badge/license-MPL_2.0-green.svg)](https://github.com/lungoruscello/WorldPopPy/blob/master/LICENSE.txt)
+[![License](https://img.shields.io/badge/license-MPL_2.0-green.svg)](https://github.com/lungoruscello/WorldPopPy/blob/master/LICENSE.txt)
 
 **WorldPopPy** is a Python package that helps you work with data from the [WorldPop project](https://www.worldpop.org/).
 WorldPop offers [global, gridded geo-datasets](https://www.worldpop.org/datacatalog/) on population dynamics, land-cover
@@ -185,8 +185,7 @@ package, which gives users easy access to night-light data from NASA's Black Mar
 If you would like to give feedback, encounter issues, or want to suggest improvements, please [open an issue](https://github.com/lungoruscello/WorldPopPy/issues).
 Since this package is developed and tested on Linux, issues encountered on other platforms may take longer to address.
 
-
-## License
+## Licence
 
 This projects is licensed under the [Mozilla Public License](https://www.mozilla.org/en-US/MPL/2.0/).
 See [LICENSE.txt](https://github.com/lungoruscello/WorldPopPy/blob/master/LICENSE.txt)  for details.
