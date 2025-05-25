@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
 from worldpoppy import wp_raster, clean_axis
-from worldpoppy.examples import load_italian_regions
+from examples import load_italian_regions
 
 # Load shapes for two regions in Northern Italy
 italy = load_italian_regions()

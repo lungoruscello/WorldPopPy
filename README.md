@@ -105,13 +105,13 @@ Calling [`wp_raster()`](https://github.com/lungoruscello/WorldPopPy/blob/master/
 return an **`xarray.DataArray`**. The array dimensions, however, depend on the user query. If you request data for more 
 than one year, the returned array will include a *year* dimension in addition to the raster data's two spatial dimensions 
 (*x* and *y*). By contrast, the *year* dimension will be omitted if you request data for a single year only, or if the 
-WorldPop product in question is static anyway (e.g., when requesting [elevation data](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/examples/example5.py)). 
+WorldPop product in question is static anyway (e.g., when requesting [elevation data](https://github.com/lungoruscello/WorldPopPy/blob/master/examples/example5.py)). 
 
 ### Managing the local cache
 
 By default, downloaded source data from WorldPop will be cached on disk for re-use. To disable caching, set `cache_downloads=False` 
 when calling `wp_raster()`. The default cache directory is `~/.cache/worldpoppy`. This can be changed by pointing the `WORLDPOPPY_CACHE_DIR` 
-environment variable to the desired location, as shown [here](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/examples/example4.py).
+environment variable to the desired location, as shown [here](https://github.com/lungoruscello/WorldPopPy/blob/master/examples/example4.py).
 
 Use the following function to delete all cached data or simply check the local cache size:
 
@@ -142,7 +142,7 @@ _ = wp_raster(
 
 ### Selecting data with a GeoDataFrame
 
-... is straightforward, as shown in [this example](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/examples/example3.py). 
+... is straightforward, as shown in [this example](https://github.com/lungoruscello/WorldPopPy/blob/master/examples/example3.py). 
 
 ### The WorldPop data manifest
 
