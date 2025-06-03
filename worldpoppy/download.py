@@ -42,17 +42,19 @@ __all__ = [
     "DownloadSizeCheckError",
     "DownloadError",
     "WorldPopDownloader",
-    "purge_cache"
+    "purge_cache",
 ]
 
 
 class DownloadError(Exception):
     """Raised when one or more files fail to download."""
+
     pass
 
 
 class DownloadSizeCheckError(DownloadError):
     """Raised when one or more HEAD requests fail during dry-run size checking."""
+
     pass
 
 
@@ -71,6 +73,7 @@ class DownloadResult:
     error : Exception or None
         An exception raised during the operation. None if not applicable.
     """
+
     success: bool
     value: Optional[Any] = None
     error: Optional[Exception] = None
@@ -168,7 +171,7 @@ class WorldPopDownloader:
                 n_jobs=get_max_concurrency() * 4,  # these jobs are cheap
                 argument_type="args",
                 desc="Checking download sizes...",
-                leave=False
+                leave=False,
             )
 
             if errors := [r.error for r in res if not r.success]:
@@ -190,7 +193,7 @@ class WorldPopDownloader:
                 n_jobs=get_max_concurrency(),
                 argument_type="args",
                 desc="Downloading...",
-                leave=False
+                leave=False,
             )
 
             if errors := [r.error for r in res if not r.success]:
@@ -241,12 +244,7 @@ class WorldPopDownloader:
             with open(tmp_path, "wb+") as f:
                 with httpx.stream("GET", remote_url) as response:
                     total = int(response.headers["Content-Length"])
-                    with tqdm(
-                            total=total,
-                            unit="B",
-                            unit_scale=True,
-                            leave=False
-                    ) as pbar:
+                    with tqdm(total=total, unit="B", unit_scale=True, leave=False) as pbar:
                         pbar.set_description(f"Downloading {remote_fname}...")
                         for chunk in response.iter_raw():
                             f.write(chunk)
@@ -354,7 +352,7 @@ def purge_cache(dry_run=True, keep_country_borders=False):
         "dry_run": dry_run,
         "matched_files": num_matched,
         "deleted_files": num_deleted,
-        "total_size_mb": round(total_size / 1e6, 2)
+        "total_size_mb": round(total_size / 1e6, 2),
     }
 
 

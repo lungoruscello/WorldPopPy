@@ -31,7 +31,7 @@ __all__ = [
     "get_annual_product_names",
     "get_static_product_names",
     "get_all_dataset_names",
-    "extract_year"
+    "extract_year",
 ]
 
 FIRST_YEAR = 2000

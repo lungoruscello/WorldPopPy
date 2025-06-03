@@ -19,7 +19,7 @@ __all__ = [
     "clean_axis",
     "plot_country_borders",
     "plot_location_markers",
-    "module_available"
+    "module_available",
 ]
 
 

@@ -10,7 +10,7 @@ __all__ = [
     "BLUE",
     "GOLDEN",
     "get_cache_dir",
-    "get_max_concurrency"
+    "get_max_concurrency",
 ]
 
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "worldpoppy"

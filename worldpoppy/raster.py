@@ -23,6 +23,7 @@ Main methods
         The result can be used specify the AOI for `wp_raster`.
 
 """
+
 import logging
 from collections import defaultdict
 from pathlib import Path
@@ -50,34 +51,36 @@ __all__ = [
     "IncompatibleRasterError",
     "wp_raster",
     "bbox_from_location",
-    "merge_rasters"
+    "merge_rasters",
 ]
 
 
 class RasterReadError(Exception):
     """Raised when reading a WorldPop source raster fails."""
+
     pass
 
 
 class IncompatibleRasterError(Exception):
     """Raised when trying to merge incompatible WorldPop source rasters."""
+
     pass
 
 
 def wp_raster(
-        product_name,
-        aoi,
-        years=None,
-        *,
-        cache_downloads=True,
-        skip_download_if_exists=True,
-        masked=False,
-        mask_and_scale=False,
-        other_read_kwargs=None,
-        res=None,
-        download_dry_run=False,
-        to_crs=None,
-        **merge_kwargs
+    product_name,
+    aoi,
+    years=None,
+    *,
+    cache_downloads=True,
+    skip_download_if_exists=True,
+    masked=False,
+    mask_and_scale=False,
+    other_read_kwargs=None,
+    res=None,
+    download_dry_run=False,
+    to_crs=None,
+    **merge_kwargs,
 ):
     """
     Return WorldPop data for the user-defined area of interest (AOI) and the
@@ -197,18 +200,18 @@ def wp_raster(
         other_read_kwargs=other_read_kwargs,
         res=res,
         clipping_gdf=clipping_gdf,
-        to_crs=to_crs
+        to_crs=to_crs,
     )
     shared_merge_opts.update(**merge_kwargs)
 
-    with (TemporaryDirectory() if not cache_downloads else get_cache_dir() as d):
+    with TemporaryDirectory() if not cache_downloads else get_cache_dir() as d:
         # download all required rasters
         all_raster_paths = WorldPopDownloader(directory=d).download(
             product_name,
             iso3_codes,
             years,
             skip_download_if_exists,
-            dry_run=download_dry_run
+            dry_run=download_dry_run,
         )
 
         if download_dry_run:
@@ -249,13 +252,13 @@ def wp_raster(
 
 
 def merge_rasters(
-        raster_fpaths,
-        masked=False,
-        mask_and_scale=False,
-        other_read_kwargs=None,
-        clipping_gdf=None,
-        to_crs=None,
-        **merge_kwargs
+    raster_fpaths,
+    masked=False,
+    mask_and_scale=False,
+    other_read_kwargs=None,
+    clipping_gdf=None,
+    to_crs=None,
+    **merge_kwargs,
 ):
     """
     Merge multiple raster files, and optionally clip the result, using `rioxarray`.
@@ -424,7 +427,9 @@ def bbox_from_location(centre, width_degrees=None, width_km=None):
     # handle bbox width
     num_provided = (width_degrees is None) + (width_km is None)
     if num_provided != 1:
-        raise ValueError("You must specify exactly one of 'width_degrees' or 'width_km'.")
+        raise ValueError(
+            "You must specify exactly one of 'width_degrees' or 'width_km'."
+        )
 
     if width_degrees is not None:
         # distance specified in degrees
@@ -435,7 +440,9 @@ def bbox_from_location(centre, width_degrees=None, width_km=None):
         )
 
     # define a local Azimuthal Equidistant projection
-    proj4_str = f"+proj=aeqd +lon_0={lon} +lat_0={lat} +x_0=0 +y_0=0 +datum=WGS84 +units=m"
+    proj4_str = (
+        f"+proj=aeqd +lon_0={lon} +lat_0={lat} +x_0=0 +y_0=0 +datum=WGS84 +units=m"
+    )
     local_aeqd_crs = CRS(proj4_str)
 
     # Compute box corners in kilometres
@@ -499,6 +506,10 @@ def _validate_bbox(bbox):
         raise ValueError("Bad bounding box. min_lat must be less than max_lat.")
 
     if not (-180 <= min_lon <= 180 and -180 <= max_lon <= 180):
-        raise ValueError("Bad bounding box. Longitude must be between -180 and 180 degrees.")
+        raise ValueError(
+            "Bad bounding box. Longitude must be between -180 and 180 degrees."
+        )
     if not (-90 <= min_lat <= 90 and -90 <= max_lat <= 90):
-        raise ValueError("Bad bounding box. Latitude must be between -90 and 90 degrees.")
+        raise ValueError(
+            "Bad bounding box. Latitude must be between -90 and 90 degrees."
+        )
