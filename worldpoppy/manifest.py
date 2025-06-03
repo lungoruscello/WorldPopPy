@@ -1,11 +1,11 @@
 """
-Functions to download, clean, and filter the global WorldPop data manifest.
+This moduled provides logic to download, clean, and filter the WorldPop data manifest.
 
-Main user-facing methods
+Main methods
 ------------------------
-wp_manifest
-    Load the WorldPop manifest from local storage and optionally filter it
-    by product, countries, or years (where applicable).
+    - :func:`wp_manifest`
+        Load the WorldPop manifest from local storage and optionally filter it
+        by product, countries, or years (where applicable).
 
 """
 

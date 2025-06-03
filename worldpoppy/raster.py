@@ -1,31 +1,26 @@
 """
-Provides functions to obtain raster data from WorldPop, with flexible
-specification of areas of interest as well as multi-year support.
+This is the main module of `WorldPopPy`. It provides logic to fetch raster
+data from `WorldPop <https://www.worldpop.org/>`_ through several alternative
+specifications for the geographic area of interest.
 
 Note
 ----
-    The present implementation draws on the "raster.py" module from the
-    `blackmarblepy` package by Gabriel Stefanini Vicente and Robert Marty.
-    `blackmarblepy` is licensed under the Mozilla Public License (MPL-2.0),
-    as is the present Python module.
-
-    Links:
-    - https://github.com/worldbank/blackmarblepy
-    - https://github.com/worldbank/blackmarblepy/blob/main/LICENSE
+    The implementation of this module draws on the "raster.py" module from the
+    `blackmarblepy <https://github.com/worldbank/blackmarblepy>`_ package by
+    Gabriel Stefanini Vicente and Robert Marty. `blackmarblepy` is licensed
+    under the Mozilla Public License (MPL-2.0), as is `WorldPopPy`.
 
 
-Main user-facing methods
+Main methods
 ------------------------
-wp_raster
-    Retrieve WorldPop data for arbitrary areas of interest (AOIs) and
-    multiple years (for annual data products only).
-merge_rasters
-    Merge multiple raster files and optionally clip the result.
-bbox_from_location
-    Generate a bounding box from a location name or GPS coordinate.
-    The result can be used specify the AOI for `wp_raster`.
-geolocate_name
-    Find the GPS location for a location name through a `Nomatim` query.
+    - :func:`wp_raster`
+        Retrieve WorldPop data for arbitrary geographical areas and
+        multiple years (where applicable).
+    - :func:`merge_rasters`
+        Merge multiple raster files and optionally clip the result.
+    - :func:`bbox_from_location`
+        Generate a bounding box from a location name or GPS coordinate.
+        The result can be used specify the AOI for `wp_raster`.
 
 """
 import logging
@@ -93,16 +88,17 @@ def wp_raster(
     product_name : str
         The name of the WorldPop data product of interest.
     aoi : str, List[str], List[float], Tuple[float], or geopandas.GeoDataFrame
-
         The area of interest (AOI) for which to obtain the raster data. Users can specify
         this area using:
-            - one or more three-letter country codes (alpha-3 IS0 codes);
-            - a GeoDataFrame with one or more polygonal geometries; or
-            - a bounding box of the format (min_lon, min_lat, max_lon, max_lat).
-            In the latter two cases, WorldPop data is first downloaded and merged for
-            all countries that intersect the area of interest, regardless of how large
-            this intersection is. Subsequently, the merged raster is then clipped using
-            the AOI.
+
+        - one or more three-letter country codes (alpha-3 IS0 codes);
+        - a GeoDataFrame with one or more polygonal geometries; or
+        - a bounding box of the format (min_lon, min_lat, max_lon, max_lat).
+
+        In the latter two cases, WorldPop data is first downloaded and merged for
+        all countries that intersect the area of interest, regardless of how large
+        this intersection is. Subsequently, the merged raster is then clipped using
+        the AOI.
 
     years : int or List[int] or str, optional
         For annual data products, one or more years of interest or the 'all' keyword
@@ -113,22 +109,25 @@ def wp_raster(
         Whether to skip downloading source rasters that already exist in the local cache.
     masked: bool, optional, default=False
         If True, read the mask of all input rasters and set masked
-        values to NaN. This argument is passed to `rioxarray.open_rasterio`
+        values to NaN. This argument is passed to
+        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
         when reading input rasters.
     mask_and_scale: bool, default=False
         Lazily scale (using the `scales` and `offsets` from rasterio) all
         input rasters and mask them. If the _Unsigned attribute is present
         treat integer arrays as unsigned. This argument is passed to
-        `rioxarray.open_rasterio` when reading input rasters.
+        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
+        when reading input rasters.
     other_read_kwargs : dict, optional
         Dictionary with additional keyword arguments that are passed to
-        `rioxarray.open_rasterio` when reading input rasters (e.g., `lock`
-        or `band_as_variable`).
+        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
+        when reading input rasters (e.g., `lock` or `band_as_variable`).
     res: tuple, optional
         Output resolution for the final merged raster in units of coordinate
         reference system. If not set, the resolution of the first source
         raster is used. If a single value is passed, output pixels will be
-        square. This argument is passed to `rioxarray.merge.merge_arrays`.
+        square. This argument is passed to
+        `rioxarray.merge.merge_arrays <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray.merge.merge_arrays>`_.
     download_dry_run : bool, optional, default=False
         If True, only check how many raster files would need to be downloaded
         from WorldPop if `download_dry_run` was False. Report the number and
@@ -139,9 +138,10 @@ def wp_raster(
         Re-projection is applied *after* merging (and clipping, if requested).
         If `to_crs` is not provided, raster data remains in the source CRS.
     **merge_kwargs : keyword arguments
-        Additional arguments passed to `rioxarray.merge.merge_arrays`,
-        which give more control over how input rasters should be
-        merged (e.g., `method` or `bounds`).
+        Additional arguments passed to
+        `rioxarray.merge.merge_arrays <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray.merge.merge_arrays>`_,
+        which give more control over how input rasters should be merged
+        (e.g., `method` or `bounds`).
 
     Returns
     -------
@@ -266,16 +266,19 @@ def merge_rasters(
         List of paths to the input raster files that are to be merged.
     masked: bool, optional, default=False
         If True, read the mask of all input rasters and set masked
-        values to NaN. This argument is passed to `rioxarray.open_rasterio`
+        values to NaN. This argument is passed to
+        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
         when reading input rasters.
     mask_and_scale: bool, default=False
         Lazily scale (using the `scales` and `offsets` from rasterio) all
         input rasters and mask them. If the _Unsigned attribute is present
         treat integer arrays as unsigned. This argument is passed to
-        `rioxarray.open_rasterio` when reading input rasters.
+        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
+        when reading input rasters.
     other_read_kwargs : dict, optional
         Dictionary with additional keyword arguments that are passed to
-        `rioxarray.open_rasterio` when reading input rasters (e.g., `lock`
+        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
+        when reading input rasters (e.g., `lock`
         or `band_as_variable`).
     clipping_gdf : geopandas.GeoDataFrame, optional
         GeoDataFrame with geometries used to clip the merged raster.
@@ -298,7 +301,7 @@ def merge_rasters(
     RasterReadError
         If reading an input raster fails.
 
-    RasterMergeError
+    IncompatibleRasterError
         - If input rasters have mismatched Coordinate Reference Systems.
         - If input rasters have mismatched `_FillValue` or `scale_factor` attributes.
     """

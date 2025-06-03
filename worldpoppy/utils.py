@@ -1,3 +1,7 @@
+"""
+Collection of various helper functions.
+"""
+
 from functools import lru_cache
 from typing import Tuple
 

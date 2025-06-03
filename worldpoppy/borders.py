@@ -1,6 +1,7 @@
 """
-Helper functions to build and load simplified country polygons for the whole world,
-based on down-sampled WorldPop 'level0_100m' rasters.
+This auxiliary module provides helper functions to build and load simplified
+country polygons for the whole world, based on down-sampled `level0_100m`
+rasters from WorldPop.
 """
 
 import logging
@@ -24,7 +25,7 @@ _border_raw_fpath = ASSET_DIR / 'level0_500m_2000_2020_simplified_world.feather'
 _border_buffered_fpath = get_cache_dir() / 'level0_500m_2000_2020_simplified_world_buffered.feather'
 
 try:
-    from osgeo import gdal
+    from osgeo import gdal  # noqa
 
     GDAL_AVAILABLE = True
 except ModuleNotFoundError:
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 def load_country_borders():
     """
     Return a GeoDataFrame with simplified, buffered country polygons extracted from
-    WorldPop 'level0_100m' rasters.
+    WorldPop `level0_100m` rasters.
 
     If the cached border file does not exist, this function will trigger the build
     process.
@@ -78,7 +79,7 @@ def load_country_borders():
 def build_country_borders(overwrite=False):
     """
     Build a GeoDataFrame with country borders for the whole world by converting
-    WorldPop 'level0_100m' rasters into simplified vector polygons. The output
+    WorldPop `level0_100m` rasters into simplified vector polygons. The output
     is saved to disk as a Feather file for future use.
 
     Notes

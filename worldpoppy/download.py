@@ -1,28 +1,25 @@
 """
-Functions to download WorldPop data asynchronously, with logic for automatic
-retry and file caching.
+This module provides logic to download WorldPop data asynchronously, with
+support for automatic retry, file caching, and a preview of required download
+sizes (dry run).
 
-Note:
+Note
 ----
-    The present implementation draws on the "download.py" module from the
-    `blackmarblepy` package by Gabriel Stefanini Vicente and Robert Marty.
-    `blackmarblepy` is licensed under the Mozilla Public License (MPL-2.0),
-    as is the present Python module.
-
-    Links:
-    - https://github.com/worldbank/blackmarblepy
-    - https://github.com/worldbank/blackmarblepy/blob/main/LICENSE
+    The implementation of this module draws on the "download.py" module from the
+    `blackmarblepy <https://github.com/worldbank/blackmarblepy>`_ package by
+    Gabriel Stefanini Vicente and Robert Marty. `blackmarblepy` is licensed
+    under the Mozilla Public License (MPL-2.0), as is `WorldPopPy`.
 
 
-Main user-facing classes
+Main classes
 ------------------------
-WorldPopDownloader
-    Asynchronous downloader for WorldPop raster data.
+    - :class:`WorldPopDownloader`
+        Asynchronous downloader for WorldPop raster data.
 
-Main user-facing methods
+Main methods
 ------------------------
-purge_cache
-    Delete all files in the WorldPop local cache directory, with optional dry-run.
+    - :func:`purge_cache`
+        Delete all files in the WorldPop local cache directory, with optional dry-run.
 
 """
 
@@ -89,11 +86,6 @@ class WorldPopDownloader:
     ----------
     directory: Path
         Local directory to which to download the data.
-
-    Methods
-    -------
-    download(product_name, iso3_codes, years=None, skip_download_if_exists=True)
-        Asynchronously download a collection of country-specific WorldPop rasters.
     """
 
     URL: ClassVar[str] = "https://data.worldpop.org"
