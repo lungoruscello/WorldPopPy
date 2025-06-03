@@ -1,10 +1,8 @@
 worldpoppy/assets/manifest.feather
 worldpoppy/assets/boundaries_ita.gpkg
-doc/_build
+docs/_build
 README_PYPI.md
-doc/README.md
 *.xcf
-
 
 # *****************
 # GitHub default for Python projects

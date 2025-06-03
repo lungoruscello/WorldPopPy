@@ -34,12 +34,12 @@ def clean_readme_for_pypi():
 
 def copy_readme_to_doc():
     """
-    Copy README_PYPI.md into the doc/ directory
+    Copy README_PYPI.md into the docs/ directory
     """
     root = Path(__file__).parent.resolve()
     shutil.copy(
         root / "README_PYPI.md",
-        root / "doc" / "README_PYPI.md"
+        root / "docs" / "README_PYPI.md"
     )
 
 
