@@ -23,6 +23,12 @@ installed using `pip`:
 
 `pip install worldpoppy`
 
+## Documentation
+
+- Stable: https://worldpoppy.readthedocs.io/en/stable/
+- Latest: https://worldpoppy.readthedocs.io/en/latest/
+
+
 ## Quickstart
 
 ```python
