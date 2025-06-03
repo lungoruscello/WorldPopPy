@@ -1,0 +1,5 @@
+/* set icon width relative to sidebar width */
+div.wy-side-nav-search .icon img {
+    max-width: 33% !important;
+    width: auto;
+}

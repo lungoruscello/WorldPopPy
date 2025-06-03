@@ -50,7 +50,7 @@ clean_axis(title='Night Lights (2015)\nKorean Peninsula')
 plt.show()
 ```
 
-<img src="https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/assets/korea_viirs.png" alt="Night Lights Korea" width="280"/> 
+<img src="worldpoppy/assets/korea_viirs.png" alt="Night Lights Korea" width="280"/> 
 
 ## More detailed example
 
@@ -95,7 +95,7 @@ plot_location_markers(['Accra', 'Kumasi', 'Lomé'], to_crs=aeqa_africa)
 plt.show()
 ```
 
-<img src="https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/assets/accra_pop.png" alt="Pop. Change Accra, Lomé" width="400"/> 
+<img src="worldpoppy/assets/accra_pop.png" alt="Pop. Change Accra, Lomé" width="400"/> 
 
 ## Further details
 

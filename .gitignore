@@ -1,4 +1,9 @@
 worldpoppy/assets/manifest.feather
+worldpoppy/assets/boundaries_ita.gpkg
+doc/_build
+README_PYPI.md
+doc/README.md
+*.xcf
 
 
 # *****************
