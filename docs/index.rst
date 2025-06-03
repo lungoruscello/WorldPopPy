@@ -8,7 +8,7 @@ GitHub: https://github.com/lungoruscello/WorldPopPy
    :maxdepth: 1
    :caption: Contents:
 
-   README_PYPI.md
+   readme_pypi.md
    worldpoppy
 
 Indices and tables

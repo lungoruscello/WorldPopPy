@@ -9,7 +9,7 @@ def clean_readme_for_pypi():
     Prepare a cleaned version of README.md without project icon, badges,
     or inline example images.
 
-    Saves the result as README_PYPI.md, which is referenced in pyproject.toml.
+    Saves the result as readme_pypi.md, which is referenced in pyproject.toml.
     """
     with open("README.md", 'r') as f:
         readme_lines = f.readlines()
@@ -28,7 +28,7 @@ def clean_readme_for_pypi():
     long_description = "".join(filtered_lines)
 
     # save to disk
-    with open("README_PYPI.md", 'w', encoding='utf-8') as f:
+    with open("readme_pypi.md", 'w', encoding='utf-8') as f:
         f.writelines(long_description)
 
 
@@ -38,8 +38,8 @@ def copy_readme_to_doc():
     """
     root = Path(__file__).parent.resolve()
     shutil.copy(
-        root / "README_PYPI.md",
-        root / "docs" / "README_PYPI.md"
+        root / "readme_pypi.md",
+        root / "docs" / "readme_pypi.md"
     )
 
 

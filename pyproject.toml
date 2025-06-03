@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "WorldPopPy"
-version = "0.1.1"
+version = "0.2.0"
 description = "Library to help you work with WorldPop data for any region on earth"
-readme = "README_PYPI.md"
+readme = "readme_pypi.md"
 requires-python = ">=3.10"
 license = {text = "Mozilla Public License 2.0 (MPL-2.0)"}
 authors = [
