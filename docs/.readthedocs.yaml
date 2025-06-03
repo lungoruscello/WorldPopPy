@@ -9,8 +9,5 @@ build:
     python: "3.11"
 
 python:
-  install:
-    - method: pip
-      path: .
-    - requirements:
-        - docs
+   install:
+     - requirements: "docs/requirements.txt"
