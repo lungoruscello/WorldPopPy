@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "WorldPopPy"
+version = "0.1.1"
+description = "Library to help you work with WorldPop data for any region on earth"
+readme = "README_PYPI.md"
+requires-python = ">=3.10"
+license = {text = "Mozilla Public License 2.0 (MPL-2.0)"}
+authors = [
+  { name="S. Langenbach", email="lungoruscello@gmail.com" }
+]
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "httpx",
+    "click>=8.0",
+    "nest_asyncio<2",
+    "pqdm>=0.2",
+    "tqdm",
+    "backoff>=2,<3",
+    "pandas",
+    "pyarrow",
+    "rioxarray",
+    "xarray",
+    "geopandas<2",
+    "geopy",
+    "pyproj",
+    "shapely"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "bottleneck",
+    "gdal>=3.0"
+]
+build = [
+    "twine>=4.0.2",
+    "build",
+    "wheel"
+]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+    "sphinx-autodoc-typehints",
+    "sphinxcontrib-napoleon",
+    "myst-parser"
+]
+
+[project.urls]
+Homepage = "https://github.com/lungoruscello/worldpoppy"
+
+[tool.setuptools]
+packages = ["worldpoppy"]
+
+[tool.setuptools.package-data]
+worldpoppy = [
+  "assets/level0_500m_2000_2020_simplified_world.feather",
+  "assets/italian_regions_simplified.feather"
+]
