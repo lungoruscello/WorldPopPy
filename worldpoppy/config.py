@@ -14,7 +14,7 @@ __all__ = [
 ]
 
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "worldpoppy"
-DEFAULT_MAX_CONCURRENCY = cpu_count() - 1
+DEFAULT_MAX_CONCURRENCY = max(1, cpu_count() - 2)
 ROOT_DIR = Path(__file__).parent
 ASSET_DIR = ROOT_DIR / 'assets'
 WGS84_CRS = 'EPSG:4326'
