@@ -1,11 +1,20 @@
+import json
 import os
 from multiprocessing import cpu_count
 from pathlib import Path
+
 import platformdirs
 
 __all__ = [
+    "DEBUG",
     "ROOT_DIR",
     "ASSET_DIR",
+    "RAW_MANIFEST_CACHE_PATH",
+    "METADATA_API_URL",
+    "DATA_SERVER_URL",
+    "METADATA_API_TIMEOUT",
+    "DATA_DOWNLOAD_TIMEOUT",
+    "SUPPORTED_ISO3_CODES",
     "WGS84_CRS",
     "RED",
     "BLUE",
@@ -14,10 +23,25 @@ __all__ = [
     "get_max_concurrency",
 ]
 
+DEBUG = False
+
 DEFAULT_CACHE_DIR = Path(platformdirs.user_cache_dir(appname="worldpoppy"))
 DEFAULT_MAX_CONCURRENCY = max(1, cpu_count() - 2)
 ROOT_DIR = Path(__file__).parent
 ASSET_DIR = ROOT_DIR / 'assets'
+RAW_MANIFEST_CACHE_PATH = ASSET_DIR / "raw_api_manifest.feather"
+
+METADATA_API_URL = "https://hub.worldpop.org/rest/data"
+DATA_SERVER_URL = "https://data.worldpop.org/GIS"
+METADATA_API_TIMEOUT = 10.0
+DATA_DOWNLOAD_TIMEOUT = 10.0
+
+with open(ASSET_DIR / 'global_nb_db.json') as file:  # TODO add to asset README (https://hub.worldpop.org/data/licence.txt)
+    _nb_dict = json.loads(file.read())
+    _iso3_codes = _nb_dict.keys()
+
+SUPPORTED_ISO3_CODES = sorted(_iso3_codes)
+
 WGS84_CRS = 'EPSG:4326'
 
 RED = 'xkcd:brick red'
