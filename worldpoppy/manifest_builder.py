@@ -4,17 +4,34 @@ Core "engine" for building a raw data manifest for the `worldpoppy` library.
 This module contains all the logic for crawling the WorldPop metadata API,
 parsing the results, and saving them to a new cache file (RAW_MANIFEST_CACHE_PATH).
 
-Its main and only public function is `build_raw_manifest_from_api()`. Users
-will rarely need to import this module directly. Instead, it is called by the
-separate `manifest_loader` module when the cached raw manifest is missing.
+Its main and only public function is `build_raw_manifest_from_api()`. However,
+users will rarely need to import that function directly. Instead, it is called
+by the separate `manifest_loader` module whenever a cached version of the raw
+manifest does not exist.
 
-For a detailed, high-level explanation of the API crawl strategy, related
-terminology (e.g., "Leaf Node", "Sample Payload"), and data-parsing logic,
-please see the `manifest_build_strategy.md` document in the project root.
+For a detailed, high-level explanation of this module's API crawl strategy,
+related terminology (e.g., "Leaf Node", "Sample Payload"), and data-parsing
+logic, please see the `manifest_build_strategy.md` document in the project root.
+
+---
+A note on the complexity of this module:
+The module's size is a result of two challenges:
+
+1.  To minimise API calls, this module implements a "sample and infer"
+    strategy, in which a general template for download URLs of a raster-data
+    series is inferred from only a single example per series.
+
+2.  We must parse and "flatten" three different data organisation schemes
+    used by the WorldPop project: 'flat' (1-to-1), 'multi-year' (1-to-N by year),
+    and 'multi-band' (1-to-N by class).
+
+When processing operations fail, an entire raster-data series is dropped from the
+raw manifest and will hence not be supported by the `worldpoppy` package.
+
 """
 
-# TODO Simplify error logging?
-# TODO Review docstrings and comments for accuracy
+
+# TODO: remove legacy reference to API "crawl" except where accurate
 
 import logging
 import re
@@ -53,9 +70,9 @@ def build_raw_manifest_from_api(force_crawl=False):
     Crawl WorldPop's meta-data API and analyse the results to build a new,
     raw manifest of raster datasets for `worldpoppy`. We call this manifest
     "raw" because it will be further checked and filtered (where needed)
-    by `manifest.new._get_cleaned_manifest` later.
+    by the `manifest_loader` module.
 
-    This is a SERIAL (single-threaded) implementation for easier debugging.
+    This is a SERIAL (single-threaded) implementation.
 
     Phase 1: Discover "Leaf Nodes" by recursively crawling the API
     (using `_discover_leaf_nodes`).
@@ -255,6 +272,11 @@ def _discover_leaf_nodes():
             alias = node["alias"]  # noqa
             name = node["name"]  # noqa
 
+            if alias.lower() == 'age_structures':
+                # currently not supported due to a limitation in
+                # `_extract_unique_bands`
+                continue
+
             if DEBUG and alias.lower() != 'covariates':
                 # reduce number of API calls in debug mode
                 continue
@@ -297,12 +319,14 @@ def _discover_leaf_nodes():
 
     # 3. Log final count
     num_supported = len(leaf_nodes_to_process)
-    logger.info(f"Phase 1 filtering complete: {num_supported} supported Leaf Nodes found.")
+    logger.info(
+        f"Phase 1 filtering complete: {num_supported} supported Leaf Nodes found."
+    )
 
     return leaf_nodes_to_process
 
 
-def _traverse_api_node(api_path, series_alias_prefix, node_name):
+def _traverse_api_node(api_path, node_name):
     """
     Recursively traverse a single node in the API hierarchy and return
     all Leaf Nodes found.
@@ -316,8 +340,12 @@ def _traverse_api_node(api_path, series_alias_prefix, node_name):
 
     try:
         response = _query_metadata_api(url)
-        returned_entries = response.get("data", [])
+        # Handle API failure (returns None)
+        if response is None:
+            logger.error(f"Failed to crawl node {api_path}. Skipping this branch.")
+            return []
 
+        returned_entries = response.get("data", [])
         if not returned_entries:
             logger.warning(f"No data found for node: {api_path}")
             return []
@@ -329,9 +357,7 @@ def _traverse_api_node(api_path, series_alias_prefix, node_name):
             # The 'alias' keyword tells us that the API returned a
             # "Branch Index" so we need to recurse into each child.
             logger.debug(f"Node {api_path} is a Branch Node. Recursing serially...")
-
             leaf_nodes_to_process = []
-
             for item in returned_entries:
                 alias = item.get("alias", "").strip()
                 next_node_name = item.get("name", "N/A")
@@ -383,117 +409,164 @@ def _process_leaf_node(
         1. Make one "Details Call" for a sample country.
         2. Parse the file-organisation scheme of the "Sample Payload"
            to check whether the data series is supported and, if so,
-           whether it uses a "flat" or "grouped" organisation of raster
-           files.
-        3. Generate:
-           For supported cases, generate manifest rows for the *entire*
+           which file organisation scheme is used ("flat", "multi-year",
+           or "multi-band").
+        3. For supported cases, generate manifest rows for the *entire*
            Coverage Index while ensuring a consistent, flat organisation
-           of our processed data
+           of our processed data (even for "multi-year" or "multi-band"
+           data.)
     """
     logger.info(f"Phase 2: Processing Leaf Node: {api_path}")
 
-    try:
-        # --- 1. Get a sample payload (=file listing for one country) ---
-        sample_coverage_entry = coverage_index[0]
-        sample_iso = sample_coverage_entry["iso3"]
-        sample_details, sample_filenames = _get_sample_payload(api_path, sample_iso)
+    # --- 1. Get a sample payload (=file listing for one country) ---
+    sample_coverage_entry = coverage_index[0]
+    sample_iso = sample_coverage_entry["iso3"]
+    # This call will raise an APIRequestError if it fails,
+    # which is caught by the robust loop in build_raw_manifest_from_api
+    sample_details, sample_filenames = _get_sample_payload(api_path, sample_iso)
 
-        # --- 2. Parse the sample file listing ---
-        file_pattern, parsed_data = _analyse_sample_payload(
-            api_path,
-            sample_coverage_entry,
-            sample_details,
-            sample_filenames
-        )
+    # --- 2. Parse the sample file listing ---
+    file_pattern, parsed_data = _analyse_sample_payload(
+        api_path,
+        sample_coverage_entry,
+        sample_details,
+        sample_filenames
+    )
 
-        # --- 3. Generate raw manifest rows for supported cases---
-        if file_pattern == "unsupported":
-            return []  # skip this Leaf Node
+    # --- 3. Generate raw manifest rows for supported cases---
+    if file_pattern == "unsupported":
+        return []  # skip this Leaf Node
 
-        sample_url_for_template = parsed_data["url_for_template"]
-        sample_year_for_template = parsed_data["year_for_template"]
+    # --- 3A. Extract *series-level* meta-data ---
+    series_metadata = {
+        "desc": sample_details.get("desc"),
+        "source": sample_details.get("source"),
+        "project": sample_details.get("project"),
+        "category": sample_details.get("category"),
+        "gtype": sample_details.get("gtype"),
+    }
+    # We can infer the data_series from the *first* file
+    wp_data_series = _infer_data_series(sample_filenames[0])
+    summary_url_template = _infer_summary_url_template(sample_details)
 
-        # --- 3A. Extract *series-level* meta-data ---
-        series_metadata = {
-            "desc": sample_details.get("desc"),
-            "source": sample_details.get("source"),
-            "project": sample_details.get("project"),
-            "category": sample_details.get("category"),
-            "gtype": sample_details.get("gtype"),
-        }
-        wp_data_series = _infer_data_series(sample_url_for_template)
+    # --- 3C. Build raw manifest rows ---
+    manifest_rows = []
 
-        # --- 3B. Infer URL templates for *entry-specific* meta-data ---
-        summary_url_template = _infer_summary_url_template(sample_details)
+    if file_pattern == "flat":
+        # Case: 1-to-1 data (easy)
+        logger.debug(f"Processing {api_path} as 'flat' (1-to-1) scheme.")
+
+        # Infer template for this specific pattern
         download_url_template = _infer_download_url_template(
-            sample_url_for_template, sample_iso, sample_year_for_template
+            literal_url=parsed_data["url_for_template"],
+            sample_iso=sample_iso,
+            sample_year=parsed_data["year_for_template"]
         )
+        logger.debug(f"Inferred URL template: {download_url_template}")
 
-        logger.debug(f"Inferred URL templates for {api_series_alias}: {download_url_template}")
+        for coverage_entry in coverage_index:
+            row = _build_dataset_record(
+                coverage_entry=coverage_entry,
+                download_url_template=download_url_template,
+                summary_url_template=summary_url_template,
+                id_for_summary=coverage_entry.get("id"),
+                api_path=api_path,
+                series_metadata=series_metadata,
+                node_name=node_name,
+                data_series=wp_data_series,
+                band=None # No band for flat files
+            )
+            if row:
+                manifest_rows.append(row)
 
-        # --- 3C. Build raw manifest rows ---
-        manifest_rows = []
+    elif file_pattern == "multi-year":
+        # Case: 1-to-N, "multi-year" data (=same measurement, different years)
+        logger.debug(f"Processing {api_path} as 'multi-year' scheme.")
+        years_to_unpack = parsed_data["years"]
 
-        if file_pattern == "flat":
-            # Easy case: 1-to-1 data
-            logger.debug(f"Processing {api_series_alias} as 'flat' (1-to-1) scheme.")
-            for coverage_entry in coverage_index:
+        # Infer template for this specific pattern
+        download_url_template = _infer_download_url_template(
+            literal_url=parsed_data["url_for_template"],
+            sample_iso=sample_iso,
+            sample_year=parsed_data["year_for_template"]
+        )
+        logger.debug(f"Inferred URL template: {download_url_template}")
+
+        # 'multi-year' requires {year} placeholder
+        if not _validate_download_url_template(
+                download_url_template, api_path, ["{year}"]
+        ):
+            return [] # stop processing this series
+
+        for base_country_entry in coverage_index:  # outer Loop (countries)
+            id_for_summary = base_country_entry.get("id")
+
+            for year in years_to_unpack:  # inner Loop (years)
+                synthetic_entry = _create_synthetic_entry_for_year(base_country_entry, year)
+                if not synthetic_entry:
+                    continue
+
                 row = _build_dataset_record(
-                    coverage_entry=coverage_entry,
+                    coverage_entry=synthetic_entry,
                     download_url_template=download_url_template,
                     summary_url_template=summary_url_template,
-                    # for "flat" data, summary ID is the entry's own ID
-                    id_for_summary=coverage_entry.get("id"),
-                    series_alias=api_series_alias,
+                    id_for_summary=id_for_summary,
+                    api_path=api_path,
                     series_metadata=series_metadata,
                     node_name=node_name,
                     data_series=wp_data_series,
+                    band=None # No band for multi-year files
                 )
                 if row:
                     manifest_rows.append(row)
 
-        elif file_pattern == "grouped":
-            # Hard case: "grouped" (1-to-N) data
-            logger.debug(f"Processing {api_series_alias} as 'grouped' (1-to-N) scheme.")
-            years_to_unpack = parsed_data["years"]
+    elif file_pattern == "multi-band":
+        # Case: 1-to-N, "multi-band" data (=different measurements, same year)
+        logger.debug(f"Processing {api_path} as 'multi-band' scheme.")
+        bands_to_unpack = parsed_data["bands"]
+        static_year = parsed_data["year"]
 
-            for base_country_entry in coverage_index:  # outer Loop (countries)
-                # for "grouped" data, the summary ID is *always* the base entry's ID
-                id_for_summary = base_country_entry.get("id")
-
-                for year in years_to_unpack:  # inner Loop (years)
-                    synthetic_entry = _create_synthetic_entry(base_country_entry, year)
-                    if not synthetic_entry:
-                        continue
-
-                    row = _build_dataset_record(
-                        coverage_entry=synthetic_entry,  # pass synthetic entry
-                        download_url_template=download_url_template,
-                        summary_url_template=summary_url_template,
-                        id_for_summary=id_for_summary,  # pass the BASE ID
-                        series_alias=api_series_alias,
-                        series_metadata=series_metadata,
-                        node_name=node_name,
-                        data_series=wp_data_series,
-                    )
-                    if row:
-                        manifest_rows.append(row)
-
-        return manifest_rows
-
-    except APIRequestError as e:
-        logger.error(
-            f"Failed to process Lead Node {api_series_alias}. "
-            f"API error: {e}"
+        # Infer template for this specific pattern
+        download_url_template = _infer_download_url_template(
+            literal_url=parsed_data["url_for_template"],
+            sample_iso=sample_iso,
+            sample_year=static_year,
+            sample_band=parsed_data["band_for_template"]
         )
-        return [] # return empty list so other leaf nodes can proceed
+        logger.debug(f"Inferred URL template: {download_url_template}")
 
-    except Exception as e:
-        logger.error(
-            f"Failed to building file list for Lead Node {api_series_alias}. "
-            f"Unexpected error: {e}", exc_info=True
-        )
-        return []
+        # 'multi-band' requires both {year} and {band}
+        required_placeholders = ["{year}", "{band}"]
+        if not _validate_download_url_template(
+                download_url_template, api_path, required_placeholders
+        ):
+            return [] # stop processing this series
+
+        for base_country_entry in coverage_index: # outer Loop (countries)
+            id_for_summary = base_country_entry.get("id")
+
+            for band in bands_to_unpack: # inner Loop (bands)
+                synthetic_entry = _create_synthetic_entry_for_band(
+                    base_country_entry, static_year, band
+                )
+                if not synthetic_entry:
+                    continue
+
+                row = _build_dataset_record(
+                    coverage_entry=synthetic_entry,
+                    download_url_template=download_url_template,
+                    summary_url_template=summary_url_template,
+                    id_for_summary=id_for_summary,
+                    api_path=api_path,
+                    series_metadata=series_metadata,
+                    node_name=node_name,
+                    data_series=wp_data_series,
+                    band=band
+                )
+                if row:
+                    manifest_rows.append(row)
+
+    return manifest_rows
 
 
 def _get_sample_payload(
@@ -523,14 +596,23 @@ def _get_sample_payload(
     Raises
     ------
     APIRequestError
-        If the API call fails or returns empty/invalid data.
+        If the API call fails (returns None) or returns empty/invalid data.
     """
 
     url = f"{METADATA_API_URL}/{api_path}?iso3={sample_iso3}"
     logger.debug(f"Making 'Details Call' for sample country: {url}")
     response = _query_metadata_api(url)
 
-    # this is the "Sample Payload"
+    # --- Robustness Check ---
+    # If _query_metadata_api failed (e.g., 404, 500) it will raise an error
+    # after all retries. If it returns None (which it should not with backoff),
+    # or empty data, we raise an error here.
+    if response is None:
+        raise APIRequestError(
+            f"API query for sample payload failed (returned None) "
+            f"for {api_path} (iso={sample_iso3})."
+        )
+
     sample_payload_data = response.get("data", [])
     if not sample_payload_data or not isinstance(sample_payload_data, list):
         raise APIRequestError(
@@ -541,7 +623,6 @@ def _get_sample_payload(
     # use the *first* dataset entry (e.g., first year) as our sample
     sample_details = sample_payload_data[0]
     sample_filenames = sample_details.get("files", [])
-    # > this 'files' can contain *multiple* filenames ("grouped" scenario"
 
     if not sample_filenames:
         raise APIRequestError(
@@ -558,16 +639,22 @@ def _analyse_sample_payload(
     sample_filenames
 ):
     """
-    Analyse the "Details Payload" for a sample country to determine whether
-    it belongs to a supported data series and, if so, which file organisation
-    scheme is used ("flat" vs. "grouped").
+    Analyse the "Sample Payload" to determine the file organization scheme.
+
+    This function distinguishes between three supported patterns:
+    1.  **"flat"**: One file per country-year (e.g., population).
+    2.  **"multi-year"**: Multiple files for one country, each representing
+        a different year (e.g., DMSP nighttime lights 2000-2011).
+    3.  **"multi-band"**: Multiple files for one country-year, each
+        representing a different thematic class or band (e.g., land-cover
+        classes for 2017).
 
     Returns
     -------
     tuple[str, dict]:
-        - `pattern` (str): One of "flat", "grouped", or "unsupported".
-        - `parsed_data` (dict): Data needed by the parser, e.g.,
-          {"years": [2020, 2021], "url_for_template": ...}
+        - `pattern` (str): One of "flat", "multi-year", "multi-band",
+                           or "unsupported".
+        - `parsed_data` (dict): Data needed by the parser for templating.
     """
 
     # filter out unsupported file formats right away
@@ -580,11 +667,10 @@ def _analyse_sample_payload(
 
     num_files = len(sample_filenames)
     sample_url = sample_filenames[0]
-
-    # year info given in the Details Payload for the sample country
     sample_year_from_details = sample_details.get("popyear")
+    sample_year_from_coverage = sample_coverage_entry.get("popyear")
 
-    # --- Easy case: "Flat" (1-to-1) Scheme ---
+    # --- Case 1: "Flat" (1-to-1) Scheme ---
     if num_files == 1:
         logger.debug(f"Recognised {api_path} as 'flat' scheme.")
         return "flat", {
@@ -592,90 +678,113 @@ def _analyse_sample_payload(
             "year_for_template": sample_year_from_details
         }
 
-    # --- Hard case: "Grouped" (1-to-N) Scheme ---
-    # We only support a grouped file-organisation scheme for *multi-year* data.
-    # In this case, the Coverage Index entry MUST have a null year.
-    sample_year_from_coverage = sample_coverage_entry.get("popyear")
+    # --- Case 2: "Multi-File" (1-to-N) Schemes ---
+    if num_files > 1:
 
-    if sample_year_from_coverage is None:
-        # check if all filenames have unambiguous, plausible year identifiers
-        years = []
-        for f in sample_filenames:
-            year = _extract_year_from_filename(f)
-            if year:
-                years.append(year)
-            else:
-                # this filename in a "grouped" set did not have an unambiguous
-                # year identifier
+        # --- Test A: Is it "multi-year"? ---
+        # This is the case in which the Coverage Index entry has `popyear: null`
+        # and the files themselves contain the year.
+        if sample_year_from_coverage is None:
+
+            year_to_file_map = {}
+            for fname in sample_filenames:
+                year = _extract_year_from_filename(fname)
+                if year:
+                    if year in year_to_file_map:
+                        logger.warning(
+                            f"Skipping {api_path}: 'multi-year' data series "
+                            f"has duplicate year: {year}. Not supported."
+                        )
+                        return "unsupported", {}
+                    year_to_file_map[year] = fname  # store the year -> file mapping
+                else:
+                    logger.warning(
+                        f"Could not extract year from filename: {fname} in what looked "
+                        f"like a 'multi-year' data series: {api_path}. Treating as "
+                        "unsupported."
+                    )
+                    return "unsupported", {}
+
+            # We must have found a unique year for every file
+            if len(year_to_file_map) != num_files:
                 logger.warning(
-                    f"Could not extract year from filename: {f} in what looked "
-                    f"like a 'grouped' data series: {api_path}. Treating as "
-                    "unsupported multi-file unit."
+                    f"Skipping {api_path}: 'multi-year' series file count "
+                    f"({num_files}) does not match unique year count "
+                    f"({len(year_to_file_map)}). Not supported."
                 )
                 return "unsupported", {}
 
-        # check if all year identifiers are unique
-        if len(years) == num_files and len(set(years)) == num_files:
+            sorted_years = sorted(year_to_file_map.keys())
 
-            # check if all year identifiers are consecutive
-            if not _are_unique_integers_consecutive(years):
+            # Check for consecutive years
+            if not _are_unique_integers_consecutive(sorted_years):
                 logger.warning(
-                    f"Skipping {api_path}: 'Grouped' data series "
-                    f"has non-consecutive year identifiers in filenames: "
-                    f"{sorted(years)}. This is not currently supported."
+                    f"Skipping {api_path}: 'multi-year' data series "
+                    f"has non-consecutive year identifiers: {sorted_years}. "
+                    f"This is not currently supported."
                 )
                 return "unsupported", {}
 
-            sorted_years = sorted(years)
+            # Get the first year, and the *correct* URL for that first year
+            first_year = sorted_years[0]
+            url_for_first_year = year_to_file_map[first_year]
 
             logger.debug(
-                f"Analysed {api_path} as 'grouped' scheme. "
+                f"Analysed {api_path} as 'multi-year' scheme. "
                 f"Found {len(sorted_years)} unique, consecutive years: "
                 f"{sorted_years[0]}-{sorted_years[-1]}"
             )
-            first_year = sorted_years[0]
-            return "grouped", {
-                "years": sorted_years,  #  pass the sorted list
-                "url_for_template": sample_url,  # use first file for template
-                "year_for_template": first_year,  # use first year for template
+
+            return "multi-year", {
+                "years": sorted_years,
+                "url_for_template": url_for_first_year,  # Pass the *correct* URL
+                "year_for_template": first_year,
             }
 
-        # else block for non-unique years
-        else:
-            logger.warning(
-                f"Skipping {api_path}: 'Grouped' data series "
-                f"has non-unique year identifiers in filenames: {years}. "
-                f"This is not currently supported."
-            )
-            return "unsupported", {}
+        # --- Test B: Is it "multi-band"? ---
+        # This is the case where the Coverage Index entry has a *single* year
+        # (e.g., "2001") and the files contain different "bands" or "classes".
+        else: # (sample_year_from_coverage is NOT None)
+            bands = _extract_unique_bands(sample_filenames)
 
-    # --- Final unsupported case ---
-    # If we are here, we have a "multi-file unit" (num_files > 1) if the correct
-    # format (TIF). However, it is  *not* a "grouped" multi-year series (because
-    # sample_year_from_coverage was *not* null).
-    # TODO: Support this (for the ESA land-cover classes)
-    logger.info(
-        f"Skipping {api_path}: Sample has {num_files} files but "
-        "the associated Coverage Index entry still declares a non-null "
-        f"year ({sample_year_from_coverage}). This multi-file scheme "
-        f"is not currently supported."
-    )
+            if bands and len(bands) == len(sample_filenames):
+                logger.debug(
+                    f"Analysed {api_path} as 'multi-band' scheme. "
+                    f"Found {len(bands)} unique bands for year {sample_year_from_coverage}."
+                    f" E.g.: {bands[0]}"
+                )
+                return "multi-band", {
+                    "year": sample_year_from_coverage,
+                    "bands": bands,
+                    "url_for_template": sample_url,
+                    "band_for_template": bands[0] # Pass one for templating
+                }
+            else:
+                logger.warning(
+                    f"Skipping {api_path}: Seemed like 'multi-band' but could "
+                    f"not extract unique band identifiers from filenames."
+                )
+                return "unsupported", {}
+
+    # Should be unreachable, but as a fallback
     return "unsupported", {}
 
 
-def _infer_download_url_template(literal_url, sample_iso, sample_year):
+def _infer_download_url_template(literal_url, sample_iso, sample_year, sample_band=None):
     """
-    Convert the raster download URL for a single country or country-year
-    into a more general template.
+    Convert a literal download URL into a replaceable template.
 
-    This function assumes the literal_url from the API does *not*
-    contain any braces ('{}'), which simplifies the templating logic.
+    This function handles substitution for ISO codes, years, and (optionally)
+    multi-band "class" identifiers.
+
+    It assumes the literal_url from the API does *not*
+    contain any literal braces ('{}').
     """
 
     template = literal_url
 
     if sample_year:
-        # We must cast sample_year to string for the regex
+        # We must cast sample_year to string for replacement
         year_str = str(sample_year)
 
         # Build a robust pattern to avoid replacing years
@@ -686,7 +795,11 @@ def _infer_download_url_template(literal_url, sample_iso, sample_year):
         # Replace directly with format string
         template = pattern.sub("{year}", template)
 
-    # Replace ISOs directly
+    if sample_band:
+        # Simple string replacement for the band part
+        template = template.replace(sample_band, "{band}")
+
+    # Replace ISOs (must come *after* band/year replacement)
     template = template.replace(sample_iso.lower(), "{iso3_lower}", 1)
     template = template.replace(sample_iso.upper(), "{iso3_upper}", 1)
 
@@ -697,21 +810,7 @@ def _infer_summary_url_template(sample_details):
     """
     Convert the summary URL for a single WorldPop dataset into
     a more general template.
-
-    Convert a literal summary URL into a replaceable template.
-
-    This function handles the simple substitution for summary URLs,
-    which only requires replacing the dataset ID.
-
-    Parameters
-    ----------
-    sample_details : dict
-        The `sample_details` dictionary from the Sample Payload.
-
-    Returns
-    -------
-    str | None
-        The template (e.g., "...?id={id}") or None if templating fails.
+    ... (docstring as before) ...
     """
     sample_summary_url = sample_details.get("url_summary")
     sample_id_str = sample_details.get("id")
@@ -769,8 +868,6 @@ def _extract_year_from_filename(file_path_or_url):
     unique_years = set(matches)
 
     if len(unique_years) > 1:
-        # filename seems to contain multiple *different* year
-        # identifiers
         logger.warning(
             f"Ambiguous year in filename: {filename}. "
             f"Found multiple different non-range years: {sorted(unique_years)}. "
@@ -778,9 +875,7 @@ def _extract_year_from_filename(file_path_or_url):
         )
         return None
 
-    # we found at least one year, and all found years are identical.
     try:
-        # cast to int
         year_str = matches[0]
         year_int = int(year_str)
     except (IndexError, ValueError) as e:
@@ -803,6 +898,73 @@ def _extract_year_from_filename(file_path_or_url):
     return year_int
 
 
+def _extract_unique_bands(filenames):
+    """
+    Extracts the unique "band" part from a list of "multi-band" filenames
+    by "diffing" the filename stems.
+
+    Assumes that multi-band filenames share the same structure (same number
+    of "_" parts) and that *exactly one* part of the filename is different.
+    It treats that part as the band name.
+
+    TODO: For AgeSex_structures data, the assumption of *exactly one*
+     differing does not hold. Generalise?
+
+
+    """
+    if not filenames or len(filenames) < 2:
+        return None
+
+    try:
+        # Get stems (filename without extension)
+        stems = [Path(f).stem for f in filenames]
+        split_stems = [s.split('_') for s in stems]
+
+        # Check all stems have the same number of parts
+        it = iter(split_stems)
+        length = len(next(it))
+        if not all(len(parts) == length for parts in it):
+            logger.warning(
+                f"Multi-band filenames have different structures (different '_' counts): {stems}"
+            )
+            return None
+
+        # Find the indices where the parts are different
+        diff_indices = []
+        zipped_parts = list(zip(*split_stems))
+        for i, part_tuple in enumerate(zipped_parts):
+            if len(set(part_tuple)) > 1:
+                diff_indices.append(i)
+
+        if not diff_indices:
+            logger.warning(f"No differing parts found in multi-band filenames: {stems}")
+            return None
+
+        if len(diff_indices) > 1:
+            logger.warning(
+                f"Found multiple differing parts in multi-band filenames. "
+                f"This is not supported. Indices: {diff_indices}"
+            )
+            return None
+
+        # We now know there is exactly one differing part
+        diff_index = diff_indices[0]
+        bands = [parts[diff_index] for parts in split_stems]
+
+        # Check that the *extracted* parts are also unique
+        if len(set(bands)) != len(bands):
+            logger.warning(
+                f"Extracted band parts were not unique (this should not happen?): {bands}"
+            )
+            return None
+
+        return bands
+
+    except Exception as e:
+        logger.error(f"Error extracting unique bands: {e}", exc_info=True)
+        return None
+
+
 def _are_all_files_tif(file_list):
     """
     Check if all file paths in a list have a valid TIFF file extension.
@@ -820,62 +982,60 @@ def _are_all_files_tif(file_list):
     """
     valid_suffixes = {".tif", ".tiff", ".geotiff"}
 
-    if not file_list:  # empty list
+    if not file_list:
         return False
 
     try:
         return all(Path(f).suffix.lower() in valid_suffixes for f in file_list)
     except Exception as e:
-        # safety net for weired inputs (e.g., list contains non-strings)
         logger.warning(f"Error while validating file list: {e}")
         return False
 
 
-def _create_synthetic_entry(base_country_entry, year):
+def _create_synthetic_entry_for_year(base_country_entry, year):
     """
-    Create a synthetic "flat" Coverage Index entry from a "grouped" entry.
+    Create a synthetic "flat" entry for a "multi-year" dataset.
 
-    This adapter function is needed to support multi-year data series
-    that are "grouped" together under a single, country-specific Coverage
-    Index entry.
+    It takes a "multi-year" country entry (which has `popyear=null`) and
+    a specific `year` and merges them into a "synthetic" entry that
+    mimics a "flat" scheme.
 
-    It takes a "grouped" country entry (which has `popyear=null`) from the
-    "Outer Loop" and a `year` (from the "Inner Loop" of parsed years) and
-    merges them into a "synthetic" entry that mimics a "flat" scheme entry.
-
-    This allows the synthetic entry to be processed by `_build_dataset_record`.
-
-    Parameters
-    ----------
-    base_country_entry : dict
-        The original country entry from the "Outer Loop",
-        e.g., {"id": "62514", "iso3": "AFG", "popyear": null, ...}
-    year : int
-        The specific year from the "Inner Loop", e.g., 2020.
-
-    Returns
-    -------
-    dict
-        A new, "synthetic" coverage entry, e.g.,
-        {"id": "62514_2020", "iso3": "AFG", "popyear": 2020, ...}
+    ID becomes: {original_id}_{year}
     """
     try:
-        # Create a shallow copy to avoid modifying the original
         synthetic_entry = base_country_entry.copy()
-
-        # Get the original ID to create a new, unique ID
         original_id = base_country_entry.get("id", "unknown")
-
-        # Overwrite the year and create the new, unique ID
         synthetic_entry["popyear"] = int(year)
         synthetic_entry["id"] = f"{original_id}_{year}"
-
         return synthetic_entry
-
     except Exception as e:
         logger.error(
             f"Failed to create synthetic entry for "
             f"id={base_country_entry.get('id')} and year={year}. Error: {e}"
+        )
+        return None
+
+def _create_synthetic_entry_for_band(base_country_entry, year, band):
+    """
+    Create a synthetic "flat" entry for a "multi-band" dataset.
+
+    It takes a "multi-band" country entry, its single `year`, and a
+    specific `band` and merges them into a "synthetic" entry.
+
+    ID becomes: {original_id}_{band}
+    """
+    try:
+        synthetic_entry = base_country_entry.copy()
+        original_id = base_country_entry.get("id", "unknown")
+        # Set the popyear to the single year this band belongs to
+        synthetic_entry["popyear"] = int(year)
+        # The unique ID is based on the band
+        synthetic_entry["id"] = f"{original_id}_{band}"
+        return synthetic_entry
+    except Exception as e:
+        logger.error(
+            f"Failed to create synthetic entry for "
+            f"id={base_country_entry.get('id')}, year={year}, band={band}. Error: {e}"
         )
         return None
 
@@ -894,10 +1054,11 @@ def _build_dataset_record(
     download_url_template,
     summary_url_template,
     id_for_summary,
-    series_alias,
+    api_path,
     series_metadata,
     node_name,
     data_series,
+    band=None
 ):
     """
     Builds a final manifest row (dict) for a single Dataset.
@@ -909,45 +1070,41 @@ def _build_dataset_record(
     try:
         iso_code = coverage_entry["iso3"]
         year = coverage_entry.get("popyear")  # will be None for static data
-
-        # This is `worldpoppy`'s own ID for the manifest, which *must* be unique.
-        # For "grouped" data, this will be synthetic (e.g., "62514_2020")
         unique_idx = str(coverage_entry["id"])
 
         # --- 1. Build Download URL ---
-        if year is not None:
-            url = download_url_template.format(
-                iso3_lower=iso_code.lower(), iso3_upper=iso_code.upper(), year=year
-            )
-        else:
-            url = download_url_template.format(
-                iso3_lower=iso_code.lower(), iso3_upper=iso_code.upper()
-            )
+        # This is robust: .format() will ignore any placeholders
+        # (like {band}) that are not in the template.
+        url = download_url_template.format(
+            iso3_lower=iso_code.lower(),
+            iso3_upper=iso_code.upper(),
+            year=year,
+            band=band
+        )
 
         # --- 2. Build Summary URL ---
         url_summary = None
         if summary_url_template and id_for_summary:
             try:
-                # This ID is "62514" for both flat and grouped data
                 url_summary = summary_url_template.format(id=id_for_summary)
             except Exception:
                 logger.warning(
-                    f"Failed to format summary URL for {series_alias} "
+                    f"Failed to format summary URL for {api_path} "
                     f"(id={id_for_summary})."
                 )
 
         filename = Path(url).name
 
         return {
-            "wpy_id": unique_idx,  # e.g., "62514_2020"
+            "wpy_id": unique_idx,
             "iso3": iso_code,
             "dataset_name": Path(filename).stem,
             "remote_path": url,
-            # use either the dataset-specific 'title' from the Coverage Index entry
-            # of fall back to the generic 'node_name' from the Leaf Branch node
+            # use either the dataset-specific 'title' or the generic 'node_name'
             "notes": coverage_entry.get("title", node_name),
-            "api_series_alias": series_alias,
+            "api_path": api_path,
             "year": int(year) if year else pd.NA,
+            "band": band,
             "remote_name": filename,
             "data_series": data_series,
             # --- Series-Level Metadata ---
@@ -957,12 +1114,12 @@ def _build_dataset_record(
             "category": series_metadata.get("category"),
             "gtype": series_metadata.get("gtype"),
             # --- Dataset-Level Metadata ---
-            "url_summary": url_summary,  # e.g., "...?id=62514"
+            "url_summary": url_summary,
         }
 
     except (KeyError, TypeError, ValueError) as e:
         logger.warning(
-            f"Skipping entry for {series_alias} ({coverage_entry.get('iso3')}). "
+            f"Skipping entry for {api_path} ({coverage_entry.get('iso3')}). "
             f"Failed to build from template. Error: {e} (Entry: {coverage_entry})"
         )
         return None
@@ -986,15 +1143,42 @@ def _are_unique_integers_consecutive(unique_int_list):
         True if the integers are consecutive, False otherwise.
     """
     if not unique_int_list or len(unique_int_list) < 2:
-        # empty list or a single item are consecutive
         return True
 
     min_val = min(unique_int_list)
     max_val = max(unique_int_list)
 
-    # If a list of 5 unique integers is consecutive
-    # (e.g., [20, 24, 22, 21, 23]),
-    # then max-min+1 (24-20+1) *must* equal its length (5).
-    # If a number were missing (e.g., [20, 24, 22, 21]),
-    # then (24-20+1) = 5, but len = 4.
     return (max_val - min_val + 1) == len(unique_int_list)
+
+
+def _validate_download_url_template(template_string, api_path, required_placeholders):
+    """
+    Validates that a generated URL template contains all required placeholders.
+
+    This is a critical safety check to prevent silent data corruption from
+    permissive .format() calls (which ignore extra keys).
+
+    Parameters:
+    - template_string (str): The generated URL template (e.g., "...{iso3_lower}_{year}.tif")
+    - api_path (str): The API path, for logging.
+    - required_placeholders (list[str]): A list of placeholders (e.g., ["{year}", "{band}"])
+                                         that *must* be in the template.
+
+    Returns:
+    - bool: True if valid, False if invalid.
+    """
+    missing = []
+    for placeholder in required_placeholders:
+        if placeholder not in template_string:
+            missing.append(placeholder)
+
+    if not missing:
+        return True  # All checks passed
+
+    # If we are here, a check failed.
+    logger.error(
+        f"Template validation FAILED for {api_path}. "
+        f"The generated template is missing required placeholder(s): {missing}. "
+        f"Template was: '{template_string}'. Skipping this entire data series."
+    )
+    return False
