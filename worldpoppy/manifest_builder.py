@@ -30,11 +30,9 @@ raw manifest and will hence not be supported by the `worldpoppy` package.
 
 """
 
-
 # TODO: remove legacy reference to API "crawl" except where accurate
 
 import logging
-import re
 from datetime import datetime
 from math import floor
 
@@ -54,9 +52,6 @@ from worldpoppy.manifest_utils import *
 from worldpoppy.tracking import api_query_log
 
 logger = logging.getLogger(__name__)
-
-year_extract_pattern = re.compile(r"(?<!\d{4}_)(\d{4})(?!_\d{4})")
-# > lookback and lookahead used to exclude year ranges (e.g., "2000_2020")
 
 
 class APIRequestError(Exception):
@@ -442,10 +437,9 @@ def _process_leaf_node(
         "desc": sample_details.get("desc"),
         "source": sample_details.get("source"),
         "project": sample_details.get("project"),
-        "category": sample_details.get("category"),
+        "category": sample_details.get("category").strip(),
     }
-    # We can infer the data_series from the *first* file
-    wp_data_series = infer_data_series(sample_filenames[0])
+
     summary_url_template = _infer_summary_url_template(sample_details)
 
     # --- 3C. Build raw manifest rows ---
@@ -472,7 +466,6 @@ def _process_leaf_node(
                 api_path=api_path,
                 series_metadata=series_metadata,
                 node_name=node_name,
-                data_series=wp_data_series,
                 band=None # No band for flat files
             )
             if row:
@@ -513,7 +506,6 @@ def _process_leaf_node(
                     api_path=api_path,
                     series_metadata=series_metadata,
                     node_name=node_name,
-                    data_series=wp_data_series,
                     band=None # No band for multi-year files
                 )
                 if row:
@@ -559,7 +551,6 @@ def _process_leaf_node(
                     api_path=api_path,
                     series_metadata=series_metadata,
                     node_name=node_name,
-                    data_series=wp_data_series,
                     band=band
                 )
                 if row:
@@ -699,8 +690,8 @@ def _analyse_sample_payload(
                 else:
                     logger.warning(
                         f"Could not extract year from filename: {fname} in what looked "
-                        f"like a 'multi-year' data series: {api_path}. Treating as "
-                        "unsupported."
+                        f"like a 'multi-year' data series: {api_path}. Treating series "
+                        "as unsupported."
                     )
                     return "unsupported", {}
 
@@ -887,7 +878,6 @@ def _build_dataset_record(
     api_path,
     series_metadata,
     node_name,
-    data_series,
     band=None,
 ):
     """
@@ -931,17 +921,16 @@ def _build_dataset_record(
             "dataset_name": Path(filename).stem,
             "remote_path": url,
             # use either the dataset-specific 'title' or the generic 'node_name'
-            "notes": coverage_entry.get("title", node_name),
+            "api_entry_title": coverage_entry.get("title", node_name),
             "api_path": api_path,
             "year": int(year) if year else pd.NA,
             "band": band,
             "remote_name": filename,
-            "data_series": data_series,
             # --- Series-Level Metadata ---
-            "desc": series_metadata.get("desc"),
+            "series_desc": series_metadata.get("desc"),
+            "series_category": series_metadata.get("category"),
             "source": series_metadata.get("source"),
             "project": series_metadata.get("project"),
-            "category": series_metadata.get("category"),
             # --- Dataset-Level Metadata ---
             "url_summary": url_summary,
         }
