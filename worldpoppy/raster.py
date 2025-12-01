@@ -161,7 +161,6 @@ def wp_raster(
     other_read_kwargs = {} if other_read_kwargs is None else other_read_kwargs
 
     # --- Parse the area of interest ---
-    # (This logic is correct and unchanged)
     if isinstance(aoi, (list, tuple)):
         if not isinstance(aoi[0], str):
             _validate_bbox(aoi)
@@ -220,12 +219,9 @@ def wp_raster(
             return None
 
         # --- Static product ---
-        # In this case, meta-data validation is performed solely *within*
-        # the stand-alone `merge_rasters` function (which
+        # In this case, meta-data validation is performed only
+        # *within* the stand-alone `merge_rasters` function.
         if years is None:
-            # `merge_rasters` validates, merges, and builds its own "flat"
-            # metadata. It correctly consumes or preserves the attributes
-            # based on the `masked` flags we pass it.
             merged = merge_rasters(all_raster_paths, **shared_merge_kwargs)
             return merged.squeeze()
 
@@ -235,38 +231,15 @@ def wp_raster(
             year = int(mrow.year)  # convert from numpy type
             paths_by_year[year].append(path)
 
-        # In this case, we must validate raster meta-data for *all years*
-        # in one go (to catch inconsistencies across different years).
+        # In this case, we must validate the raster meta-data for files
+        # from *all years* in one go (to catch inconsistencies across years).
         logger.info("Validating meta-data consistency across all years...")
-        try:
-            all_src_metadata = [_read_raster_metadata(str(p)) for p in all_raster_paths]
-        except RasterReadError as e:
-            logger.error(f"A raster file is unreadable. Aborting. Error: {e}")
-            raise e
-
-        # This catches cross-year mismatches (e.g., _FillValue)
-        global_safe_attrs = _validate_raster_metadata(all_src_metadata)
-
-        # `global_safe_attrs` now holds what *exists* in the source files.
-        # But if the user *requested* masking/scaling, those attributes
-        # will be "consumed" by the data-loading path. We *must*
-        # remove them here to prevent lying about the final data's properties.
-
-        # If masking was requested, the _FillValue was consumed.
-        if (masked or mask_and_scale) and '_FillValue' in global_safe_attrs:
-            del global_safe_attrs['_FillValue']
-
-        # If scaling was requested, the scaling attrs were consumed.
-        if mask_and_scale:
-            if 'scale_factor' in global_safe_attrs:
-                del global_safe_attrs['scale_factor']
-            if 'add_offset' in global_safe_attrs:
-                del global_safe_attrs['add_offset']
+        global_safe_attrs = _validate_raster_metadata(all_raster_paths, masked, mask_and_scale)
 
         # Merge the actual rasters separately by year
         annual_rasters = []
         annual_history = {}
-        annual_source_meta = {}
+        annual_fnames = {}
 
         pbar = tqdm(
             paths_by_year.items(),
@@ -284,7 +257,7 @@ def wp_raster(
             # Save the (flat) metadata from each year's merge
             # *before* xr.concat can destroy it.
             annual_history[year] = merged.attrs.get('history', 'N/A')
-            annual_source_meta[year] = merged.attrs.get('source_metadata', {})
+            annual_fnames[year] = merged.attrs.get('input_files', 'N/A')
 
         # Stack years via `xr.concat`
         time_series = _concat_with_info(
@@ -299,11 +272,11 @@ def wp_raster(
         # We now re-build them from our "collected" dictionaries.
 
         time_series.attrs = {}  # nuke the empty/dropped attrs
-        time_series.attrs.update(global_safe_attrs)  # re-apply safe attrs
+        time_series.attrs.update(global_safe_attrs)  # re-apply the safe attrs
 
-        # Apply the *nested* metadata we collected
+        # Apply the *nested* history attribute we collected
         time_series.attrs['history'] = annual_history
-        time_series.attrs['source_metadata'] = annual_source_meta
+        time_series.attrs['input_files'] = annual_fnames
 
         return time_series.squeeze()
 
@@ -369,33 +342,29 @@ def merge_rasters(
 
     IncompatibleRasterError
         - If input rasters have mismatched Coordinate Reference Systems.
-        - If input rasters have mismatched `_FillValue` or `scale_factor` attributes.
+        - If input rasters have mismatched `_FillValue`, `scale_factor`,
+          or `add_offset` attributes.
     """
 
-    # --- Get all metadata (cheaply, from cache or lazy-read) ---
-    try:
-        metadata_list = [_read_raster_metadata(str(p)) for p in raster_fpaths]
-    except RasterReadError as e:
-        # catch read errors during the metadata-gathering phase
-        raise e
+    # --- Validate metadata ---
+    safe_attrs = _validate_raster_metadata(raster_fpaths, masked, mask_and_scale)
 
-    # --- Validate metadata (cheaply, in-memory) ---
-    safe_attrs = _validate_raster_metadata(metadata_list)
+    # --- Consolidate read options ---
+    # This is for logging and for passing to rioxarray.
+    if other_read_kwargs is None:
+        read_options = {}
+    else:
+        read_options = other_read_kwargs.copy()
+    read_options['masked'] = masked
+    read_options['mask_and_scale'] = mask_and_scale
 
     # --- Open *actual* rasters for merging ---
     # validation passed, so now we open the files for real
     rasters_to_merge = []
-    if other_read_kwargs is None:
-        other_read_kwargs = {}
 
     for path in raster_fpaths:
         try:
-            da = rioxarray.open_rasterio(
-                path,
-                masked=masked,
-                mask_and_scale=mask_and_scale,
-                **other_read_kwargs
-            )
+            da = rioxarray.open_rasterio(path, **read_options)
             rasters_to_merge.append(da)
         except Exception as e:
             # This is a safety catch, but _get_raster_metadata
@@ -407,25 +376,6 @@ def merge_rasters(
         merge_options = {}
     da = merge_arrays(rasters_to_merge, **merge_options)
 
-    # --- Clean-up and create final metadata ---
-    da.attrs = {}
-    da.attrs.update(safe_attrs)
-
-    # Build 'history' field
-    fnames = [Path(meta['path']).name for meta in metadata_list]
-    da.attrs['history'] = (
-        f"Merged from {len(fnames)} files by worldpoppy "
-        f"on {datetime.now().isoformat()}. "
-        f"Source files: {', '.join(fnames)}"
-    )
-
-    # Build `source_metadata` field (wherein we keep
-    # track of all input raster's original meta-data)
-    source_metadata = {
-        Path(meta['path']).name: meta['all_attrs'] for meta in metadata_list
-    }
-    da.attrs['source_metadata'] = source_metadata
-
     # --- Clip the merged rasters (optional) ---
     if clipping_gdf is not None:
         geoms = clipping_gdf.geometry.apply(shapely.geometry.mapping)
@@ -435,6 +385,47 @@ def merge_rasters(
     if to_crs is not None:
         to_crs = CRS(to_crs)  # force format errors
         da = da.rio.reproject(to_crs)
+
+    # --- Clean-up and create final metadata ---
+    da.attrs = {}  # nuke old attrs
+    da.attrs.update(safe_attrs)  # re-apply the safe attrs
+
+    # Build the 'history' field (wherein we track key
+    # data-processing steps)
+    fnames = [Path(x).name for x in raster_fpaths]
+    num_files = len(fnames)
+    timestamp = datetime.now().isoformat()
+
+    history_log = []
+
+    # Was actual merging done?
+    if num_files > 1:
+        history_log.append(
+            f"Merged from {num_files} input files by worldpoppy on {timestamp}."
+        )
+
+    else:
+        history_log.append(
+            f"Processed from 1 input file by worldpoppy on {timestamp}."
+        )
+
+    # Was clipping applied?
+    if clipping_gdf is not None:
+        history_log.append("Clipped to AOI geometry.")
+
+    # Was re-projection done?
+    if to_crs is not None:
+        history_log.append(f"Reprojected to new CRS.")
+
+    # Record any read and merge options
+    if read_options:
+        history_log.append(f"Read options: {read_options}.")
+    if merge_options:
+        history_log.append(f"Merge options: {merge_options}.")
+
+    # Join all processing steps into the final history string
+    da.attrs['history'] = " ".join(history_log)
+    da.attrs['input_files'] = ", ".join(fnames)
 
     return da
 
@@ -520,88 +511,24 @@ def bbox_from_location(centre, width_degrees=None, width_km=None):
     return min_lon, min_lat, max_lon, max_lat
 
 
-@lru_cache(maxsize=4096)
-def _read_raster_metadata(path):
+def _validate_raster_metadata(raster_fpaths, masked, mask_and_scale):
     """
-    Read critical metadata from a single raster file.
-
-    This function is cached and opens the file lazily, i.e. does *not*
-    read the full raster data into memory. It immediately closes the
-    file handle after extracting the metadata.
-
-    Parameters
-    ----------
-    path : str
-        The file path to the raster.
-
-    Returns
-    -------
-    dict
-        A dictionary containing the critical metadata.
-    """
-    logger.debug(f"Cache MISS: Reading metadata for {path}")
-    try:
-        # Note: `xr.open_dataarray` is lazy by default. Crucially,
-        # we *must* set mask_and_scale=False. If True (the default),
-        # xarray/rioxarray would "consume" the _FillValue and
-        # scale_factor attributes, and we would not be able to read them.
-        with xr.open_dataarray(path, engine="rasterio", mask_and_scale=False) as da:
-
-            # store CRS as a string (WKT) to ensure it is hashable
-            # for the cache and comparable
-            crs_str = da.rio.crs.to_wkt() if da.rio.crs else None
-
-            # Read all three critical attributes
-            nodata_val = da.attrs.get('_FillValue')
-            scale_factor = da.attrs.get('scale_factor')
-            add_offset = da.attrs.get('add_offset')
-
-            # store a full copy of the original attributes
-            # for the 'source_metadata' dict downstream.
-            all_attrs = da.attrs.copy()
-
-            return {
-                'path': path,
-                'crs': crs_str,
-                'nodata': nodata_val,
-                'scale_factor': scale_factor,
-                'add_offset': add_offset,
-                'all_attrs': all_attrs,
-            }
-    except Exception as e:
-        logger.error(f"Failed to read metadata for {path}: {e}")
-        # ee-raise as a known error type
-        raise RasterReadError(
-            f"Failed to read/parse metadata for {path}. Error: {e}"
-        ) from e
-
-
-def _validate_raster_metadata(metadata_list):
-    """
+    Validate critical meta-data for a list of raster files.
     Validate a list of raster meta-data dicts for consistency.
-
-    Checks that all rasters share the same CRS, _FillValue,
-    scale_factor, and add_offset.
-
-    Parameters
-    ----------
-    metadata_list : List[dict]
-        A list of raster metadata dictionaries, typically from
-        `_read_raster_metadata`.
-
-    Returns
-    -------
-    dict
-        A dictionary of the "safe attributes" that are
-        consistent across all raster files.
 
     Raises
     ------
     IncompatibleRasterError
         If any critical metadata attributes are mismatched.
     """
-    if not metadata_list:
-        return {}
+    try:
+        metadata_list = []
+        for p in raster_fpaths:
+            meta = _read_raster_metadata(str(p), masked, mask_and_scale)
+            metadata_list.append(meta)
+    except RasterReadError as e:
+        logger.error(f"A raster file is unreadable. Aborting. Error: {e}")
+        raise e
 
     # Use the first raster's metadata as the reference
     ref = metadata_list[0]
@@ -626,7 +553,6 @@ def _validate_raster_metadata(metadata_list):
                 )
 
     # All checks passed. Return the single, consistent set of safe attrs.
-    # This logic is unchanged and correct.
     safe_attrs = {}
     if ref['nodata'] is not None:
         safe_attrs['_FillValue'] = ref['nodata']
@@ -636,6 +562,44 @@ def _validate_raster_metadata(metadata_list):
         safe_attrs['add_offset'] = ref['add_offset']
 
     return safe_attrs
+
+
+@lru_cache(maxsize=4096)
+def _read_raster_metadata(path, masked, mask_and_scale):
+    """
+    Read critical meta-data from a single raster file.
+
+    This function is cached and opens the file lazily, i.e. does *not*
+    read the full raster data into memory. It immediately closes the
+    file handle after extracting the metadata.
+    """
+    logger.debug(f"Cache MISS: Reading metadata for {path}")
+    try:
+        # data loading is lazy by default
+        with rioxarray.open_rasterio(path, masked=masked, mask_and_scale=mask_and_scale) as da:
+
+            # Store CRS as a string (WKT) to ensure it is hashable
+            # for the cache and comparable
+            crs_str = da.rio.crs.to_wkt() if da.rio.crs else None
+
+            # Read all three critical attributes
+            nodata_val = da.attrs.get('_FillValue')
+            scale_factor = da.attrs.get('scale_factor')
+            add_offset = da.attrs.get('add_offset')
+
+            return {
+                'path': path,
+                'crs': crs_str,
+                'nodata': nodata_val,
+                'scale_factor': scale_factor,
+                'add_offset': add_offset,
+            }
+    except Exception as e:
+        logger.error(f"Failed to read metadata for {path}: {e}")
+        # Re-raise as a known error type
+        raise RasterReadError(
+            f"Failed to read/parse metadata for {path}. Error: {e}"
+        ) from e
 
 
 def _concat_with_info(objs, **kwargs):
