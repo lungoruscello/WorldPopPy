@@ -157,30 +157,28 @@ def wp_raster(
         The combined raster data for several countries and years (where applicable),
         or None if `download_dry_run` is True.
 
+    Raises
+    -------
+    RasterReadError
+        If reading an input raster fails.
+
+    IncompatibleRasterError
+        This function validates input-raster attributes before merging.
+        - `crs` is *always* validated.
+        - `_FillValue` is validated *only if* `masked=False` and
+          `mask_and_scale=False`.
+        - `scale_factor` and `add_offset` are validated *only if*
+          `mask_and_scale=False`.
+
+        (This function thus trusts `rioxarray` to correctly normalise
+         input rasters whenever `mask_and_scale=True` is passed, even
+         if the underlying source files have different `_FillValue`,
+         `scale_factor` or `add_offset` attributes.)
     """
     other_read_kwargs = {} if other_read_kwargs is None else other_read_kwargs
 
-    # --- Parse the area of interest ---
-    if isinstance(aoi, (list, tuple)):
-        if not isinstance(aoi[0], str):
-            _validate_bbox(aoi)
-            box_poly = shapely.box(*aoi)
-            aoi = gpd.GeoDataFrame(geometry=[box_poly], crs=WGS84_CRS)
-    if isinstance(aoi, gpd.GeoDataFrame):
-        world = load_country_borders()
-        joined = gpd.sjoin(
-            world, aoi.to_crs(WGS84_CRS), predicate='intersects', how='right'
-        )
-        iso3_codes = sorted(joined.iso3.unique())
-    else:
-        if isinstance(aoi, str):
-            iso3_codes = [aoi]
-        else:
-            if not isinstance(aoi[0], str):
-                raise ValueError(
-                    "Cannot parse 'aoi'. Please pass one or more country codes..."
-                )
-            iso3_codes = aoi
+    # --- Process the area of interest ---
+    aoi, iso3_codes = _standardise_aoi(aoi)
 
     # --- Check other user args ---
     if not cache_downloads and skip_download_if_exists:
@@ -189,13 +187,13 @@ def wp_raster(
             "'skip_download_if_exists' has no effect is 'cache_downloads' is set to False'."
         )
 
-    # --- Prepare shared merge arguments ---
+    # --- Prepare shared raster-processing arguments ---
     merge_options = merge_kwargs.copy()
     if res is not None:
         merge_options['res'] = res
 
     clipping_gdf = aoi if isinstance(aoi, gpd.GeoDataFrame) else None
-    shared_merge_kwargs = dict(
+    shared_processing_kwargs = dict(
         masked=masked,
         mask_and_scale=mask_and_scale,
         other_read_kwargs=other_read_kwargs,
@@ -219,10 +217,10 @@ def wp_raster(
             return None
 
         # --- Static product ---
-        # In this case, meta-data validation is performed only
-        # *within* the stand-alone `merge_rasters` function.
+        # Meta-data validation for file-paths passed to `merge_rasters`
+        # is *always* performed within that stand-alone function.
         if years is None:
-            merged = merge_rasters(all_raster_paths, **shared_merge_kwargs)
+            merged = merge_rasters(all_raster_paths, **shared_processing_kwargs)
             return merged.squeeze()
 
         # --- Multi-year product  ---
@@ -231,10 +229,12 @@ def wp_raster(
             year = int(mrow.year)  # convert from numpy type
             paths_by_year[year].append(path)
 
-        # In this case, we must validate the raster meta-data for files
-        # from *all years* in one go (to catch inconsistencies across years).
-        logger.info("Validating meta-data consistency across all years...")
-        global_safe_attrs = _validate_raster_metadata(all_raster_paths, masked, mask_and_scale)
+        # In the multi-year case, we must validate raster meta-data for
+        # raster files from *all years* in one go (to catch inconsistencies
+        # across years).
+        # The call below performs a "smart" validation that depends on the user's
+        # flags. See `_validate_raster_attrs` docstring for a full explanation.
+        global_safe_attrs = _validate_raster_attrs(all_raster_paths, masked, mask_and_scale)
 
         # Merge the actual rasters separately by year
         annual_rasters = []
@@ -248,9 +248,10 @@ def wp_raster(
             leave=False,
         )
         for year, year_paths in pbar:
-            # Note: The repeated metadata check inside `merge_rasters`
-            # will be instantaneous because the cache is already warm.
-            merged = merge_rasters(year_paths, **shared_merge_kwargs)
+            # Note: The repeated meta-data check inside `merge_rasters`
+            # will be fast because the cache is already warm (see
+            # `_read_raster_metadata`).
+            merged = merge_rasters(year_paths, **shared_processing_kwargs)
             merged['year'] = year
             annual_rasters.append(merged)
 
@@ -341,13 +342,23 @@ def merge_rasters(
         If reading an input raster fails.
 
     IncompatibleRasterError
-        - If input rasters have mismatched Coordinate Reference Systems.
-        - If input rasters have mismatched `_FillValue`, `scale_factor`,
-          or `add_offset` attributes.
+        This function validates input-raster attributes before merging.
+        - `crs` is *always* validated.
+        - `_FillValue` is validated *only if* `masked=False` and
+          `mask_and_scale=False`.
+        - `scale_factor` and `add_offset` are validated *only if*
+          `mask_and_scale=False`.
+
+        (This function thus trusts `rioxarray` to correctly normalise
+         input rasters whenever `mask_and_scale=True` is passed, even
+         if the underlying source files have different `_FillValue`,
+         `scale_factor` or `add_offset` attributes.)
     """
 
     # --- Validate metadata ---
-    safe_attrs = _validate_raster_metadata(raster_fpaths, masked, mask_and_scale)
+    # The call below performs a "smart" validation that depends on the user's
+    # flags. See `_validate_raster_attrs` docstring for a full explanation.
+    safe_attrs = _validate_raster_attrs(raster_fpaths, masked, mask_and_scale)
 
     # --- Consolidate read options ---
     # This is for logging and for passing to rioxarray.
@@ -511,20 +522,72 @@ def bbox_from_location(centre, width_degrees=None, width_km=None):
     return min_lon, min_lat, max_lon, max_lat
 
 
-def _validate_raster_metadata(raster_fpaths, masked, mask_and_scale):
+def _standardise_aoi(aoi):
+    """ TODO """
+
+    if isinstance(aoi, (list, tuple)):
+        if not isinstance(aoi[0], str):
+            # Case: apparent bounding box passed
+            _validate_bbox(aoi)
+            box_poly = shapely.box(*aoi)
+            aoi = gpd.GeoDataFrame(geometry=[box_poly], crs=WGS84_CRS)
+
+    if isinstance(aoi, gpd.GeoDataFrame):
+        # Case: GeoDataFrame passed
+        world = load_country_borders()
+        joined = gpd.sjoin(
+            world, aoi.to_crs(WGS84_CRS), predicate='intersects', how='right'
+        )
+        iso3_codes = sorted(joined.iso3.unique())
+    else:
+        if isinstance(aoi, str):
+            # Case: single apparent ISO-code passed
+            iso3_codes = [aoi]
+        else:
+            if not isinstance(aoi[0], str):
+                raise ValueError(
+                    "Cannot parse 'aoi'. Please pass one or more country codes..."
+                )
+            # Case: several apparent ISO-codes passed
+            iso3_codes = aoi
+
+    return aoi, iso3_codes
+
+
+def _validate_raster_attrs(raster_fpaths, masked, mask_and_scale):
     """
     Validate critical meta-data for a list of raster files.
-    Validate a list of raster meta-data dicts for consistency.
+
+    Implementation Note ("Smart Skip" Validation)
+    --------------------------------------------------
+    This function's logic depends on the `masked` and `mask_and_scale` flags.
+
+    1.  It calls `_read_raster_attrs`, which *also* receives these flags.
+    2.  `_read_raster_attrs` then calls `rioxarray.open_rasterio` with
+        those flags.
+    3.  If `mask_and_scale=True`, `rioxarray` consumes the scaling
+        attributes (`scale_factor`, `add_offset`) and `_FillValue`
+        from the lazy-loaded DataArray.
+    4.  `_read_raster_attrs` therefore (correctly) reads these
+        attributes as `None`.
+    5.  This function's validation (e.g., comparing `None == None`)
+        will then (correctly) pass, cleanly skipping the validation
+        for attributes that `rioxarray` is about to handle anyway.
+    6.  The one exception is `crs`, which `rioxarray` does not
+        "consume" and which would cause a fatal error on merge.
+        Therefore, `crs` is always validated, regardless of flags.
 
     Raises
     ------
+    RasterReadError
+        If reading an input raster fails.
     IncompatibleRasterError
         If any critical metadata attributes are mismatched.
     """
     try:
         metadata_list = []
         for p in raster_fpaths:
-            meta = _read_raster_metadata(str(p), masked, mask_and_scale)
+            meta = _read_raster_attrs(str(p), masked, mask_and_scale)
             metadata_list.append(meta)
     except RasterReadError as e:
         logger.error(f"A raster file is unreadable. Aborting. Error: {e}")
@@ -565,15 +628,25 @@ def _validate_raster_metadata(raster_fpaths, masked, mask_and_scale):
 
 
 @lru_cache(maxsize=4096)
-def _read_raster_metadata(path, masked, mask_and_scale):
+def _read_raster_attrs(path, masked, mask_and_scale):
     """
     Read critical meta-data from a single raster file.
 
     This function is cached and opens the file lazily, i.e. does *not*
     read the full raster data into memory. It immediately closes the
     file handle after extracting the metadata.
+
+    Note on Caching and Validation
+    ------------------------------
+    This function *intentionally* receives and passes the `masked` and
+    `mask_and_scale` flags to `rioxarray.open_rasterio`.
+
+    This supports the "smart skip" validation in `_validate_raster_attrs`.
+    When `mask_and_scale=True`, `rioxarray` consumes the scaling
+    attributes, and this function correctly reads them as `None`.
+
     """
-    logger.debug(f"Cache MISS: Reading metadata for {path}")
+
     try:
         # data loading is lazy by default
         with rioxarray.open_rasterio(path, masked=masked, mask_and_scale=mask_and_scale) as da:
