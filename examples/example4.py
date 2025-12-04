@@ -16,10 +16,11 @@ new_cache_dir = ROOT_DIR / 'tmp_cache'
 os.environ['WORLDPOPPY_CACHE_DIR'] = str(new_cache_dir)
 assert get_cache_dir() == Path(new_cache_dir)
 
+years = list(range(2015, 2025))
 _ = wp_raster(
-    product_name='ppp',
+    product_name='pop_g2_r25a',  # one of the population data products from the Global 2 series
     aoi='CAN USA MEX'.split(),
-    years='all',
+    years=2020,
     download_dry_run=True
 )
 # Setting `download_dry_run=True` will only check download requirements
