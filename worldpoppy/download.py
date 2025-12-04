@@ -35,16 +35,19 @@ from httpx import HTTPError
 from pqdm.threads import pqdm
 from tqdm.auto import tqdm
 
-from worldpoppy.config import *
-from worldpoppy.manifest import wp_manifest_constrained
+from worldpoppy.config import (
+    DATA_DOWNLOAD_TIMEOUT,
+    get_cache_dir,
+    get_max_concurrency,
+)
 from worldpoppy.func_utils import log_info_context
-
+from worldpoppy.manifest_loader import wp_manifest_constrained
 
 __all__ = [
     "DownloadSizeCheckError",
     "DownloadError",
     "WorldPopDownloader",
-    "purge_cache",
+    "purge_cache"
 ]
 
 logger = logging.getLogger(__name__)
@@ -225,14 +228,14 @@ class WorldPopDownloader:
 
             assert len(res) == len(local_paths)
 
-        return sorted(local_paths)
+        return local_paths, filtered_mdf
 
     @backoff.on_exception(
         backoff.expo, HTTPError, max_tries=5, jitter=backoff.full_jitter
     )
     def _download_file(
         self,
-        remote_path,
+        remote_url,
         local_path,
         skip_if_exists=True,
         chunk_size=1024*2
@@ -242,8 +245,8 @@ class WorldPopDownloader:
 
         Parameters
         ----------
-        remote_path : str
-            The remote path to the WorldPop raster file to be downloaded.
+        remote_url : str
+            The URL to the WorldPop raster file to be downloaded.
         local_path : Path
             The local file path where the raster will be saved.
         skip_if_exists : bool, optional, default=True
@@ -261,8 +264,7 @@ class WorldPopDownloader:
             # nothing to do
             return DownloadResult(success=True)
 
-        remote_url = f"{self.URL}/{remote_path}"
-        remote_fname = remote_path.split("/")[-1]
+        remote_fname = remote_url.split("/")[-1]
         local_path.parent.mkdir(parents=True, exist_ok=True)
 
         # download the raster to a temporary path in the same directory
@@ -270,7 +272,7 @@ class WorldPopDownloader:
 
         try:
             with open(tmp_path, "wb+") as f:
-                with httpx.stream("GET", remote_url) as response:
+                with httpx.stream("GET", remote_url, timeout=DATA_DOWNLOAD_TIMEOUT) as response:
                     total = int(response.headers["Content-Length"])
                     pbar = tqdm(total=total, unit="B", unit_scale=True, leave=False)
                     with pbar:
