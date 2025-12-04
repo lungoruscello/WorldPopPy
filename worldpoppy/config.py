@@ -26,7 +26,7 @@ __all__ = [
     "DATA_SERVER_URL",
     "METADATA_API_TIMEOUT",
     "DATA_DOWNLOAD_TIMEOUT",
-    "SUPPORTED_ISO3_CODES",
+    "DOWNLOADABLE_ISO3_CODES",
     "WGS84_CRS",
     "PRODUCT_BASE_NAME_MAP",
     "ESA_LAND_COVER_DESC_MAP",
@@ -57,7 +57,7 @@ with open(ASSET_DIR / 'global_nb_db.json') as file:
     _nb_dict = json.loads(file.read())
     _iso3_codes = _nb_dict.keys()
 
-SUPPORTED_ISO3_CODES = sorted(_iso3_codes)
+DOWNLOADABLE_ISO3_CODES = sorted(_iso3_codes)
 
 WGS84_CRS = 'EPSG:4326'
 

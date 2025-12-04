@@ -46,7 +46,7 @@ from worldpoppy.config import (
     METADATA_API_URL,
     METADATA_API_TIMEOUT,
     RAW_MANIFEST_CACHE_PATH,
-    SUPPORTED_ISO3_CODES,
+    DOWNLOADABLE_ISO3_CODES,
 )
 from worldpoppy.manifest_utils import *
 from worldpoppy.tracking import api_query_log
@@ -301,7 +301,7 @@ def _discover_leaf_nodes():
             logger.info(msg)
             continue
 
-        if iso3 not in SUPPORTED_ISO3_CODES:
+        if iso3 not in DOWNLOADABLE_ISO3_CODES:
             print('unsupported ISO3 code:', iso3)
             print('Full Leaf Node:', leaf_node)
             msg = f"Skipping node {api_path}: Type of data series not recognised (iso3={iso3})."
