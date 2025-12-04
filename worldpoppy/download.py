@@ -296,15 +296,15 @@ class WorldPopDownloader:
                             f.write(chunk)
                             pbar.update(len(chunk))
                     response.raise_for_status()
-        except Exception as e:
-            return DownloadResult(success=False, error=e)
-        else:
-            # Only after the download has finished do we rename the temporary file to
-            # its proper name. In this way, crashing downloads will not corrupt the
-            # local cache.
+
+            # Only after the download has finished do we rename the temporary
+            # file to its proper name. In this way, crashing downloads will
+            # not corrupt the local cache.
             tmp_path.rename(local_path)
             return DownloadResult(success=True)
 
+        except Exception as e:
+            return DownloadResult(success=False, error=e)
 
     @backoff.on_exception(
         backoff.expo,
