@@ -31,7 +31,6 @@ import backoff
 import httpx
 import nest_asyncio
 import pandas as pd
-from httpx import HTTPError
 from pqdm.threads import pqdm
 from tqdm.auto import tqdm
 
@@ -63,6 +62,18 @@ class DownloadSizeCheckError(DownloadError):
     """Raised when one or more HEAD requests fail during dry-run size checking."""
 
     pass
+
+
+def _is_fatal_code(e):
+    """
+    Return True if the httpx exception is a 4xx Client Error
+    (which should not be retried), unless it is a 429 (Too Many Requests).
+    """
+    if isinstance(e, httpx.HTTPStatusError):
+        # Do not retry 404 (Not Found) or 400 (Bad Request)
+        # DO retry 429 (Too Many Requests) or 500+ (Server Errors)
+        return 400 <= e.response.status_code < 500 and e.response.status_code != 429
+    return False
 
 
 @dataclass
@@ -185,7 +196,7 @@ class WorldPopDownloader:
                 res = pqdm(
                     args,
                     self._get_required_file_download_size,  # noqa
-                    n_jobs=get_max_concurrency() * 4,  # these jobs are cheap
+                    n_jobs=get_max_concurrency(),
                     argument_type="args",
                     desc="Checking download sizes...",
                     leave=False,
@@ -231,7 +242,11 @@ class WorldPopDownloader:
         return local_paths, filtered_mdf
 
     @backoff.on_exception(
-        backoff.expo, HTTPError, max_tries=5, jitter=backoff.full_jitter
+        backoff.expo,
+        httpx.HTTPError,  # catch EVERYTHING (Network, Timeout, Status codes)
+        max_tries=5,
+        jitter=backoff.full_jitter,
+        giveup=_is_fatal_code,  # stop retrying if it's a 404
     )
     def _download_file(
         self,
@@ -290,9 +305,17 @@ class WorldPopDownloader:
             tmp_path.rename(local_path)
             return DownloadResult(success=True)
 
+
+    @backoff.on_exception(
+        backoff.expo,
+        httpx.HTTPError,  # catch EVERYTHING (Network, Timeout, Status codes)
+        max_tries=5,
+        jitter=backoff.full_jitter,
+        giveup=_is_fatal_code,  # stop retrying if it's a 404
+    )
     def _get_required_file_download_size(
             self,
-            remote_path,
+            remote_url,
             local_path,
             skip_download_if_exists=True,
     ):
@@ -304,8 +327,8 @@ class WorldPopDownloader:
 
         Parameters
         ----------
-        remote_path : str
-            Relative path to the remote WorldPop file.
+        remote_url : str
+            The URL to the WorldPop raster file.
         local_path : Path
             The local file path where a cached version of the file may exist.
         skip_download_if_exists : bool, optional, default=True
@@ -322,8 +345,7 @@ class WorldPopDownloader:
             return DownloadResult(success=True, value=0)
 
         try:
-            remote_url = f"{self.URL}/{remote_path}"
-            response = httpx.head(remote_url, follow_redirects=True)
+            response = httpx.head(remote_url, follow_redirects=True, timeout=DATA_DOWNLOAD_TIMEOUT)
             response.raise_for_status()
             size = int(response.headers.get("Content-Length", 0))
         except Exception as e:
