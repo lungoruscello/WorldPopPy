@@ -3,7 +3,6 @@ This auxiliary module provides helper functions to build and load simplified
 country polygons for the whole world, based on down-sampled `level0_100m`
 rasters from WorldPop.
 """
-# [TODO] Ensure this works with new manifest!
 
 import logging
 import warnings
@@ -18,11 +17,11 @@ from pqdm.threads import pqdm
 from shapely.geometry import shape
 
 from worldpoppy.config import *
-from worldpoppy.config import get_cache_dir, get_max_concurrency
+from worldpoppy.config import get_cache_dir
 from worldpoppy.manifest_loader import get_all_isos
 
 _border_res_arc_secs = 15
-_border_raw_fpath = ASSET_DIR / 'level0_500m_2000_2020_simplified_world.feather'
+_border_raw_fpath = ASSET_DIR / 'level0_500m_2000_2020_simplified_world.feather'  # part of the worldpoppy package
 _border_buffered_fpath = get_cache_dir() / 'level0_500m_2000_2020_simplified_world_buffered.feather'
 
 try:
@@ -80,8 +79,8 @@ def load_country_borders():
 def build_country_borders(overwrite=False):
     """
     Build a GeoDataFrame with country borders for the whole world by converting
-    WorldPop `level0_100m` rasters into simplified vector polygons. The output
-    is saved to disk as a Feather file for future use.
+    WorldPop `admin0` rasters into simplified vector polygons. The output is
+    saved to disk as a Feather file for future use.
 
     Notes
     -----
@@ -100,6 +99,8 @@ def build_country_borders(overwrite=False):
     ------
     ModuleNotFoundError
         If an installation of the optional `ogeo.gdal` library is not available.
+
+    TODO Document the standard users will not need to call this function.
     """
     from worldpoppy.download import WorldPopDownloader  # avoid circularity
 
@@ -114,24 +115,29 @@ def build_country_borders(overwrite=False):
         )
 
     all_isos = get_all_isos()
+    isos_without_admin_rasters = ['CCK', 'CXR']  # Cocos Islands, Christmas Island
+    supported_isos = set(all_isos) - set(isos_without_admin_rasters)
 
-    # download high-resolution country rasters from WorldPop
-    _ = WorldPopDownloader().download('admin0', iso3_codes=get_all_isos())
+    # Download high-resolution country rasters from WorldPop
+    _ = WorldPopDownloader().download(
+        'admin0',  # resolution of 3 arc seconds
+        iso3_codes=supported_isos
+    )
 
-    # asynchronously downsample the raster data and convert
+    # Asynchronously downsample the raster data and convert
     # it into simplified country polygons
     res = pqdm(
-        all_isos,
+        supported_isos,
         _extract_simplified_borders,
         n_jobs=get_max_concurrency(),
         desc='Extracting simplified country borders...',
         leave=False
     )
 
-    # concatenate results in a GeoDataFrame
+    # Concatenate results in a GeoDataFrame
     gdf = gpd.GeoDataFrame(pd.concat(res), crs=WGS84_CRS)
 
-    # simplify country geometries further to save even more disk space
+    # Simplify country geometries further to save even more disk space
     gdf['geometry'] = gdf.simplify(tolerance=0.005)  # approx. 500 metres tolerance
     if not np.all(gdf.is_valid):
         raise ValueError('Border simplification yielded invalid geometries.')
@@ -143,7 +149,8 @@ def build_country_borders(overwrite=False):
 def _extract_simplified_borders(iso3):
     """
     Convert a high-resolution country raster from WorldPop into simplified
-    vector polygons by down-sampling and applying `rasterio.features.shapes`.
+    vector polygons by first down-sampling (using `gdal.Warp`) and then
+    applying `rasterio.features.shapes`.
 
     Parameters
     ----------
@@ -160,47 +167,60 @@ def _extract_simplified_borders(iso3):
     from osgeo import gdal  # noqa; avoid global dependency
     from rasterio.features import shapes  # noqa; ''
 
-    # convert target resolution to decimal degrees
+    # Convert target resolution to decimal degrees
     tgt_res = 1 / (3600 / _border_res_arc_secs)
 
-    # set raster paths
-    in_path = get_cache_dir() / f'level0_100m_2000_2020_{iso3}.tif'
-    tmp_path = get_cache_dir() / f'tmp_1km_{iso3}.tif'
+    # Set required paths
+    in_path = get_cache_dir() / f'admin0_{iso3.upper()}.tif'
+    tmp_path = get_cache_dir() / f'tmp_admin0_1km_{iso3.upper()}.tif'
 
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
 
-        # prepare arguments for gdal.Warp
+        # Handle the temp-file overwrite.
+        # Python bindings for GDAL may not always handle the '-overwrite'
+        # flag gracefully. So we clear the path manually.
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+        # Prepare arguments for gdal.Warp.
+        # Crucial: We use nearest-neighbour resampling to the target resolution.
         opts = gdal.WarpOptions(
-            multithread=False,
             format='GTiff',
-            options=(
-                f'-s_srs {WGS84_CRS} '
-                f'-t_srs {WGS84_CRS} '
-                f'-r near -tr {tgt_res} {tgt_res}'  # nearest neighbour resampling to target resolution
-                '-overwrite '
-                '-co BIGTIFF=YES '
-            )
+            # set source and target CRS
+            srcSRS=WGS84_CRS,
+            dstSRS=WGS84_CRS,
+            # set target resolution
+            xRes=tgt_res,
+            yRes=tgt_res,
+            # set resampling method
+            resampleAlg='near',
+            # set "Creation Options"
+            creationOptions=['BIGTIFF=YES'],
+            multithread=False,
         )
 
-        # downsample the country raster
-        gdal.Warp(tmp_path, [in_path], options=opts)
+        # Call warp.
+        # Note: Warp returns a Dataset object. By de-referencing
+        # this object, we flush the write to disk immediately.
+        _ = gdal.Warp(str(tmp_path), str(in_path), options=opts)  # paths MUST be strings
+        _ = None  # de-reference
 
-        # load the result
+        # Load the result
         da = xr.open_dataarray(tmp_path, mask_and_scale=True)
         da.rio.write_crs(WGS84_CRS, inplace=True)  # ensure CRS is set
 
-        # extract country polygons
+        # Extract country polygons
         country_polys = []
         for geom, value in shapes(da.data, transform=da.rio.transform(recalc=True)):
             if np.isfinite(value):
                 country_polys.append(shape(geom))
 
-    # convert into a GeoDataFrame
+    # Convert into a GeoDataFrame
     gdf = gpd.GeoDataFrame(geometry=country_polys, crs=WGS84_CRS)
     gdf['iso3'] = iso3
 
-    # remove the down-sampled country raster
+    # Remove the down-sampled country raster
     tmp_path.unlink()
 
     if not np.all(gdf.is_valid):
