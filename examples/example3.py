@@ -16,17 +16,20 @@ tuscany_emilia = italy[italy.name.isin(['Toscana', 'Emilia-Romagna'])]
 
 # Fetch night-light data
 viirs_data = wp_raster(
-    product_name='viirs_100m',
+    product_name='ntl_viirs_g2',
     aoi=tuscany_emilia,
-    years=2015,
+    years=2023,
     masked=True,
 )
 
 # Slightly downsample
 lowres = viirs_data.coarsen(x=2, y=2, boundary='trim').mean()
 
+# Add small constant for log-scale plotting
+lowres = lowres + 0.01
+
 # Plot
 lowres.plot(vmin=1, cmap='inferno', norm=LogNorm(), cbar_kwargs=dict(shrink=0.875))
-clean_axis(title='Night Lights (2015)\nTuscany & Emilia-Romagna ')
+clean_axis(title='Night Lights (2023)\nTuscany & Emilia-Romagna ')
 
 plt.show()
