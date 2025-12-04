@@ -12,7 +12,7 @@ from worldpoppy import *
 aoi_box = bbox_from_location((41, 9), width_degrees=7)  # box around the Ethiopian Great Rift
 
 topo_data = wp_raster(
-    product_name='srtm_topo_100m',
+    product_name='srtm_elevation_g1',  # elevation data from the Global 1 series
     aoi=aoi_box,
     years=None,  # for static data products, the 'years' argument must always be None (default)
     masked=True,
