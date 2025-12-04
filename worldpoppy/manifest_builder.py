@@ -903,10 +903,10 @@ def _build_dataset_record(
         )
 
         # --- 2. Build Summary URL ---
-        url_summary = None
+        summary_url = None
         if summary_url_template and id_for_summary:
             try:
-                url_summary = summary_url_template.format(id=id_for_summary)
+                summary_url = summary_url_template.format(id=id_for_summary)
             except Exception:
                 logger.warning(
                     f"Failed to format summary URL for {api_path} "
@@ -932,7 +932,7 @@ def _build_dataset_record(
             "source": series_metadata.get("source"),
             "project": series_metadata.get("project"),
             # --- Dataset-Level Metadata ---
-            "url_summary": url_summary,
+            "summary_url": summary_url,
         }
 
     except (KeyError, TypeError, ValueError) as e:

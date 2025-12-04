@@ -5,7 +5,7 @@ Collection of various plotting utility functions.
 from matplotlib import pyplot as plt
 
 from worldpoppy.func_utils import geolocate_name
-from worldpoppy.manifest import get_all_isos
+from worldpoppy.manifest_loader import get_all_isos
 
 __all__ = [
     "clean_axis",

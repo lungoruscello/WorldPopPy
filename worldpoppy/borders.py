@@ -3,6 +3,7 @@ This auxiliary module provides helper functions to build and load simplified
 country polygons for the whole world, based on down-sampled `level0_100m`
 rasters from WorldPop.
 """
+# [TODO] Ensure this works with new manifest!
 
 import logging
 import warnings
@@ -18,7 +19,7 @@ from shapely.geometry import shape
 
 from worldpoppy.config import *
 from worldpoppy.config import get_cache_dir, get_max_concurrency
-from worldpoppy.manifest import get_all_isos
+from worldpoppy.manifest_loader import get_all_isos
 
 _border_res_arc_secs = 15
 _border_raw_fpath = ASSET_DIR / 'level0_500m_2000_2020_simplified_world.feather'
@@ -115,9 +116,7 @@ def build_country_borders(overwrite=False):
     all_isos = get_all_isos()
 
     # download high-resolution country rasters from WorldPop
-    _ = WorldPopDownloader().download(
-        'level0_100m_2000_2020', iso3_codes=get_all_isos()
-    )
+    _ = WorldPopDownloader().download('admin0', iso3_codes=get_all_isos())
 
     # asynchronously downsample the raster data and convert
     # it into simplified country polygons

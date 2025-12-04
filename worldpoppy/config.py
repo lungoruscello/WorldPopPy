@@ -5,6 +5,18 @@ from pathlib import Path
 
 import platformdirs
 
+try:
+    import tomllib   # use the standard library tomllib (Python 3.11+)
+except ModuleNotFoundError:
+    try:
+        import tomli as tomllib  # fall back to `tomli` package
+    except ModuleNotFoundError:
+        print(
+            "Error: The 'tomli' package is required. Please install it "
+            "using pip, conda, or mamba (e.g., `conda install tomli`)."
+        )
+        raise
+
 __all__ = [
     "DEBUG",
     "ROOT_DIR",
@@ -16,6 +28,7 @@ __all__ = [
     "DATA_DOWNLOAD_TIMEOUT",
     "SUPPORTED_ISO3_CODES",
     "WGS84_CRS",
+    "PRODUCT_BASE_NAME_MAP",
     "ESA_LAND_COVER_DESC_MAP",
     "ESA_LAND_COVER_ALIAS_MAP",
     "RED",
@@ -32,6 +45,7 @@ DEFAULT_MAX_CONCURRENCY = max(1, cpu_count() - 2)
 ROOT_DIR = Path(__file__).parent
 ASSET_DIR = ROOT_DIR / 'assets'
 RAW_MANIFEST_CACHE_PATH = ASSET_DIR / "raw_api_manifest.feather"
+CUSTOM_MAPPING_TOML_PATH = ASSET_DIR / "custom_name_mappings.toml"
 
 METADATA_API_URL = "https://hub.worldpop.org/rest/data"
 DATA_SERVER_URL = "https://data.worldpop.org/GIS"
@@ -79,48 +93,36 @@ def get_max_concurrency():
     return int(num_threads)
 
 
-ESA_LAND_COVER_DESC_MAP = {
-    # --- 'esaccilc...' aliases ---
-    'dst011': 'Cultivated area distance',
-    'dst040': 'Woody/tree area distance',
-    'dst130': 'Shrub area distance',
-    'dst140': 'Herbaceous area distance',
-    'dst150': 'Sparse vegetation distance',
-    'dst160': 'Aquatic vegetation distance',
-    'dst190': 'Artificial surface distance',
-    'dst200': 'Bare area distance',
+def _load_mappings_from_toml():
+    """Load curated name maps for `worldpoppy` from the mappings.toml file."""
+    try:
+        with open(CUSTOM_MAPPING_TOML_PATH, "rb") as f:
+            mappings = tomllib.load(f)
 
-    # ---  'G2_DST_ESA...' aliases ---
-    '11': 'Cultivated area distance',
-    '40': 'Woody/tree area distance',
-    '130': 'Shrub area distance',
-    '140': 'Herbaceous area distance',
-    '150': 'Sparse vegetation distance',
-    '160': 'Aquatic vegetation distance',
-    '190': 'Artificial surface distance',
-    '200': 'Bare area distance',
-    '210': 'Water, snow, and ice distance'
-}
+        # extract the mappings from their TOML sections
+        product_map = mappings.get("product_base_name", {})
+        desc_map = mappings.get("band_description", {})
+        alias_map = mappings.get("band_alias", {})
+        product_notes_map_raw = mappings.get("product_notes", {})
 
-ESA_LAND_COVER_ALIAS_MAP = {
-    # --- 'esaccilc...' aliases ---
-    'dst011': 'cultivated',
-    'dst040': 'woody',
-    'dst130': 'shrub',
-    'dst140': 'herbaceous',
-    'dst150': 'sparse_veg',
-    'dst160': 'aquatic_veg',
-    'dst190': 'artificial',
-    'dst200': 'bare_area',
+        # remove redundant white-space in the product notes
+        product_notes_map = {}
+        for key, val in product_notes_map_raw.items():
+            cleaned_val = ' '.join(val.split())
+            product_notes_map[key] = cleaned_val
 
-    # ---  'G2_DST_ESA...' aliases ---
-    '11': 'cultivated',
-    '40': 'woody',
-    '130': 'shrub',
-    '140': 'herbaceous',
-    '150': 'sparse_veg',
-    '160': 'aquatic_veg',
-    '190': 'artificial',
-    '200': 'bare_area',
-    '210': 'water_snow_ice'
-}
+        return product_map, desc_map, alias_map, product_notes_map
+
+    except FileNotFoundError:
+        # This is a critical failure; `worldpoppy` cannot run without this file.
+        raise FileNotFoundError(
+            f"Fatal: Expected config file not found at {CUSTOM_MAPPING_TOML_PATH}. "
+            "Please ensure 'custom_name_mappings.toml' is in the 'assets' directory."
+        )
+    except Exception as e:
+        raise RuntimeError(f"Fatal: Failed to load or parse {CUSTOM_MAPPING_TOML_PATH}: {e}")
+
+
+PRODUCT_BASE_NAME_MAP, ESA_LAND_COVER_DESC_MAP, ESA_LAND_COVER_ALIAS_MAP, PRODUCT_NOTES_MAP = (
+    _load_mappings_from_toml()
+)
