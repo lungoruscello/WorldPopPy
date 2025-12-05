@@ -48,7 +48,7 @@ columns:
     raster dataset is conceptually nested (see also our separate note
     on terminology). This is a `worldpoppy`-specific alias (e.g., "pop_g1",
     "dist_esalc_g1_cultivated") and based on definitions contained in
-    the 'custom_name_mappings.toml' file.
+    the 'product_definitions.toml' file.
 - iso3 (str):
     The 3-letter ISO code for the country for which the raster dataset (=file)
     contains data. Currently, `worldpoppy` only supports country-specific raster

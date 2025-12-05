@@ -45,7 +45,7 @@ DEFAULT_MAX_CONCURRENCY = max(1, cpu_count() - 2)
 ROOT_DIR = Path(__file__).parent
 ASSET_DIR = ROOT_DIR / 'assets'
 RAW_MANIFEST_CACHE_PATH = ASSET_DIR / "raw_api_manifest.feather"
-CUSTOM_MAPPING_TOML_PATH = ASSET_DIR / "custom_name_mappings.toml"
+CUSTOM_MAPPING_TOML_PATH = ASSET_DIR / "product_definitions.toml"
 
 METADATA_API_URL = "https://hub.worldpop.org/rest/data"
 DATA_SERVER_URL = "https://data.worldpop.org/GIS"
@@ -94,7 +94,10 @@ def get_max_concurrency():
 
 
 def _load_mappings_from_toml():
-    """Load curated name maps for `worldpoppy` from the mappings.toml file."""
+    """
+    Load curated product-level settings for `worldpoppy`
+    from the product_definitions.toml file.
+    """
     try:
         with open(CUSTOM_MAPPING_TOML_PATH, "rb") as f:
             mappings = tomllib.load(f)
@@ -117,7 +120,7 @@ def _load_mappings_from_toml():
         # This is a critical failure; `worldpoppy` cannot run without this file.
         raise FileNotFoundError(
             f"Fatal: Expected config file not found at {CUSTOM_MAPPING_TOML_PATH}. "
-            "Please ensure 'custom_name_mappings.toml' is in the 'assets' directory."
+            "Please ensure 'product_definitions.toml' is in the 'assets' directory."
         )
     except Exception as e:
         raise RuntimeError(f"Fatal: Failed to load or parse {CUSTOM_MAPPING_TOML_PATH}: {e}")
