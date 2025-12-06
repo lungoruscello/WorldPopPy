@@ -504,6 +504,15 @@ def bbox_from_location(centre, width_degrees=None, width_km=None):
             "You must specify exactly one of 'width_degrees' or 'width_km'."
         )
 
+    if width_km is not None and width_km > 1000 and abs(lat) >= 70:
+        warnings.warn(
+            "Box generation is near its geometric limit. Width (>1,000km) "
+            "combined with high latitude (>=70°) risks significant projection "
+            "skew.",
+            UserWarning,
+            stacklevel=2,
+        )
+
     if width_degrees is not None:
         # TRIVIAL CASE: distance specified in degrees
         half_width = width_degrees / 2
