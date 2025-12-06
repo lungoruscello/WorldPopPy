@@ -27,6 +27,8 @@ dependencies = [
     "pyarrow",
     "rioxarray",
     "xarray",
+    "dask",
+    "bottleneck",
     "geopandas<2",
     "geopy",
     "pyproj",
@@ -36,7 +38,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
-    "bottleneck",
     "gdal>=3,<=3.4.1",
     "black"
 ]

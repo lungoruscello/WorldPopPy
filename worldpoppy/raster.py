@@ -865,8 +865,15 @@ def _read_raster_attrs(path, masked, mask_and_scale):
     """
 
     try:
-        # data loading is lazy by default
-        with rioxarray.open_rasterio(path, masked=masked, mask_and_scale=mask_and_scale) as da:
+        # The meta-data read should be lazy even without 'chunks={}'
+        # since we # never ask for any actual raster data.
+        # We nevertheless set chunks as an added safety measure.
+        with rioxarray.open_rasterio(
+            path,
+            masked=masked,
+            mask_and_scale=mask_and_scale,
+            chunks={}
+        ) as da:
 
             # Store CRS as a string (WKT) to ensure it is hashable
             # for the cache and comparable
