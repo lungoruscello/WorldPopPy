@@ -31,6 +31,8 @@ __all__ = [
     "PRODUCT_BASE_NAME_MAP",
     "ESA_LAND_COVER_DESC_MAP",
     "ESA_LAND_COVER_ALIAS_MAP",
+    "PRODUCT_NOTES_MAP",
+    "DEF_AGG_STRATEGY_MAP",
     "RED",
     "BLUE",
     "GOLDEN",
@@ -102,22 +104,31 @@ def _load_mappings_from_toml():
         with open(CUSTOM_MAPPING_TOML_PATH, "rb") as f:
             mappings = tomllib.load(f)
 
-        # extract the mappings from their TOML sections
+        # Extract the mappings from their TOML sections
         product_map = mappings.get("product_base_name", {})
         desc_map = mappings.get("band_description", {})
         alias_map = mappings.get("band_alias", {})
         product_notes_map_raw = mappings.get("product_notes", {})
 
-        # remove redundant white-space in the product notes
+        # Extract aggregation strategy
+        agg_strategy_map = mappings.get("default_aggregation_strategy", {})
+
+        # Remove redundant white-space in the product notes
         product_notes_map = {}
         for key, val in product_notes_map_raw.items():
             cleaned_val = ' '.join(val.split())
             product_notes_map[key] = cleaned_val
 
-        return product_map, desc_map, alias_map, product_notes_map
+        return {
+            "base_names": product_map,
+            "descriptions": desc_map,
+            "aliases": alias_map,
+            "notes": product_notes_map,
+            "aggregation": agg_strategy_map,
+        }
 
     except FileNotFoundError:
-        # This is a critical failure; `worldpoppy` cannot run without this file.
+        # This is a critical failure; `worldpoppy` cannot run without the TOML file.
         raise FileNotFoundError(
             f"Fatal: Expected config file not found at {CUSTOM_MAPPING_TOML_PATH}. "
             "Please ensure 'product_definitions.toml' is in the 'assets' directory."
@@ -126,6 +137,12 @@ def _load_mappings_from_toml():
         raise RuntimeError(f"Fatal: Failed to load or parse {CUSTOM_MAPPING_TOML_PATH}: {e}")
 
 
-PRODUCT_BASE_NAME_MAP, ESA_LAND_COVER_DESC_MAP, ESA_LAND_COVER_ALIAS_MAP, PRODUCT_NOTES_MAP = (
-    _load_mappings_from_toml()
-)
+# Load once into a private variable
+_maps = _load_mappings_from_toml()
+
+# Explicitly assign to the public constants
+PRODUCT_BASE_NAME_MAP = _maps["base_names"]
+ESA_LAND_COVER_DESC_MAP = _maps["descriptions"]
+ESA_LAND_COVER_ALIAS_MAP = _maps["aliases"]
+PRODUCT_NOTES_MAP = _maps["notes"]
+DEF_AGG_STRATEGY_MAP = _maps["aggregation"]

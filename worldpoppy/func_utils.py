@@ -230,9 +230,9 @@ def get_buffered_bounds(clipping_gdf, raster_crs, buffer_deg):
     if CRS(raster_crs) == CRS(WGS84_CRS):
         return bounds
 
-    # If the raster is NOT in WGS84, we reproject the bounds.
-    # Note: We expect *all* WorldPop rasters to be in WGS84,
-    # so this is just safety logic.
+    # If raster is NOT in WGS84, we reproject the buffered bounds.
+    # Note: We actually expect all WorldPop rasters to be in WGS84,
+    # so this is a just defensive safety logic.
     buffered_box = box(*bounds)
     box_gdf_wgs84 = gpd.GeoDataFrame(geometry=[buffered_box], crs=WGS84_CRS)
     box_gdf_tgt = box_gdf_wgs84.to_crs(raster_crs)

@@ -24,6 +24,7 @@ Main methods
 
 """
 import logging
+import warnings
 from collections import defaultdict
 from datetime import datetime
 from functools import lru_cache
@@ -36,13 +37,14 @@ import rioxarray
 import shapely
 import xarray as xr
 from pyproj import CRS, Transformer
+from rasterio.enums import Resampling
 from rioxarray.merge import merge_arrays
 from tqdm.auto import tqdm
 
 from worldpoppy.borders import load_country_borders
-from worldpoppy.config import *
+from worldpoppy.config import WGS84_CRS, DEF_AGG_STRATEGY_MAP, get_cache_dir
 from worldpoppy.download import WorldPopDownloader
-from worldpoppy.func_utils import module_available, geolocate_name
+from worldpoppy.func_utils import module_available, geolocate_name, validate_bbox_wgs84, get_buffered_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,18 @@ __all__ = [
     "bbox_from_location",
     "merge_rasters",
 ]
+
+# Map config strings to Rasterio Enums for Reprojection/Warping
+RESAMPLING_MAP = {
+    'sum': Resampling.sum,
+    'mean': Resampling.average,
+    'max': Resampling.max,
+    'min': Resampling.min,
+    'median': Resampling.med,
+    'nearest': Resampling.nearest,
+    'bilinear': Resampling.bilinear,
+    'cubic': Resampling.cubic
+}
 
 
 class RasterReadError(Exception):
@@ -77,15 +91,27 @@ def wp_raster(
     masked=False,
     mask_and_scale=False,
     other_read_kwargs=None,
+    preclip=True,
+    to_crs=None,
     res=None,
+    merge_strategy='quality',
+    resampling=None,
     download_chunk_size=1024**2,
     download_dry_run=False,
-    to_crs=None,
-    **merge_kwargs,
+    **merge_options,
 ):
     """
     Return WorldPop data for the user-defined area of interest (AOI) and the
     specified years (where applicable).
+
+    Note that WorldPop organises its raster files by country. If the AOI spans
+    multiple countries, this function will automatically merge all corresponding
+    raster files. If multiple years are requested, the raster data is stacked
+    along a new 'year' dimension.
+
+    Optional re-projection and re-sampling of the raster data can be performed
+    either *after* merging country files (merge_strategy='quality') or
+    *beforehand* (merge_strategy='performance').
 
     Parameters
     ----------
@@ -126,12 +152,39 @@ def wp_raster(
         Dictionary with additional keyword arguments that are passed to
         `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
         when reading input rasters (e.g., `lock` or `band_as_variable`).
-    res: tuple, optional
-        Output resolution for the final merged raster in units of coordinate
-        reference system. If not set, the resolution of the first source
-        raster is used. If a single value is passed, output pixels will be
-        square. This argument is passed to
-        `rioxarray.merge.merge_arrays <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray.merge.merge_arrays>`_.
+    preclip : bool, optional, default=True
+        If True, input rasters are cropped to the bounding box of the AoI
+        (plus a small safety buffer) immediately after loading. This reduces
+        RAM usage when processing small AOIs within large raster files.
+        Only used when the AOI is specified with a GeoDataFrame or
+        bounding box.
+    to_crs: str or pyproj.CRS, optional
+        Coordinate reference system (CRS) to reproject the raster data into.
+        If `to_crs` is not provided, raster data remains in the source CRS.
+
+        Note regarding `merge_strategy`:
+        - If merge_strategy='quality', re-projection is applied *after* merging
+          the rasters.
+        - If merge_strategy='performance', input rasters are re-projected *before*
+          merging.
+    res : tuple, optional
+        Target resolution. Defines the pixel size of the *final output* raster
+        in the units of `to_crs`. Used for aligning data to a specific grid.
+    merge_strategy : str, optional, default='quality'
+        Controls the processing pipeline order to balance RAM usage vs. accuracy.
+
+        - 'quality' (Merge-Then-Reproject): Stitches input rasters in the source
+          CRS first, then warps the result. Preserves geometric continuity and
+          avoids seam artefacts. High RAM usage.
+        - 'performance' (Reproject-Then-Merge): Warps each input raster individually
+          before stitching. Much lower RAM usage for large areas, but may
+          introduce slight edge artefacts or data loss at tile boundaries.
+        Effective when `to_crs` or `res` is provided.
+    resampling : str or rasterio.enums.Resampling, optional
+        The resampling method used during reprojection or resolution change.
+        Options: 'sum', 'mean', 'nearest', 'bilinear', etc.
+        If None, the default strategy for the `product_name` is looked up
+        in `product_definitions.toml` (e.g., population defaults to 'sum').
     download_chunk_size : int, optional, default=1MB
         The size (in bytes) of chunks to read/write during raster downloads.
         Larger chunks may improve performance, especially on systems with
@@ -141,21 +194,19 @@ def wp_raster(
         from WorldPop if `download_dry_run` was False. Report the number and
         size of required file downloads, but do not actually fetch or process
         any files.
-    to_crs : str or pyproj.CRS, optional
-        Coordinate reference system (CRS) to reproject the merged raster into.
-        Re-projection is applied *after* merging (and clipping, if requested).
-        If `to_crs` is not provided, raster data remains in the source CRS.
-    **merge_kwargs : keyword arguments
+    **merge_options : keyword arguments
         Additional arguments passed to
         `rioxarray.merge.merge_arrays <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray.merge.merge_arrays>`_,
         which give more control over how input rasters should be merged
-        (e.g., `method` or `bounds`).
+        (e.g., `bounds`).
 
     Returns
     -------
-    xr.Dataset or None
-        The combined raster data for several countries and years (where applicable),
-        or None if `download_dry_run` is True.
+    xarray.DataArray or None
+        The combined raster data.
+        - For static products, dimensions are ``(y, x)``.
+        - For multi-year products, dimensions are ``(year, y, x)``.
+        Returns None if `download_dry_run` is True.
 
     Raises
     -------
@@ -175,30 +226,55 @@ def wp_raster(
          if the underlying source files have different `_FillValue`,
          `scale_factor` or `add_offset` attributes.)
     """
-    other_read_kwargs = {} if other_read_kwargs is None else other_read_kwargs
 
-    # --- Process the area of interest ---
-    aoi, iso3_codes = _standardise_aoi(aoi)
-
-    # --- Check other user args ---
     if not cache_downloads and skip_download_if_exists:
         skip_download_if_exists = False
         logger.warning(
-            "'skip_download_if_exists' has no effect is 'cache_downloads' is set to False'."
+            "'skip_download_if_exists' has no effect if "
+            "'cache_downloads' is set to False'."
         )
 
-    # --- Prepare shared raster-processing arguments ---
-    merge_options = merge_kwargs.copy()
-    if res is not None:
-        merge_options['res'] = res
+    other_read_kwargs = {} if other_read_kwargs is None else other_read_kwargs
 
+    # --- Resolve Resampling Method ---
+    # We need a valid Rasterio Enum for warping.
+    if resampling is None:
+        # Look up default string from TOML (e.g., 'pop_g1' -> 'sum')
+        resampling_str = DEF_AGG_STRATEGY_MAP.get(product_name, 'mean')
+    elif isinstance(resampling, str):
+        resampling_str = resampling
+    else:
+        # User passed a Resampling Enum directly
+        resampling_str = None
+
+    if resampling_str:
+        try:
+            resampling_enum = RESAMPLING_MAP[resampling_str]
+        except KeyError:
+            valid = list(RESAMPLING_MAP.keys())
+            raise ValueError(
+                f"Unknown resampling method '{resampling_str}'. Valid: {valid}"
+            )
+    else:
+        resampling_enum = resampling
+
+    # --- Process the AOI ---
+    # Beware: _standardise_aoi converts BBox tuples to a GeoDataFrame automatically.
+    aoi, iso3_codes = _standardise_aoi(aoi)
+
+    # --- Prepare Shared Raster-processing Arguments ---
     clipping_gdf = aoi if isinstance(aoi, gpd.GeoDataFrame) else None
+
     shared_processing_kwargs = dict(
         masked=masked,
         mask_and_scale=mask_and_scale,
         other_read_kwargs=other_read_kwargs,
         clipping_gdf=clipping_gdf,
         to_crs=to_crs,
+        res=res,
+        merge_strategy=merge_strategy,
+        resampling=resampling_enum,
+        preclip=preclip,
         merge_options=merge_options,
     )
 
@@ -216,14 +292,14 @@ def wp_raster(
         if download_dry_run:
             return None
 
-        # --- Static product ---
+        # --- Static Product ---
         # Meta-data validation for file-paths passed to `merge_rasters`
         # is *always* performed within that stand-alone function.
         if years is None:
             merged = merge_rasters(all_raster_paths, **shared_processing_kwargs)
             return merged.squeeze()
 
-        # --- Multi-year product  ---
+        # --- Multi-year Product  ---
         paths_by_year = defaultdict(list)
         for path, mrow in zip(all_raster_paths, filtered_mdf.itertuples()):
             year = int(mrow.year)  # convert from numpy type
@@ -288,11 +364,16 @@ def merge_rasters(
     mask_and_scale=False,
     other_read_kwargs=None,
     clipping_gdf=None,
+    preclip=True,
     to_crs=None,
-    merge_options=None
+    res=None,
+    merge_strategy='quality',
+    resampling=Resampling.average,
+    merge_options=None,
 ):
     """
-    Merge multiple raster files, and optionally clip the result, using `rioxarray`.
+    Merge multiple rasters using either a Quality (Merge-Then-Reproject) or
+    Performance (Reproject-Then-Merge) strategy.
 
     This function is a "smart" wrapper around `rioxarray.merge.merge_arrays`.
     It validates that all input rasters share the same critical metadata (CRS,
@@ -322,14 +403,40 @@ def merge_rasters(
         or `band_as_variable`).
     clipping_gdf : geopandas.GeoDataFrame, optional
         GeoDataFrame with geometries used to clip the merged raster.
-    to_crs : str or pyproj.CRS, optional
-        Coordinate reference system (CRS) to reproject the merged raster into.
-        Re-projection is applied *after* merging (and clipping, if requested).
+    preclip : bool, optional, default=True
+        If True, and if `clipping_gdf` is provided, input rasters are cropped
+        to the bounding box of the geometry (plus a small safety buffer)
+        immediately after loading. This reduces RAM usage significantly when
+        processing small AOIs within large raster files.
+    to_crs: str or pyproj.CRS, optional
+        Coordinate reference system (CRS) to reproject the raster data into.
         If `to_crs` is not provided, raster data remains in the source CRS.
+
+        Note regarding `merge_strategy`:
+        - If merge_strategy='quality', re-projection is applied *after* merging
+          the rasters.
+        - If merge_strategy='performance', input rasters are re-projected *before*
+          merging.
+    res : tuple, optional
+        Target resolution. Defines the pixel size of the *final output* raster
+        in the units of `to_crs`. Used for aligning data to a specific grid.
+    merge_strategy : str, optional, default='quality'
+        Controls the processing pipeline order to balance RAM usage vs. accuracy.
+
+        - 'quality' (Merge-Then-Reproject): Stitches input rasters in the source
+          CRS first, then warps the result. Preserves geometric continuity and
+          avoids seam artefacts. High RAM usage.
+        - 'performance' (Reproject-Then-Merge): Warps each input raster individually
+          before stitching. Much lower RAM usage for large areas, but may
+          introduce slight edge artefacts or data loss at tile boundaries.
+        Effective when `to_crs` or `res` is provided.
+    resampling : rasterio.enums.Resampling, optional, default=Resampling.average
+        The resampling method used during reprojection or resolution change.
+        Options: Resampling.sum, Resampling.mean, Resampling.nearest, etc.
     merge_options : dict, optional
         A dictionary of keyword arguments passed directly to
         `rioxarray.merge.merge_arrays`, which give more control over how input
-        rasters should be merged (e.g., `{'method': 'first'}`).
+        rasters should be merged (e.g., `bounds`).
 
     Returns
     -------
@@ -355,12 +462,30 @@ def merge_rasters(
          `scale_factor` or `add_offset` attributes.)
     """
 
-    # --- Validate metadata ---
-    # The call below performs a "smart" validation that depends on the user's
-    # flags. See `_validate_raster_attrs` docstring for a full explanation.
+    if merge_strategy not in ['quality', 'performance']:
+        raise ValueError(
+            f'Invalid strategy: {merge_strategy}. Must be either '
+            f"'quality' or 'performance'."
+        )
+
+    if merge_strategy == 'performance' and to_crs is None and res is None:
+        merge_strategy = 'quality'
+        logger.debug(
+            "Merge strategy 'performance' requested but no transformation "
+            "(to_crs/res)  provided. Reverting to 'quality' (default merge)."
+        )
+
+    # --- Defaults ---
+    if merge_options is None:
+        merge_options = {}
+
+    if to_crs is not None:
+        to_crs = CRS(to_crs)
+
+    # --- Validate Metadata ---
     safe_attrs = _validate_raster_attrs(raster_fpaths, masked, mask_and_scale)
 
-    # --- Consolidate read options ---
+    # --- Consolidate Read Options ---
     # This is for logging and for passing to rioxarray.
     if other_read_kwargs is None:
         read_options = {}
@@ -369,72 +494,139 @@ def merge_rasters(
     read_options['masked'] = masked
     read_options['mask_and_scale'] = mask_and_scale
 
-    # --- Open *actual* rasters for merging ---
-    # validation passed, so now we open the files for real
+    # --- 1. Open Input Rasters & Optional Pre-clip (Lazy) ---
     rasters_to_merge = []
+
+    # Caching variables to avoid re-calculating geometry for
+    # every file if the CRS is consistent across the batch.
+    cached_clip_box = None
+    cached_crs = None
+
+    # We track if pre-clipping actually happened for the history log
+    preclip_applied = False
 
     for path in raster_fpaths:
         try:
             da = rioxarray.open_rasterio(path, **read_options)
+
+            # [OPTIMISATION] Buffered pre-clip
+            # If enabled, use `da.rio.clip_box` to slice the raster immediately.
+            if preclip and clipping_gdf is not None:
+                try:
+                    current_crs = da.rio.crs
+
+                    # Calculate buffered bounds (only if CRS changed or first run)
+                    # Note: `get_buffered_bounds` *always* projects bounds to the
+                    # input raster's CRS. (We still specify the buffer size in
+                    # degrees for consistency.)
+                    if cached_clip_box is None or current_crs != cached_crs:
+                        cached_clip_box = get_buffered_bounds(
+                            clipping_gdf, raster_crs=current_crs, buffer_deg=0.1
+                        )
+                        cached_crs = current_crs
+                        logger.debug(f"Calculated pre-clip bounds: {cached_clip_box}")
+
+                    # Perform the slice.
+                    # This is lazy (Dask) and happens instantly.
+                    da = da.rio.clip_box(*cached_clip_box)
+                    preclip_applied = True
+
+                except Exception as e:
+                    # FAIL SAFE: If pre-clipping fails (e.g. bounds error), we
+                    # log the error and continue with the FULL raster, thereby
+                    # skipping the optimisation.
+                    logger.warning(
+                        f"Pre-clipping failed for {Path(path).name}. "
+                        f"Skipping optimization and loading full input raster. Reason: {e}"
+                    )
+
+            # Check for empty arrays (no overlap with buffered bbox)
+            if da.sizes['x'] == 0 or da.sizes['y'] == 0:
+                logger.debug(
+                    f"Skipping {Path(path).name} (no overlap with buffered AOI bbox)."
+                )
+                continue
+
             rasters_to_merge.append(da)
+
         except Exception as e:
-            # This is a safety catch, but _get_raster_metadata
-            # should have caught most read errors.
-            raise RasterReadError(f"Failed to read raster file at {path}. Error: {e}\n")
+            raise RasterReadError(f"Failed to read {path}: {e}")
 
-    # --- Merge rasters using `rioxarray` ---
-    if merge_options is None:
-        merge_options = {}
-    da = merge_arrays(rasters_to_merge, **merge_options)
+    if not rasters_to_merge:
+        raise ValueError(
+            "No raster data found intersecting the buffered AOI. "
+            "Check your AOI coordinates."
+        )
 
-    # --- Clip the merged rasters (optional) ---
+    # --- 2. Execute Strategy ---
+    if merge_strategy == 'performance':
+        # [STRATEGY A: Reproject-Then-Merge]
+
+        warped_rasters = []
+        for da in rasters_to_merge:
+            target_crs = to_crs if to_crs is not None else da.rio.crs
+            warped_da = da.rio.reproject(
+                target_crs, resolution=res, resampling=resampling
+            )
+            warped_rasters.append(warped_da)
+
+        da = merge_arrays(warped_rasters, **merge_options)
+
+    else:
+        # [STRATEGY B: Merge-Then-Reproject] ('quality')
+
+        da = merge_arrays(rasters_to_merge, **merge_options)
+
+        if to_crs is not None or res is not None:
+            target_crs = to_crs if to_crs is not None else da.rio.crs
+            reproject_kwargs = {'resampling': resampling}
+            if res is not None:
+                reproject_kwargs['resolution'] = res
+
+            da = da.rio.reproject(target_crs, **reproject_kwargs)
+
+    # --- 3. Final Precise Clipping ---
+    # Note: Pre-clipping was done using a buffered bounding box.
+    # Now we clip to the EXACT geometry.
     if clipping_gdf is not None:
         geoms = clipping_gdf.geometry.apply(shapely.geometry.mapping)
         da = da.rio.clip(geoms, clipping_gdf.crs, drop=True, all_touched=True)
 
-    # --- Re-project (optional) ---
-    if to_crs is not None:
-        to_crs = CRS(to_crs)  # force format errors
-        da = da.rio.reproject(to_crs)
+    # --- 4. Clean-up and create final metadata ---
+    da.attrs = {}
+    da.attrs.update(safe_attrs)
 
-    # --- Clean-up and create final metadata ---
-    da.attrs = {}  # nuke old attrs
-    da.attrs.update(safe_attrs)  # re-apply the safe attrs
-
-    # Build the 'history' field (wherein we track key
-    # data-processing steps)
     fnames = [Path(x).name for x in raster_fpaths]
     num_files = len(fnames)
     timestamp = datetime.now().isoformat()
 
     history_log = []
 
-    # Was actual merging done?
     if num_files > 1:
         history_log.append(
-            f"Merged from {num_files} input files by worldpoppy on {timestamp}."
+            f"Merged from {num_files} input files by worldpoppy "
+            f"on {timestamp} using strategy '{merge_strategy}'."
         )
-
     else:
         history_log.append(
-            f"Processed from 1 input file by worldpoppy on {timestamp}."
+            f"Processed from 1 input file by worldpoppy "
+            f"on {timestamp} using strategy '{merge_strategy}'."
         )
 
-    # Was clipping applied?
+    if preclip_applied:
+        history_log.append(f"Pre-clipped inputs (buffer=0.05 deg).")
+
     if clipping_gdf is not None:
         history_log.append("Clipped to AOI geometry.")
 
-    # Was re-projection done?
     if to_crs is not None:
         history_log.append(f"Reprojected to new CRS.")
 
-    # Record any read and merge options
     if read_options:
         history_log.append(f"Read options: {read_options}.")
     if merge_options:
         history_log.append(f"Merge options: {merge_options}.")
 
-    # Join all processing steps into the final history string
     da.attrs['history'] = " ".join(history_log)
     da.attrs['input_files'] = ", ".join(fnames)
 
@@ -553,7 +745,7 @@ def _standardise_aoi(aoi):
     if isinstance(aoi, (list, tuple)):
         if not isinstance(aoi[0], str):
             # Case: apparent bounding box passed
-            _validate_bbox(aoi)
+            validate_bbox_wgs84(aoi)
             box_poly = shapely.box(*aoi)
             aoi = gpd.GeoDataFrame(geometry=[box_poly], crs=WGS84_CRS)
 
@@ -718,38 +910,3 @@ def _concat_with_info(objs, **kwargs):
             "`xarray` concatenation. (pip install bottleneck)"
         )
     return xr.concat(objs, **kwargs)
-
-
-def _validate_bbox(bbox):
-    """
-    Validate a bounding box in the format (min_lon, min_lat, max_lon, max_lat).
-
-    Raises
-    ------
-    ValueError
-        If the bounding box is invalid.
-    """
-    if not isinstance(bbox, (list, tuple)):
-        raise ValueError("Bounding box must be a list or tuple.")
-
-    if len(bbox) != 4 or not all([isinstance(x, (int, float)) for x in bbox]):
-        raise ValueError(
-            "Bounding box must contain exactly four numeric values: "
-            "(min_lon, min_lat, max_lon, max_lat)."
-        )
-
-    min_lon, min_lat, max_lon, max_lat = bbox
-
-    if min_lon >= max_lon:
-        raise ValueError("Bad bounding box. min_lon must be less than max_lon.")
-    if min_lat >= max_lat:
-        raise ValueError("Bad bounding box. min_lat must be less than max_lat.")
-
-    if not (-180 <= min_lon <= 180 and -180 <= max_lon <= 180):
-        raise ValueError(
-            "Bad bounding box. Longitude must be between -180 and 180 degrees."
-        )
-    if not (-90 <= min_lat <= 90 and -90 <= max_lat <= 90):
-        raise ValueError(
-            "Bad bounding box. Latitude must be between -90 and 90 degrees."
-        )

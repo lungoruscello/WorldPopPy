@@ -4,9 +4,9 @@
     # ********************
     # --- Population ---
     "wpgp" = "pop_g1" # main global 1 series
-    "wpgpunadj" = "pop_g1_unadj" # "alternative" global 1 series (country totals adjusted to match UNDP estimates)
+    "wpgpunadj" = "pop_g1_unadj" # global 1 series with country totals adjusted to match UNDP estimates
     "cic2020_100m" = "pop_g1_alt"  # alternative data for 2020 only
-    "cic2020_UNadj_100m" = "pop_g1_alt_unadj"  # variant of the above with UN-adjusted country totals
+    "cic2020_UNadj_100m" = "pop_g1_alt_unadj"  # variant of the above with UNDP-adjusted country totals
     # --- Infrastructure & Built Environment ---
     "cdistosmroads" = "dist_roads_g1"
     "cdistosmroadinter" = "dist_road_intersections_g1"
@@ -23,7 +23,7 @@
     "wpgpsrtmslope" = "srtm_slope_g1"
     "wpgpsrtmtopo" = "srtm_elevation_g1"
     # --- ESA Land Cover (multi-band "containers") ---
-    # > We distinguith *bands*, not years, using the `band_alias` entries below
+    # Note: We distinguith *bands*, not years, using the `band_alias` entries below
     "esaccilc2000" = "dist_esalc_g1"
     "esaccilc2001" = "dist_esalc_g1"
     "esaccilc2002" = "dist_esalc_g1"
@@ -183,3 +183,41 @@
     "gppixelarea" = "Grid-cell surface areas"
     "wpgpnationalboundari" = "National boundaries"
     "wpgpsubnationalbound" = "Sub-National unit boundaries"
+
+
+[default_aggregation_strategy]
+    # Population counts -> summed
+    "pop_g1" = "sum"
+    "pop_g1_unadj" = "sum"
+    "pop_g1_alt" = "sum"
+    "pop_g1_alt_unadj" = "sum"
+    "pop_g2_r24b" = "sum"
+    "pop_uc_g2_r24b" = "sum"
+    "pop_g2_r25a" = "sum"
+    "pop_g2_1km_r25a" = "sum"
+    "pop_g2_alt" = "sum"
+    "pop_uc_g2_alt" = "sum"
+
+    # Pixel area -> summed
+    "pxl_area" = "sum"
+
+    # Continuous measurements -> averaged
+    "temp_mean_g2" = "mean"
+    "precip_mean_g2" = "mean"
+    "merit_slope_g2" = "mean"
+    "srtm_slope_g1" = "mean"
+    "srtm_elevation_g1" = "mean"
+    "ntl_viirs_g1" = "mean"
+    "ntl_dmsp_g1" = "mean"
+    "ntl_viirs_g2" = "mean"
+    "ntl_viirs_filtered_g2" = "mean"
+    "dist_roads_g1" = "mean"
+    "dist_road_intersections_g1" = "mean"
+    "dist_waterways_g1" = "mean"
+    "dist_coast_g1" = "mean"
+    "dist_inland_water_g1" = "mean"
+    "dist_protected_areas_g1" = "mean"
+
+    # Categorical indicators -> Nearest neighbour subsampling
+    "admin0" = "nearest"
+    "admin1" = "nearest"
