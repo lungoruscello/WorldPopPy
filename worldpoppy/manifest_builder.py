@@ -32,13 +32,11 @@ raw manifest and will hence not be supported by the `worldpoppy` package.
 
 # TODO: remove legacy reference to API "crawl" except where accurate
 
-import logging
 from datetime import datetime
 from math import floor
 
 import backoff
 import httpx
-import pandas as pd
 from tqdm.autonotebook import tqdm
 
 from worldpoppy.config import (
