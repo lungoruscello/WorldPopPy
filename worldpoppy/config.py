@@ -43,7 +43,7 @@ __all__ = [
 DEBUG = False
 
 DEFAULT_CACHE_DIR = Path(platformdirs.user_cache_dir(appname="worldpoppy"))
-DEFAULT_MAX_CONCURRENCY = max(1, cpu_count() - 2)
+DEFAULT_MAX_CONCURRENCY = max(1, cpu_count() - 1)
 ROOT_DIR = Path(__file__).parent
 ASSET_DIR = ROOT_DIR / 'assets'
 RAW_MANIFEST_CACHE_PATH = ASSET_DIR / "raw_api_manifest.feather"
