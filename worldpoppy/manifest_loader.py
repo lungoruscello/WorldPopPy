@@ -285,8 +285,11 @@ def wp_manifest_constrained(product_name, iso3_codes, years=None):
     if isinstance(years, int):
         years = [years]
 
+    requested_years = set(years) if years else set()
     target_iso_set = set(iso3_codes)
-    target_years_set = set(years) if years else set()
+
+    # Placeholder for the final, validated years to be used in the query
+    final_query_years = None  # noqa
 
     # get the "ground truth" for the product
     is_multi_year, available_years, available_isos = _get_product_info(product_name)
@@ -298,68 +301,70 @@ def wp_manifest_constrained(product_name, iso3_codes, years=None):
             f"Invalid: {unknown_isos}. (Available for {len(available_isos)} countries)."
         )
 
-    # check available time
+    # --- Check available time and assign final_query_years ---
     if is_multi_year:
-        # product is multi-year, so `years` is ambiguous and required
+        # Product is multi-year, so `years` is ambiguous and required
         if not years:
             raise ValueError(
                 f"Product '{product_name}' is multi-year. You must provide `years`. "
-                f"Available: {sorted(available_years)}"  # TODO
+                f"Available: {sorted(available_years)}"
             )
-        if unknown_years := target_years_set - available_years:
+
+        # Check against the set of available years
+        if unknown_years := requested_years - available_years:
             raise ValueError(
                 f"Product '{product_name}' is not available for all requested years. "
                 f"Invalid: {unknown_years}. Available: {sorted(available_years)}"
             )
-        target_years_list = years  # use the user's validated list
+
+        final_query_years = requested_years
 
     else:
-        # product is static, so `years` is unambiguous
-        if not available_years:  # no recorded year at all
-            if years:
+        # Product is static, so `years` is unambiguous
+        if not available_years:
+            # Static product with no recorded year
+            if requested_years:
                 raise ValueError(
                     f"Product '{product_name}' is static and has no year. "
                     "`years` must be None."
                 )
-            target_years_list = None  # this is correct for pd.NA filtering
+            final_query_years = None  # This handles the year.isnull() case
 
-        else:  # single recorded year
-            # .pop() mutates the cached set; this is a read-only way
-            # to get the single item we know is in there.
+        else:
+            # Static product with a single recorded year
             single_year = list(available_years)[0]
-            if years:  # user has passed `years`
-                if target_years_set != {single_year}:
+
+            if requested_years:  # user has passed `years`
+                if requested_years != {single_year}:
                     raise ValueError(
                         f"Product '{product_name}' is static, only available for "
-                        f"year {single_year}. You requested {years}."
+                        f"year {single_year}. You requested {sorted(requested_years)}."
                     )
-                target_years_list = [single_year]
-            else:  # user has not passed `years`
-                # ambiguity is gone, so we can infer the year
-                target_years_list = [single_year]
+
+            # The year is either validated (if provided) or inferred (if None provided)
+            final_query_years = {single_year}
 
     # load full manifest
     mdf = _get_cleaned_manifest()
 
-    # build a query
+    # --- Build query ---
     query_parts = ["product_name == @product_name", "iso3 in @target_iso_set"]
 
-    if target_years_list:
-        query_parts.append("year in @target_years_list")
+    if final_query_years:
+        query_parts.append("year in @final_query_years")
     else:
-        # this handles the "year-less" static case
         query_parts.append("year.isnull()")
 
     final_query = " & ".join(query_parts)
     filtered_mdf = mdf.query(final_query)
 
-    # check available *combinations* of countries and years
-    num_expected = len(iso3_codes)
-    if target_years_list:
-        num_expected *= len(target_years_list)
+    # --- Check available *combinations* of countries and years ---
+    num_expected = len(target_iso_set)
+    if final_query_years:
+        num_expected *= len(final_query_years)
 
     if len(filtered_mdf) != num_expected:
-        # argument logic was valid, but the data is sparse
+        # Argument logic was valid, but the data is sparse
         raise ValueError(
             f"Incomplete data. Product '{product_name}' is not available for "
             f"all requested country-year combinations. Expected {num_expected} files, "
