@@ -187,3 +187,57 @@ def validate_bbox_wgs84(bounds):
             f"Anti-Meridian (Date Line)."
         )
 
+
+def get_buffered_bounds(clipping_gdf, raster_crs, buffer_deg):
+    """
+    Calculate a bounding box for the AOI in the target raster CRS,
+    with a fixed safety buffer applied in WGS84.
+
+    Parameters
+    ----------
+    clipping_gdf : geopandas.GeoDataFrame
+        The clipping geometry.
+    raster_crs : CRS (string or object)
+        The Coordinate Reference System of the source raster we intend to clip.
+    buffer_deg : float
+        The buffer size in Degrees. Default 0.05 (approx 5.5km).
+
+    Returns
+    -------
+    tuple
+        (minx, miny, maxx, maxy) in the units of `raster_crs`.
+    """
+
+    # Standardise the CRS so our buffer is consistent
+    if clipping_gdf.crs != WGS84_CRS:
+        gdf_84 = clipping_gdf.to_crs(WGS84_CRS)
+    else:
+        gdf_84 = clipping_gdf
+
+    # Calculate bounds in degrees
+    minx, miny, maxx, maxy = gdf_84.total_bounds
+
+    # Apply the buffer (in degrees)
+    buff_minx = max(minx - buffer_deg, -180.0)
+    buff_miny = max(miny - buffer_deg, -90.0)
+    buff_maxx = min(maxx + buffer_deg, 180.0)
+    buff_maxy = min(maxy + buffer_deg, 90.0)
+
+    bounds = buff_minx, buff_miny, buff_maxx, buff_maxy
+    validate_bbox_wgs84(bounds)  # just for safety
+
+    # If the raster is also in WGS84, we are done.
+    if CRS(raster_crs) == CRS(WGS84_CRS):
+        return bounds
+
+    # If the raster is NOT in WGS84, we reproject the bounds.
+    # Note: We expect *all* WorldPop rasters to be in WGS84,
+    # so this is just safety logic.
+    buffered_box = box(*bounds)
+    box_gdf_wgs84 = gpd.GeoDataFrame(geometry=[buffered_box], crs=WGS84_CRS)
+    box_gdf_tgt = box_gdf_wgs84.to_crs(raster_crs)
+
+    # Return the bounds of the reprojected box.
+    # This might be slightly larger than the original due to rotation/skew,
+    # which is desirable for a safety buffer.
+    return tuple(box_gdf_tgt.total_bounds)
