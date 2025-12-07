@@ -43,14 +43,14 @@ class BboxInvalidError(Exception):
 @backoff.on_exception(
     backoff.expo, GeocoderTimedOut, max_tries=5, jitter=backoff.full_jitter
 )
-def geolocate_name(nomatim_query, to_crs=None):
+def geolocate_name(nominatim_query, to_crs=None):
     """
     Return the geo-coordinate associated with a given location name,
     based on search results from OSM's 'Nominatim' service.
 
     Parameters
     ----------
-    nomatim_query : str
+    nominatim_query : str
         A location name to be geocoded.
     to_crs : pyproj.CRS or str, optional
         If specified, transforms the returned coordinate from (lon, lat)
@@ -68,10 +68,13 @@ def geolocate_name(nomatim_query, to_crs=None):
         If the Nominatim query has returned None.
     """
     geolocator = Nominatim(user_agent="MyLocationCacher", timeout=2)
-    located = geolocator.geocode(nomatim_query)
+    located = geolocator.geocode(nominatim_query)
 
     if located is None:
-        raise RuntimeError(f"Nomatim search for location name '{nomatim_query}' returned no hit.")
+        raise RuntimeError(
+            f"Nominatim search for location name '{nominatim_query}' returned no hit."
+        )
+
 
     lon, lat = located.point.longitude, located.point.latitude
     if to_crs is None:

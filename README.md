@@ -76,7 +76,7 @@ import numpy as np
 from worldpoppy import *
 
 # Define the area of interest 
-# Note: `bbox_from_location` runs a `Nomatim` query under the hood 
+# Note: `bbox_from_location` runs a `Nominatim` query under the hood 
 aoi_box = bbox_from_location('Accra', width_km=500)  # returns (min_lon, min_lat, max_lon, max_lat)
 
 # Define the target CRS (optional)
