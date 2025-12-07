@@ -175,7 +175,7 @@
     "DST_IUCN_C1" = "Distance to IUCN strict nature reserve and wilderness area edges"
     "DST_IUCN_C0" = "Distance to IUCN national park, national monument, etc.."
     "G2_NT_lights" = "VIIRS Nighttime Lights"
-    "G2_NT_Lights_F" = "VIIRS Nighttime Lights (flares/volcanoes filtered)"
+    "G2_NT_Lights_F" = "VIIRS Nighttime Lights (flares/volcanos filtered)"
     "MERIT_Slope_2007" = "MERIT-based slope"
     "G2_Temperature" = "Annual Mean Surface Temperature"
     "G2_Precipitation" = "Annual Mean Precipitation"
