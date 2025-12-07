@@ -32,7 +32,6 @@ __all__ = [
     "ESA_LAND_COVER_DESC_MAP",
     "ESA_LAND_COVER_ALIAS_MAP",
     "PRODUCT_NOTES_MAP",
-    "DEF_AGG_STRATEGY_MAP",
     "RED",
     "BLUE",
     "GOLDEN",
@@ -110,9 +109,6 @@ def _load_mappings_from_toml():
         alias_map = mappings.get("band_alias", {})
         product_notes_map_raw = mappings.get("product_notes", {})
 
-        # Extract aggregation strategy
-        agg_strategy_map = mappings.get("default_aggregation_strategy", {})
-
         # Remove redundant white-space in the product notes
         product_notes_map = {}
         for key, val in product_notes_map_raw.items():
@@ -124,7 +120,6 @@ def _load_mappings_from_toml():
             "descriptions": desc_map,
             "aliases": alias_map,
             "notes": product_notes_map,
-            "aggregation": agg_strategy_map,
         }
 
     except FileNotFoundError:
@@ -145,4 +140,3 @@ PRODUCT_BASE_NAME_MAP = _maps["base_names"]
 ESA_LAND_COVER_DESC_MAP = _maps["descriptions"]
 ESA_LAND_COVER_ALIAS_MAP = _maps["aliases"]
 PRODUCT_NOTES_MAP = _maps["notes"]
-DEF_AGG_STRATEGY_MAP = _maps["aggregation"]

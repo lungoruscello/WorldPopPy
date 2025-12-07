@@ -11,7 +11,7 @@ from .manifest_loader import (
     wp_manifest, show_supported_data_products,
     get_all_isos, get_static_product_names
 )
-from .raster import wp_raster, bbox_from_location
+from .raster import wp_raster, wp_warp, bbox_from_location
 from .borders import load_country_borders
 from .func_utils import geolocate_name
 from .plot_utils import *

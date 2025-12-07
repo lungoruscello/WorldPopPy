@@ -3,24 +3,18 @@ This is the main module of `WorldPopPy`. It provides logic to fetch raster
 data from `WorldPop <https://www.worldpop.org/>`_ through several alternative
 specifications for the geographic area of interest.
 
-Note
-----
-    The implementation of this module draws on the "raster.py" module from the
-    `blackmarblepy <https://github.com/worldbank/blackmarblepy>`_ package by
-    Gabriel Stefanini Vicente and Robert Marty. `blackmarblepy` is licensed
-    under the Mozilla Public License (MPL-2.0), as is `WorldPopPy`.
-
-
 Main methods
 ------------------------
     - :func:`wp_raster`
         Retrieve WorldPop data for arbitrary geographical areas and
         multiple years (where applicable).
+    - :func:`wp_warp`
+        Reproject or resample a WorldPop raster (lazy).
     - :func:`merge_rasters`
         Merge multiple raster files and optionally clip the result.
     - :func:`bbox_from_location`
         Generate a bounding box from a location name or GPS coordinate.
-        The result can be used specify the AOI for `wp_raster`.
+        The result can be used to specify the AOI for `wp_raster`.
 
 """
 import logging
@@ -39,10 +33,11 @@ import shapely
 import xarray as xr
 from pyproj import CRS, Transformer
 from rasterio.enums import Resampling
+from shapely.geometry import box
 from tqdm.auto import tqdm
 
 from worldpoppy.borders import load_country_borders
-from worldpoppy.config import WGS84_CRS, DEF_AGG_STRATEGY_MAP, get_cache_dir
+from worldpoppy.config import WGS84_CRS, get_cache_dir
 from worldpoppy.download import WorldPopDownloader
 from worldpoppy.func_utils import module_available, geolocate_name, validate_bbox_wgs84, get_buffered_bounds
 
@@ -52,6 +47,7 @@ __all__ = [
     "RasterReadError",
     "IncompatibleRasterError",
     "wp_raster",
+    "wp_warp",
     "bbox_from_location",
     "merge_rasters",
 ]
@@ -92,9 +88,6 @@ def wp_raster(
     mask_and_scale=False,
     other_read_kwargs=None,
     preclip=True,
-    to_crs=None,
-    res=None,
-    resampling=None,
     download_chunk_size=1024**2,
     download_dry_run=False,
     **merge_options,
@@ -153,17 +146,6 @@ def wp_raster(
         RAM usage when processing small AOIs within large raster files.
         Only used when the AOI is specified with a GeoDataFrame or
         bounding box.
-    to_crs: str or pyproj.CRS, optional
-        Coordinate reference system (CRS) to reproject the raster data into.
-        If `to_crs` is not provided, raster data remains in the source CRS.
-    res : tuple, optional
-        Target resolution. Defines the pixel size of the *final output* raster
-        in the units of `to_crs`. Used for aligning data to a specific grid.
-    resampling : str or rasterio.enums.Resampling, optional
-        The resampling method used during reprojection or resolution change.
-        Options: 'sum', 'mean', 'nearest', 'bilinear', etc.
-        If None, the default method for the `product_name` is looked up
-        in `product_definitions.toml` (e.g., population defaults to 'sum').
     download_chunk_size : int, optional, default=1MB
         The size (in bytes) of chunks to read/write during raster downloads.
         Larger chunks may improve performance, especially on systems with
@@ -223,28 +205,6 @@ def wp_raster(
         if 'chunks' not in read_options:
             read_options['chunks'] = 'auto'
 
-    # --- Resolve Resampling Method ---
-    # We need a valid Rasterio Enum for warping.
-    if resampling is None:
-        # Look up default string from TOML (e.g., 'pop_g1' -> 'sum')
-        resampling_str = DEF_AGG_STRATEGY_MAP.get(product_name, 'mean')
-    elif isinstance(resampling, str):
-        resampling_str = resampling
-    else:
-        # User passed a Resampling Enum directly
-        resampling_str = None
-
-    if resampling_str:
-        try:
-            resampling_enum = RESAMPLING_MAP[resampling_str]
-        except KeyError:
-            valid = list(RESAMPLING_MAP.keys())
-            raise ValueError(
-                f"Unknown resampling method '{resampling_str}'. Valid: {valid}"
-            )
-    else:
-        resampling_enum = resampling
-
     # --- Process the AOI ---
     # Beware: _standardise_aoi converts BBox tuples to a GeoDataFrame automatically.
     aoi, iso3_codes = _standardise_aoi(aoi)
@@ -257,9 +217,6 @@ def wp_raster(
         mask_and_scale=mask_and_scale,
         other_read_kwargs=read_options,
         clipping_gdf=clipping_gdf,
-        to_crs=to_crs,
-        res=res,
-        resampling=resampling_enum,
         preclip=preclip,
         merge_options=merge_options,
     )
@@ -303,13 +260,7 @@ def wp_raster(
         annual_history = {}
         annual_fnames = {}
 
-        pbar = tqdm(
-            paths_by_year.items(),
-            total=len(paths_by_year),
-            desc="Processing years...",
-            leave=False,
-        )
-        for year, year_paths in pbar:
+        for year, year_paths in paths_by_year.items():
             # Note: The repeated meta-data check inside `merge_rasters`
             # will be fast because the cache is already warm (see
             # `_read_raster_metadata`).
@@ -338,10 +289,149 @@ def wp_raster(
         time_series.attrs.update(global_safe_attrs)  # re-apply the safe attrs
 
         # Apply the *nested* history attribute we collected
-        time_series.attrs['history'] = annual_history
-        time_series.attrs['input_files'] = annual_fnames
+        time_series.attrs['history'] = annual_history  # TODO dict may not be NetCDF-compliant
+        time_series.attrs['input_files'] = annual_fnames  # ''
 
         return time_series.squeeze()
+
+
+def wp_warp(
+    da,
+    to_crs=None,
+    res=None,
+    resampling=None,
+    rechunk=True,
+):
+    """
+    Reproject or resample a WorldPop raster.
+
+    This function handles the complexities of lazy Dask execution, ensuring that
+    operations work efficiently even on merged datasets with fragmented chunk
+    structures (which often occur after `wp_raster`).
+
+    It supports three modes:
+    1. Reprojection: Change CRS (provide `to_crs`).
+    2. Resampling: Change resolution in current CRS (provide `res`, leave `to_crs=None`).
+    3. Both: Change both CRS *and* resolution.
+
+    Parameters
+    ----------
+    da : xarray.DataArray
+        The input raster data (usually from `wp_raster`).
+    to_crs : str or pyproj.CRS, optional
+        The target Coordinate Reference System (e.g., "EPSG:3035").
+        If None, the raster's current CRS is used (enabling pure resampling).
+    res : tuple or float, optional
+        Target resolution in the units of `to_crs` (if provided) or
+        in the units of the source CRS (if `to_crs` is not provided).
+        If a single float is provided, it is used for both X and Y axes.
+        If None, the resolution is determined automatically by rioxarray.
+    resampling : str or rasterio.enums.Resampling, optional
+        The resampling method to use (e.g., 'nearest', 'bilinear', 'sum').
+        If None, defaults to 'nearest'.
+    rechunk : bool or dict, optional, default=True
+        Whether to enforce a uniform chunk structure before warping.
+
+        - If True (default): Re-chunks to {'x': 2048, 'y': 2048}.
+          **Note:** If `da` is currently loaded in RAM (eager), this converts
+          it into a lazy Dask array. This protects against memory overflows
+          if the target grid is significantly larger than the input.
+        - If False: Passes the array directly to rioxarray.
+          Use this if you know your input Dask graph is not fragmented,
+          or if you explicitly want to process the warp in-memory (eager).
+        - If dict: Applies the specified chunks (e.g. {'x': 1024, 'y': 1024}).
+
+    Returns
+    -------
+    xarray.DataArray
+        The warped raster.
+    """
+
+    # --- No-op Check ---
+    if to_crs is None and res is None:
+        logger.debug("wp_warp: No CRS or Resolution change requested. Returning original array.")
+        return da
+
+    # --- Resolve Resampling ---
+    if resampling is None:
+        resampling_enum = Resampling.nearest
+    elif isinstance(resampling, str):
+        try:
+            resampling_enum = RESAMPLING_MAP[resampling]
+        except KeyError:
+            valid = list(RESAMPLING_MAP.keys())
+            raise ValueError(
+                f"Unknown resampling method '{resampling}'. Valid: {valid}"
+            )
+    else:
+        resampling_enum = resampling
+
+    # --- Resolve Target CRS ---
+    # If to_crs is None, we stay in the current CRS (Pure Resampling)
+    target_crs = to_crs if to_crs is not None else da.rio.crs
+    if target_crs is None:
+        raise ValueError("Input raster has no CRS and 'to_crs' was not provided.")
+
+    # --- Safety Re-chunking ---
+    # The 'combine_first' operation used in `merge_rasters` creates an irregular
+    # Dask graph. Passing this directly to 'reproject' often causes rioxarray
+    # to trigger an eager computation (loading everything to RAM). Re-chunking
+    # solves this.
+    # Beware: If you pass raster data that is already loaded, rechunking will
+    # convert this to a Dask array. Use rechunk=False to suppress.
+    if rechunk:
+        if isinstance(rechunk, dict):
+            chunks = rechunk
+        else:
+            # Default safe size (~32MB per chunk for float64)
+            chunks = {'x': 2048, 'y': 2048}
+
+        # We only rechunk dimensions that actually exist
+        valid_chunks = {k: v for k, v in chunks.items() if k in da.dims}
+        if valid_chunks:
+            da = da.chunk(valid_chunks)
+
+    # --- Resolve Nodata (Corrected) ---
+    fill_value = da.rio.nodata
+
+    # If nodata is undefined but data is float, we default to NaN.
+    if fill_value is None and np.issubdtype(da.dtype, np.floating):
+        fill_value = np.nan
+        da = da.rio.write_nodata(fill_value, encoded=True)
+
+    elif fill_value is None:
+        logger.warning(
+            "Warping integer raster without a defined nodata value. "
+            "Padding areas may default to 0, which may be indistinguishable "
+            "from valid data."
+        )
+
+    # --- Execute Warp ---
+    reproject_kwargs = {'resampling': resampling_enum}
+    if res is not None:
+        reproject_kwargs['resolution'] = res
+
+    # We explicitly pass nodata to reproject to ensure the *output*
+    # (including new padding areas) uses this value.
+    if fill_value is not None:
+        reproject_kwargs['nodata'] = fill_value
+
+    warped = da.rio.reproject(target_crs, **reproject_kwargs)
+
+    # Make new history entry
+    history = da.attrs.get('history', "")
+    timestamp = datetime.now().isoformat()
+    op_name = "Resampled" if to_crs is None else f"Warped to {to_crs}"
+    new_entry = f" [{op_name} (res={res}, algo={resampling_enum.name}) on {timestamp}]"
+
+    # Handle multi-year history (dict) vs single-year history (str)
+    if isinstance(history, dict):
+        history = str(history)
+
+    # Append
+    warped.attrs['history'] = history + new_entry
+
+    return warped
 
 
 def merge_rasters(
@@ -351,9 +441,6 @@ def merge_rasters(
     other_read_kwargs=None,
     clipping_gdf=None,
     preclip=True,
-    to_crs=None,
-    res=None,
-    resampling=Resampling.average,
     merge_options=None,
 ):
     """
@@ -362,8 +449,7 @@ def merge_rasters(
     This function is a "smart" wrapper around `rioxarray.merge.merge_arrays`.
     It validates that all input rasters share the same critical metadata (CRS,
     FillValue, etc.) and then creates a new, synthetic set of metadata for the
-    final merged raster, including a 'history' and a 'source_metadata' attribute
-    for full provenance.
+    final merged raster.
 
     Parameters
     ----------
@@ -392,15 +478,6 @@ def merge_rasters(
         to the bounding box of the geometry (plus a small safety buffer)
         immediately after loading. This reduces RAM usage significantly when
         processing small AOIs within large raster files.
-    to_crs: str or pyproj.CRS, optional
-        Coordinate reference system (CRS) to reproject the raster data into.
-        If `to_crs` is not provided, raster data remains in the source CRS.
-    res : tuple, optional
-        Target resolution. Defines the pixel size of the *final output* raster
-        in the units of `to_crs`. Used for aligning data to a specific grid.
-    resampling : rasterio.enums.Resampling, optional, default=Resampling.average
-        The resampling method used during reprojection or resolution change.
-        Options: Resampling.sum, Resampling.mean, Resampling.nearest, etc.
     merge_options : dict, optional
         A dictionary of keyword arguments passed directly to
         `rioxarray.merge.merge_arrays`, which give more control over how input
@@ -428,21 +505,28 @@ def merge_rasters(
          input rasters whenever `mask_and_scale=True` is passed, even
          if the underlying source files have different `_FillValue`,
          `scale_factor` or `add_offset` attributes.)
+
+    Notes
+    -----
+    **Performance Warning:**
+    This function uses `xarray.combine_first` iteratively to merge rasters
+    lazily. While this preserves memory, it builds a nested Dask task graph
+    whose depth is proportional to the number of input files.
+
+    Merging a large number of files may result in a `RecursionError` or
+    significant overhead during graph construction. If you are processing
+    a large number of raster tiles, consider merging them in smaller batches
+    first.
     """
 
     # --- Defaults ---
     if merge_options is None:
         merge_options = {}
 
-    if to_crs is not None:
-        to_crs = CRS(to_crs)
-
     # --- Validate Metadata ---
     safe_attrs = _validate_raster_attrs(raster_fpaths, masked, mask_and_scale)
 
     # --- Consolidate Read Options ---
-    # Redundant chunks check, just in case merge_rasters is
-    # called directly (bypassing wp_raster).
     if other_read_kwargs is None:
         read_options = {'chunks': 'auto'}
     else:
@@ -474,9 +558,6 @@ def merge_rasters(
                     current_crs = da.rio.crs
 
                     # Calculate buffered bounds (only if CRS changed or first run)
-                    # Note: `get_buffered_bounds` *always* projects bounds to the
-                    # input raster's CRS. (We still specify the buffer size in
-                    # degrees for consistency.)
                     if cached_clip_box is None or current_crs != cached_crs:
                         cached_clip_box = get_buffered_bounds(
                             clipping_gdf, raster_crs=current_crs, buffer_deg=0.1
@@ -490,9 +571,6 @@ def merge_rasters(
                     preclip_applied = True
 
                 except Exception as e:
-                    # FAIL SAFE: If pre-clipping fails (e.g. bounds error), we
-                    # log the error and continue with the FULL raster, thereby
-                    # skipping the optimisation.
                     logger.warning(
                         f"Pre-clipping failed for {Path(path).name}. "
                         f"Skipping optimization and loading full input raster. Reason: {e}"
@@ -508,8 +586,7 @@ def merge_rasters(
             # Prepare for `xarray.merge`, which is strict. If floating point
             # precision makes one pixel 10.0001 and the next 10.0000, this
             # creates a new row instead of aligning them. Rounding coords
-            # ensures clean graph construction. For input data in WGS84,
-            # the 5th decimal corresponds to ~1 meter at the equator.
+            # ensures clean graph construction.
             da = da.assign_coords({"x": da.x.round(5), "y": da.y.round(5)})
 
             # Assign a fixed name, which `xarray.merge` needs to recognise
@@ -530,20 +607,12 @@ def merge_rasters(
     # --- Lazy Merge!  ---
     da = _lazy_merge_helper(rasters_to_merge, masked)
 
-    if to_crs is not None or res is not None:
-        target_crs = to_crs if to_crs is not None else da.rio.crs
-        reproject_kwargs = {'resampling': resampling}
-        if res is not None:
-            reproject_kwargs['resolution'] = res
-
-        da = da.rio.reproject(target_crs, **reproject_kwargs)
-
     # --- Final Precise Clipping ---
     if clipping_gdf is not None:
         geoms = clipping_gdf.geometry.apply(shapely.geometry.mapping)
         da = da.rio.clip(geoms, clipping_gdf.crs, drop=True, all_touched=True)
 
-    # --- Clean-up and create final metadata ---
+    # --- Clean-up and Create Final Metadata ---
     da.attrs = {}
     da.attrs.update(safe_attrs)
 
@@ -551,31 +620,19 @@ def merge_rasters(
     num_files = len(fnames)
     timestamp = datetime.now().isoformat()
 
+    # TODO: Consider simplifying history.
     history_log = []
 
     if num_files > 1:
-        history_log.append(
-            f"Merged from {num_files} input files by worldpoppy "
-            f"on {timestamp}."
-            f""
-        )
+        history_log.append(f"Merged from {num_files} input files by worldpoppy on {timestamp}.")
     else:
-        history_log.append(
-            f"Processed from 1 input file by worldpoppy "
-            f"on {timestamp}."
-        )
+        history_log.append(f"Processed from 1 input file by worldpoppy on {timestamp}.")
 
     if preclip_applied:
         history_log.append(f"Pre-clip was applied.")
 
     if clipping_gdf is not None:
         history_log.append("Final raster clipped to AOI geometry.")
-
-    if to_crs is not None:
-        history_log.append(f"Reprojected to new CRS.")
-
-    if res is not None:
-        history_log.append(f"Resampled to 'res'={res}.")
 
     if read_options:
         history_log.append(f"Read options: {read_options}.")
@@ -598,19 +655,6 @@ def bbox_from_location(centre, width_degrees=None, width_km=None):
     If `width_km` is specified, the bounding box is computed in a local
     Azimuthal Equidistant projection centered on the specified location,
     and then reprojected back to WGS84 longitude/latitude coordinates.
-
-    Limitations and Edge Cases
-    --------------------------
-    1. **Date Line & Poles**: This function is not suitable for AOIs
-      that cross the 180th meridian or one of the poles.
-
-    2. **Projection Skew**: For `width_km`, the transformation relies on
-       mapping only the min/max corners (bottom-left and top-right).
-       Empirical testing confirms that, in moderate latitudes, the resulting
-       area error remains under 5% for box widths up to 2,000 kilometres.
-       However, for areas exceeding this size or at high latitudes (>60°),
-       projection distortion (meridian convergence) may cause the resulting
-       WGS84 box to be geometrically different from a perfect metric square.
 
     Parameters
     ----------
@@ -695,13 +739,16 @@ def bbox_from_location(centre, width_degrees=None, width_km=None):
 
 
 def _standardise_aoi(aoi):
-    """ TODO """
+    """
+    Parses various AOI input formats (Bounding Box, GeoDataFrame, or
+    country codes) into a standardized GeoDataFrame and a list of ISO3 codes.
+    """
 
     if isinstance(aoi, (list, tuple)):
         if not isinstance(aoi[0], str):
             # Case: apparent bounding box passed
             validate_bbox_wgs84(aoi)
-            box_poly = shapely.box(*aoi)
+            box_poly = box(*aoi)
             aoi = gpd.GeoDataFrame(geometry=[box_poly], crs=WGS84_CRS)
 
     if isinstance(aoi, gpd.GeoDataFrame):
@@ -807,22 +854,12 @@ def _read_raster_attrs(path, masked, mask_and_scale):
     This function is cached and opens the file lazily, i.e. does *not*
     read the full raster data into memory. It immediately closes the
     file handle after extracting the metadata.
-
-    Note on Caching and Validation
-    ------------------------------
-    This function *intentionally* receives and passes the `masked` and
-    `mask_and_scale` flags to `rioxarray.open_rasterio`.
-
-    This supports the "smart skip" validation in `_validate_raster_attrs`.
-    When `mask_and_scale=True`, `rioxarray` consumes the scaling
-    attributes, and this function correctly reads them as `None`.
-
     """
 
     try:
         # The meta-data read should be lazy even without 'chunks={}'
-        # since we never ask for any actual raster data. We still
-        # set chunks as an added safety measure.
+        # since we # never ask for any actual raster data.
+        # We nevertheless set chunks as an added safety measure.
         with rioxarray.open_rasterio(
             path,
             masked=masked,
@@ -858,13 +895,6 @@ def _concat_with_info(objs, **kwargs):
     """
     Thin wrapper for `xarray.concat` which logs an info message if the optional
     `bottleneck` library is not available.
-
-    Parameters
-    ----------
-    objs : List[xarray.DataArray or xarray.Dataset]
-        List of xarray objects to concatenate.
-    **kwargs : keyword arguments
-        Additional arguments passed to `xarray.concat`.
     """
     if not module_available("bottleneck"):
         logger.info(
@@ -877,9 +907,6 @@ def _concat_with_info(objs, **kwargs):
 def _lazy_merge_helper(das, masked):
     """
     Lazily merge a list of DataArrays using a 'Painter's Algorithm'.
-
-    To mimic standard GIS behaviour (rasterio.merge), we treat the
-    LAST raster in the list as the 'Top' layer.
     """
     if len(das) == 1:
         return das[0]
