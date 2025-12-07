@@ -34,7 +34,7 @@ import xarray as xr
 from pyproj import CRS, Transformer
 from rasterio.enums import Resampling
 from shapely.geometry import box
-
+from rioxarray.merge import merge_arrays
 from worldpoppy.borders import load_country_borders
 from worldpoppy.config import WGS84_CRS, get_cache_dir
 from worldpoppy.download import WorldPopDownloader
@@ -81,6 +81,7 @@ def wp_raster(
     aoi,
     years=None,
     *,
+    chunks=None,
     pre_clip_bbox=None,
     cache_downloads=True,
     skip_download_if_exists=True,
@@ -100,9 +101,13 @@ def wp_raster(
     raster files. If multiple years are requested, the raster data is stacked
     along a new 'year' dimension.
 
-    This function always returns a **lazy Dask array**, improving memory management
-    for large areas. It also supports **automatic** or **manual** pre-clipping of
-    input rasters to minimise the memory footprint further.
+    By default, this function returns a regular `xarray.DataArray`. If users
+    provide the `chunks` argument, a lazy-loaded  *Dask* array is returned
+    instead.
+
+    This function implements several optimisation techniques to minimise
+    the memory footprint involved when working with raster data from large
+     countries # TODO provide a few more details.
 
     Parameters
     ----------
@@ -120,7 +125,14 @@ def wp_raster(
         all countries that intersect the area of interest, regardless of how large
         this intersection is. Subsequently, the merged raster is then clipped using
         the AoI.
+    chunks : str, int, dict or None, optional, default=None
+        If chunks is provided, the raster data is loaded into a *Dask* array
+        for better memory management.
 
+        - If 'auto', Dask chooses the chunk size.
+        - If int K, the data is loaded in chunks of size (K, K).
+          Equivalent to passing {'x': K, 'y': K}.
+        - If dict (e.g., {'x': 1024, 'y': 1024}), that specific chunking is used.
     years : int or List[int] or str, optional
         For annual data products, one or more years of interest or the 'all' keyword
         (str). For static data products, this argument must be None (default).
@@ -153,6 +165,8 @@ def wp_raster(
         Dictionary with additional keyword arguments that are passed to
         `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
         when reading input rasters (e.g., `lock` or `band_as_variable`).
+        Note that `chunks` passed here will be ignored in favour of the
+        explicit `chunks` argument.
     suppress_pre_clip : bool, optional, default=False
         If True, no **automatic** or **manual** pre-clipping is ever applied when
         loading input rasters. Mutually exclusive with `pre_clip_bbox`.
@@ -205,15 +219,9 @@ def wp_raster(
             "Cannot provide `pre_clip_bbox` when `suppress_pre_clip` is True."
         )
 
-    # --- Defaults ---
-    # Note: By default, we always set 'chunks='auto' so that
-    # Dask can set a good block size for the raster data.
-    if other_read_kwargs is None:
-        read_options = {'chunks': 'auto'}
-    else:
-        read_options = other_read_kwargs.copy()
-        if 'chunks' not in read_options:
-            read_options['chunks'] = 'auto'
+    # --- Standardize Chunks ---
+    if isinstance(chunks, int):
+        chunks = {'x': chunks, 'y': chunks}
 
     # --- Process the AoI ---
     # The output 'aoi' variable holds either the original GeoDataFrame or the ISO codes.
@@ -243,9 +251,10 @@ def wp_raster(
     clipping_gdf = aoi if isinstance(aoi, gpd.GeoDataFrame) else None
 
     shared_processing_kwargs = dict(
+        chunks=chunks,
         masked=masked,
         mask_and_scale=mask_and_scale,
-        other_read_kwargs=read_options,
+        other_read_kwargs=other_read_kwargs,
         pre_clip_bbox=pre_clip_bbox,
         clipping_gdf=clipping_gdf,
         suppress_pre_clip=suppress_pre_clip,
@@ -342,7 +351,7 @@ def wp_warp(
     to_crs=None,
     res=None,
     resampling=None,
-    rechunk=True,
+    rechunk=False,
 ):
     """
     Reproject or resample a WorldPop raster.
@@ -371,14 +380,14 @@ def wp_warp(
     resampling : str or rasterio.enums.Resampling, optional
         The resampling method to use (e.g., 'nearest', 'bilinear', 'sum').
         If None, defaults to 'nearest'.
-    rechunk : bool, int, or dict, optional, default=True
+    rechunk : bool, int, or dict, optional, default=False
         Whether to enforce a uniform chunk structure before warping.
 
-        - If True (default): Re-chunks to {'x': 2048, 'y': 2048}.
+        - If True: Re-chunks to {'x': 2048, 'y': 2048}.
           **Note:** If `da` is currently loaded in RAM (eager), this converts
           it into a lazy Dask array. This protects against memory overflows
           if the target grid is significantly larger than the input.
-        - If False: Passes the array directly to rioxarray.
+        - If False (default): Passes the array directly to rioxarray.
           Use this if you know your input Dask graph is not fragmented,
           or if you explicitly want to process the warp in-memory (eager).
         - If dict: Applies the specified chunks (e.g. {'x': 1024, 'y': 1024}).
@@ -483,6 +492,8 @@ def wp_warp(
 
 def merge_rasters(
     raster_fpaths,
+    *,
+    chunks=None,
     masked=False,
     mask_and_scale=False,
     other_read_kwargs=None,
@@ -493,15 +504,24 @@ def merge_rasters(
     """
     Merge multiple rasters.
 
-    This function is a "smart" wrapper around `_lazy_merge_helper`.
-    It validates that all input rasters share the same critical metadata (CRS,
-    FillValue, etc.) and then creates a new, synthetic set of metadata for the
-    final merged raster.
+    This function validates that all input rasters share the same
+    critical metadata (CRS, FillValue, etc.) and then creates a new,
+    synthetic set of metadata for the final merged raster.
+
 
     Parameters
     ----------
     raster_fpaths : List[Path] or List[str]
         List of paths to the input raster files that are to be merged.
+    chunks : str, int, dict or None, optional, default='auto'
+        If chunks is provided, the raster data is loaded into a *Dask* array
+        for better memory management.
+
+        - If 'auto' (default), Dask chooses the chunk size.
+        - If int K, the data is loaded in chunks of size (K, K).
+          Equivalent to passing {'x': K, 'y': K}.
+        - If dict (e.g., {'x': 1024, 'y': 1024}), that specific chunking is used.
+        - If None, data loading with Dask is *disabled*.
     masked: bool, optional, default=False
         If True, read the mask of all input rasters and set masked
         values to NaN. This argument is passed to
@@ -563,23 +583,32 @@ def merge_rasters(
     first.
     """
 
+    use_dask = chunks is not None
+
     # --- Argument Validation ---
     if suppress_pre_clip and pre_clip_bbox is not None:
         raise ValueError(
             "`pre_clip_bbox` must be None when `suppress_pre_clip` is True."
         )
 
+    # --- Standardise Chunks ---
+    if isinstance(chunks, int):
+        chunks = {'x': chunks, 'y': chunks}
+
     # --- Metadata Validation ---
     # This ensures all input rasters share the same CRS, _FillValue, etc.
     safe_attrs = _validate_raster_attrs(raster_fpaths, masked, mask_and_scale)
 
     # --- Consolidate Read Options ---
+    # The explicit 'chunks' arg takes priority over anything in 'other_read_kwargs'
     if other_read_kwargs is None:
-        read_options = {'chunks': 'auto'}
+        read_options = {}
     else:
         read_options = other_read_kwargs.copy()
-        if 'chunks' not in read_options:
-            read_options['chunks'] = 'auto'
+        if 'chunks' in read_options:
+            read_options.pop('chunks')
+
+    read_options['chunks'] = chunks
     read_options['masked'] = masked
     read_options['mask_and_scale'] = mask_and_scale
 
@@ -623,7 +652,7 @@ def merge_rasters(
         try:
             da = rioxarray.open_rasterio(path, **read_options)
 
-            # --- Apply Pre-Clipping Slice (Lazy) ---
+            # --- Apply Pre-Clipping Slice (Lazy with Dask) ---
             if processing_clip_box is not None:
                 try:
                     da = da.rio.clip_box(*processing_clip_box)
@@ -658,8 +687,14 @@ def merge_rasters(
             "Check your AoI coordinates."
         )
 
-    # --- Lazy Merge!  ---
-    da = _lazy_merge_helper(rasters_to_merge, masked)
+    # --- Merge! ---
+    if use_dask:
+        # We use a custom helper function to ensure
+        # that merging different input rasters does *not*
+        # trigger execution of the Dask graph.
+        da = _lazy_merge_helper(rasters_to_merge, masked)
+    else:
+        da = merge_arrays(rasters_to_merge)
 
     # --- Final Precise Clipping ---
     if clipping_gdf is not None:
