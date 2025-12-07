@@ -207,11 +207,13 @@ def wp_raster(
         )
 
     if suppress_pre_clip and pre_clip_bbox is not None:
-        raise ValueError("Cannot provide `pre_clip_bbox` when `suppress_pre_clip` is True.")
+        raise ValueError(
+            "Cannot provide `pre_clip_bbox` when `suppress_pre_clip` is True."
+        )
 
-        # --- Defaults ---
-        # Note: By default, we always set 'chunks='auto' so that
-        # Dask can set a good block size for the raster data.
+    # --- Defaults ---
+    # Note: By default, we always set 'chunks='auto' so that
+    # Dask can set a good block size for the raster data.
     if other_read_kwargs is None:
         read_options = {'chunks': 'auto'}
     else:
@@ -219,8 +221,8 @@ def wp_raster(
         if 'chunks' not in read_options:
             read_options['chunks'] = 'auto'
 
-        # --- Process the AoI ---
-        # The output 'aoi' variable holds either the original GeoDataFrame or the ISO codes.
+    # --- Process the AoI ---
+    # The output 'aoi' variable holds either the original GeoDataFrame or the ISO codes.
     aoi, iso3_codes, orig_aoi_type = _standardise_aoi(aoi)
 
     # --- Validate/Process pre_clip_bbox based on AoI type ---
@@ -286,29 +288,16 @@ def wp_raster(
         # In the multi-year case, we must validate raster meta-data for
         # raster files from *all years* in one go (to catch inconsistencies
         # across years).
-        # The call below performs a "smart" validation that depends on the user's
-        # flags. See `_validate_raster_attrs` docstring for a full explanation.
         global_safe_attrs = _validate_raster_attrs(
             all_raster_paths, masked, mask_and_scale
         )
 
         # Merge the actual rasters separately by year
         annual_rasters = []
-        annual_history = {}
-        annual_fnames = {}
-
         for year, year_paths in paths_by_year.items():
-            # Note: The repeated meta-data check inside `merge_rasters`
-            # will be fast because the cache is already warm (see
-            # `_read_raster_metadata`).
             merged = merge_rasters(year_paths, **shared_processing_kwargs)
             merged['year'] = year
             annual_rasters.append(merged)
-
-            # Save the (flat) metadata from each year's merge
-            # *before* xr.concat can destroy it.
-            annual_history[year] = merged.attrs.get('history', 'N/A')
-            annual_fnames[year] = merged.attrs.get('input_files', 'N/A')
 
         # Stack years via `xr.concat`
         time_series = _concat_with_info(
@@ -317,19 +306,40 @@ def wp_raster(
             combine_attrs='drop_conflicts',
         )
 
-        # Build final, nested meta-data
-        # `xr.concat` has (correctly) dropped the conflicting 'history'
-        # and 'source_metadata' attributes for annual merged rasters.
-        # We now re-build them from our "collected" dictionaries.
+        # --- Metadata Construction (Executive Summary) ---
+        time_series.attrs = {}
 
-        time_series.attrs = {}  # nuke the empty/dropped attrs
-        time_series.attrs.update(global_safe_attrs)  # re-apply the safe attrs
+        # Restore the validated source attributes (excluding the
+        # CRS, which we leave for rioxarray/grid_mapping to handle).
+        safe_copy = global_safe_attrs.copy()
+        if 'crs' in safe_copy:
+            safe_copy.pop('crs')
+        time_series.attrs.update(safe_copy)
 
-        # Apply the *nested* history attribute we collected
-        time_series.attrs['history'] = (
-            annual_history  # TODO dict may not be NetCDF-compliant
-        )
-        time_series.attrs['input_files'] = annual_fnames  # ''
+        # Inherit wpy_ configuration from the first year's raster
+        # (Assuming homogeneity across years, which is guaranteed by the code flow)
+        if annual_rasters:
+            base_attrs = annual_rasters[0].attrs
+            for k, v in base_attrs.items():
+                if k.startswith('wpy_'):
+                    time_series.attrs[k] = v
+
+        # Create a concise History string
+        timestamp = datetime.now().isoformat()
+
+        # Calculate summary statistics
+        year_list = sorted(paths_by_year.keys())
+        total_files = len(all_raster_paths)
+
+        # Define Executive Summary
+        # TODO: Which settings should we track for transparent provenance?
+        action = f"Generated '{product_name}' for {len(year_list)} years."
+        details = f"Processed {total_files} input files in total."
+        time_series.attrs['history'] = f"{timestamp}: {action} {details}"
+
+        # Store list of all input files (flattened)
+        all_fnames = [Path(p).name for p in all_raster_paths]
+        time_series.attrs['input_files'] = ", ".join(all_fnames)
 
         return time_series.squeeze()
 
@@ -463,18 +473,17 @@ def wp_warp(
 
     warped = da.rio.reproject(target_crs, **reproject_kwargs)
 
-    # Make new history entry
+    # --- History Handling ---
     history = da.attrs.get('history', "")
     timestamp = datetime.now().isoformat()
     op_name = "Resampled" if to_crs is None else f"Warped to {to_crs}"
-    new_entry = f" [{op_name} (res={res}, algo={resampling_enum.name}) on {timestamp}]"
+    new_entry = f"{timestamp}: {op_name} (res={res}, algo={resampling_enum.name})."
 
-    # Handle multi-year history (dict) vs single-year history (str)
-    if isinstance(history, dict):
-        history = str(history)
-
-    # Append
-    warped.attrs['history'] = history + new_entry
+    # Append new line
+    if history:
+        warped.attrs['history'] = f"{history}\n{new_entry}"
+    else:
+        warped.attrs['history'] = new_entry
 
     return warped
 
@@ -568,13 +577,16 @@ def merge_rasters(
 
     # --- Argument Validation ---
     if suppress_pre_clip and pre_clip_bbox is not None:
-        raise ValueError("`pre_clip_bbox` must be None when `suppress_pre_clip` is True.")
+        raise ValueError(
+            "`pre_clip_bbox` must be None when `suppress_pre_clip` is True."
+        )
 
     # --- Defaults ---
     if merge_options is None:
         merge_options = {}
 
     # --- Metadata Validation ---
+    # This ensures all input rasters share the same CRS, _FillValue, etc.
     safe_attrs = _validate_raster_attrs(raster_fpaths, masked, mask_and_scale)
 
     # --- Consolidate Read Options ---
@@ -588,90 +600,67 @@ def merge_rasters(
     read_options['mask_and_scale'] = mask_and_scale
 
     # ------------------------------------------------------------------
-    # --- Open Input Rasters & Optional Pre-clip (Lazy) ---
+    # --- Prepare Pre-Clipping Geometry ---
+    # ------------------------------------------------------------------
+    # We calculate the generic pre-clipping box *once* before the loop
+    # that lazy-loads country rasters. Note that `_validate_raster_attrs`
+    # guarantees consistency of key attrs (incl. the CRS, which we need
+    # to compute the pre-clip geometry).
+
+    processing_clip_box = None
+
+    if not suppress_pre_clip:
+        if pre_clip_bbox is not None:
+            # Case 1: Pre-clipping BBox *manually* provided
+            processing_clip_box = pre_clip_bbox
+
+        elif clipping_gdf is not None:
+            # Case 2: Pre-clipping BBox *automatically* inferred
+            # We need the raster CRS to calculate the buffer. Peek at first file.
+            try:
+                processing_clip_box = get_buffered_bounds(
+                    clipping_gdf, raster_crs=safe_attrs['crs'], buffer_deg=0.1
+                )
+                logger.debug(
+                    f"Calculated automatic pre-clip bounds: {processing_clip_box}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to calculate automatic buffer from first raster. "
+                    f"Pre-clipping disabled. Reason: {e}"
+                )
+
+    # ------------------------------------------------------------------
+    # --- Open Input Rasters ---
     # ------------------------------------------------------------------
     rasters_to_merge = []
 
-    # Caching variables to avoid re-calculating geometry for
-    # every file if the CRS is consistent across the batch.
-    cached_automatic_clip_box = None
-    cached_crs = None
-    final_pre_clip_box = None  # Stores the bbox that will be used for clipping
-
-    # We track if pre-clipping actually happened for the history log
-    preclip_applied = False
-
-    # --- Determine the FINAL Pre-Clipping Box (outside the loop) ---
-    if not suppress_pre_clip:
-        if pre_clip_bbox is not None:
-            # Case 1: Explicit BBox provided by user
-            final_pre_clip_box = pre_clip_bbox
-            pre_clip_method = "Manual"
-
-        elif clipping_gdf is not None:
-            # Case 2: Automatically inferred BBox (from GeoDataFrame or original BBox AoI)
-            # The calculation must still be done inside the loop to handle CRS changes,
-            # but we set the stage here.
-            pre_clip_method = "Auto"
-
-        else:
-            # Case 3: ISO codes without explicit pre_clip_bbox, or AoI is None
-            # No pre-clipping optimisation supported.
-            pre_clip_method = None
-
-    # --- Start Raster Loop ---
     for path in raster_fpaths:
         try:
             da = rioxarray.open_rasterio(path, **read_options)
 
-            # --- [OPTIMISATION] Apply Pre-Clipping Slice (Lazy) ---
-            if final_pre_clip_box is not None or pre_clip_method == "Auto":
+            # --- Apply Pre-Clipping Slice (Lazy) ---
+            if processing_clip_box is not None:
                 try:
-                    if final_pre_clip_box is not None:
-                        # Case 1: Use the constant, explicit BBox provided by the user.
-                        clip_box_to_use = final_pre_clip_box
-                    else:
-                        # Case 2: Calculate/use the buffered bounds derived from clipping_gdf.
-                        current_crs = da.rio.crs
-                        if (
-                            cached_automatic_clip_box is None
-                            or current_crs != cached_crs
-                        ):
-                            cached_automatic_clip_box = get_buffered_bounds(
-                                clipping_gdf, raster_crs=current_crs, buffer_deg=0.1
-                            )
-                            cached_crs = current_crs
-                            logger.debug(
-                                f"Calculated automatic pre-clip bounds: {cached_automatic_clip_box}"
-                            )
-
-                        clip_box_to_use = cached_automatic_clip_box
-
-                    # Perform the slice. This is lazy (Dask) and happens instantly.
-                    da = da.rio.clip_box(*clip_box_to_use)
-                    preclip_applied = True
-
+                    da = da.rio.clip_box(*processing_clip_box)
                 except Exception as e:
                     logger.warning(
-                        f"Pre-clipping failed for {Path(path).name}. "
-                        f"Skipping optimisation and loading full input raster. Reason: {e}"
+                        f"Pre-clipping optimization failed for {Path(path).name}. "
+                        f"Proceeding with full raster load. Reason: {e}"
                     )
 
             # Check for empty arrays (no overlap with pre-clip BBox)
             if da.sizes['x'] == 0 or da.sizes['y'] == 0:
                 logger.debug(
-                    f"Skipping {Path(path).name} (no overlap with pre-clip BBox)."
+                    f"Skipping {Path(path).name} (no overlap with processing box)."
                 )
                 continue
 
-            # Prepare for `xarray.merge`, which is strict. If floating point
-            # precision makes one pixel 10.0001 and the next 10.0000, this
-            # creates a new row instead of aligning them. Rounding coords
-            # ensures clean graph construction.
+            # Align coordinates for clean graph construction
             da = da.assign_coords({"x": da.x.round(5), "y": da.y.round(5)})
 
-            # Assign a fixed name, which `xarray.merge` needs to recognise
-            # these arrays as belonging to the same variable (mosaicking).
+            # Assign fixed variable name for mosaicking
+            # (needed by _lazy_merge_helper)
             da.name = "wpy_data"
 
             rasters_to_merge.append(da)
@@ -679,7 +668,6 @@ def merge_rasters(
         except Exception as e:
             raise RasterReadError(f"Failed to read {path}: {e}")
 
-    # ... rest of function remains the same ...
     if not rasters_to_merge:
         raise ValueError(
             "No raster data found intersecting the buffered AoI. "
@@ -691,42 +679,33 @@ def merge_rasters(
 
     # --- Final Precise Clipping ---
     if clipping_gdf is not None:
-        # Note: This executes the final, precise polygonal clip, removing ocean/water.
         geoms = clipping_gdf.geometry.apply(shapely.geometry.mapping)
         da = da.rio.clip(geoms, clipping_gdf.crs, drop=True, all_touched=True)
 
     # --- Clean-up and Create Final Metadata ---
     da.attrs = {}
+
+    # Restore the validated source attribute (excluding the
+    # CRS, which we leave for rioxarray/grid_mapping to handle).
+    safe_attrs.pop('crs')
     da.attrs.update(safe_attrs)
 
     fnames = [Path(x).name for x in raster_fpaths]
     num_files = len(fnames)
     timestamp = datetime.now().isoformat()
 
-    # TODO: Consider simplifying history.
-    history_log = []
-
-    if num_files > 1:
-        history_log.append(
-            f"Merged from {num_files} input files by worldpoppy on {timestamp}."
-        )
-    else:
-        history_log.append(f"Processed from 1 input file by worldpoppy on {timestamp}.")
-
-    if preclip_applied:
-        # This will show up if *any* pre-clip happened (explicit or inferred)
-        history_log.append(f"Pre-clip was applied.")
-
+    # History: Track provenance
+    action_desc = f"Merged {num_files} input files."
     if clipping_gdf is not None:
-        history_log.append("Final raster clipped to AoI geometry.")
+        action_desc += " Clipped to AoI geometry."
 
-    if read_options:
-        history_log.append(f"Read options: {read_options}.")
-    if merge_options:
-        history_log.append(f"Merge options: {merge_options}.")
-
-    da.attrs['history'] = " ".join(history_log)
+    da.attrs['history'] = f"{timestamp}: {action_desc}"
     da.attrs['input_files'] = ", ".join(fnames)
+
+    # Configuration: Track settings (How it was configured)
+    da.attrs['wpy_masked'] = str(masked)
+    if mask_and_scale:
+        da.attrs['wpy_mask_and_scale'] = "True"
 
     return da
 
@@ -930,7 +909,8 @@ def _validate_raster_attrs(raster_fpaths, masked, mask_and_scale):
                 )
 
     # All checks passed. Return the single, consistent set of safe attrs.
-    safe_attrs = {}
+    # TODO Consider simplifying
+    safe_attrs = {'crs': ref['crs']}
     if ref['nodata'] is not None:
         safe_attrs['_FillValue'] = ref['nodata']
     if ref['scale_factor'] is not None:
