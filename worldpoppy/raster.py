@@ -90,7 +90,6 @@ def wp_raster(
     suppress_pre_clip=False,
     download_chunk_size=1024**2,
     download_dry_run=False,
-    **merge_options,
 ):
     """
     Return WorldPop data for the user-defined area of interest (AoI) and the
@@ -166,11 +165,6 @@ def wp_raster(
         from WorldPop if `download_dry_run` was False. Report the number and
         size of required file downloads, but do not actually fetch or process
         any files.
-    **merge_options : keyword arguments
-        Additional arguments passed to
-        `rioxarray.merge.merge_arrays <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray.merge.merge_arrays>`_,
-        which give more control over how input rasters should be merged
-        (e.g., `bounds`).
 
     Returns
     -------
@@ -255,7 +249,6 @@ def wp_raster(
         pre_clip_bbox=pre_clip_bbox,
         clipping_gdf=clipping_gdf,
         suppress_pre_clip=suppress_pre_clip,
-        merge_options=merge_options,
     )
 
     with TemporaryDirectory() if not cache_downloads else get_cache_dir() as d:
@@ -496,12 +489,11 @@ def merge_rasters(
     pre_clip_bbox=None,
     clipping_gdf=None,
     suppress_pre_clip=False,
-    merge_options=None,
 ):
     """
     Merge multiple rasters.
 
-    This function is a "smart" wrapper around `rioxarray.merge.merge_arrays`.
+    This function is a "smart" wrapper around `_lazy_merge_helper`.
     It validates that all input rasters share the same critical metadata (CRS,
     FillValue, etc.) and then creates a new, synthetic set of metadata for the
     final merged raster.
@@ -534,10 +526,6 @@ def merge_rasters(
         used for the **final precise clip**.
     suppress_pre_clip : bool, optional, default=False
         If True, disables all pre-clipping optimisations.
-    merge_options : dict, optional
-        A dictionary of keyword arguments passed directly to
-        `rioxarray.merge.merge_arrays`, which give more control over how input
-        rasters should be merged (e.g., `bounds`).
 
     Returns
     -------
@@ -580,10 +568,6 @@ def merge_rasters(
         raise ValueError(
             "`pre_clip_bbox` must be None when `suppress_pre_clip` is True."
         )
-
-    # --- Defaults ---
-    if merge_options is None:
-        merge_options = {}
 
     # --- Metadata Validation ---
     # This ensures all input rasters share the same CRS, _FillValue, etc.
