@@ -821,8 +821,8 @@ def _read_raster_attrs(path, masked, mask_and_scale):
 
     try:
         # The meta-data read should be lazy even without 'chunks={}'
-        # since we # never ask for any actual raster data.
-        # We nevertheless set chunks as an added safety measure.
+        # since we never ask for any actual raster data. We still
+        # set chunks as an added safety measure.
         with rioxarray.open_rasterio(
             path,
             masked=masked,
