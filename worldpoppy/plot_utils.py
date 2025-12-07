@@ -3,8 +3,10 @@ Collection of various plotting utility functions.
 """
 
 from matplotlib import pyplot as plt
+from pyproj import Transformer
 
-from worldpoppy.func_utils import geolocate_name
+from worldpoppy.config import WGS84_CRS
+from worldpoppy.func_utils import cached_nominatim_query
 from worldpoppy.manifest_loader import get_all_isos
 
 __all__ = [
@@ -51,6 +53,7 @@ def plot_location_markers(
         locations,
         ax=None,
         annotate=True,
+        color='k',
         textcoords="offset points",
         xytext=(7, -7),
         ha='left',
@@ -60,17 +63,25 @@ def plot_location_markers(
         **scatter_kwargs
 ):
     """
-    Plot markers for geolocated place names on a matplotlib axis.
+    Plot markers for geolocated place names or raw coordinates on a matplotlib axis.
     Optionally annotate the location markers as well.
 
     Parameters
     ----------
-    locations : str or list of str
-        Location name(s) to geolocate and plot.
+    locations : str, tuple, or list of (str or tuple)
+        The locations to plot. Can be:
+        - A location name string (e.g., "Nairobi").
+        - A tuple of (location_name, display_label) to search for "location_name"
+          but annotate with "display_label".
+        - A coordinate tuple (longitude, latitude) in WGS84.
+        - A coordinate tuple with a label (longitude, latitude, label).
+        - A mixed list of strings and tuples.
     ax : matplotlib.axes.Axes, optional
         Axis on which to plot. If None, uses current axis.
     annotate : bool, default=True
-        Whether to annotate points with their names.
+        Whether to annotate points with their names (or coordinates).
+    color : str, default='k'
+        Colour to use for both the scatter marker and the annotation text.
     textcoords : str, default="offset points"
         Coordinate system for annotation positioning.
     xytext : tuple of int, default=(7, -7)
@@ -85,30 +96,114 @@ def plot_location_markers(
         If specified, projects the geo-coordinate from WGS84 to this CRS.
     **scatter_kwargs :
         Additional keywords passed to `scatter`.
+
+    Raises
+    ------
+    RuntimeError
+        If a Nominatim query has returned None.
+
+    Notes
+    -----
+    **Geocoding Reliability Warning**
+    When users pass a location name, this function tries to resolve
+    it into a GPS coordinate via OpenStreetMap's Nominatim service.
+    Nominatim may occasionally return coordinates for a different
+    location than intended (e.g., an administrative region instead
+    of a city centre, or a city with the same name in a different
+    country) due to search ambiguities.
+
+    For precise control over the plotted location, it is strongly
+    recommended to pass explicit GPS coordinates as tuples:
+    ``(longitude, latitude, label)`` or ``(longitude, latitude)``.
+
     """
     ax = plt.gca() if ax is None else ax
 
-    user_scatter_kwargs = dict() if scatter_kwargs is None else scatter_kwargs
-    scatter_kwargs = dict(color='k', s=5)
-    scatter_kwargs.update(**user_scatter_kwargs)
+    # Prepare scatter kwargs
+    # Set the default size and the shared colour
+    final_scatter_kwargs = dict(s=5, color=color)
+    # If users passed extra scatter args (like s=100 or marker='x'), update them here
+    if scatter_kwargs:
+        final_scatter_kwargs.update(scatter_kwargs)
 
-    other_annotate_kwargs = dict() if other_annotate_kwargs is None else other_annotate_kwargs
+    # Prepare annotation kwargs
+    # Copy to avoid modifying a dict passed by the user in the outer scope
+    final_annotate_kwargs = (
+        dict() if other_annotate_kwargs is None else other_annotate_kwargs.copy()
+    )
 
-    if isinstance(locations, str):
+    # Apply the shared colour to the text, unless the user explicitly
+    # passed a specific colour in other_annotate_kwargs
+    if 'color' not in final_annotate_kwargs:
+        final_annotate_kwargs['color'] = color
+
+    # Standardise input to a list
+    if isinstance(locations, (str, tuple)):
         locations = [locations]
 
-    for name in locations:
-        lon_lat = geolocate_name(name, to_crs)
-        ax.scatter(*lon_lat, **scatter_kwargs)
+    # Initialise a re-usable transformer if needed
+    transformer = None
+    if to_crs is not None:
+        transformer = Transformer.from_crs(WGS84_CRS, to_crs, always_xy=True)
+
+    for item in locations:
+        if isinstance(item, str):
+            # Case 1: Simple location name string
+            lon, lat = cached_nominatim_query(query=item)
+            label = item
+
+        elif isinstance(item, tuple):
+            # Check the type of the first element to distinguish between
+            # ("Query", "Label") and (Lon, Lat, ...)
+            first_element = item[0]
+
+            if isinstance(first_element, str):
+                # Case 2: (Location Name, Display Label)
+                if len(item) != 2:
+                    raise ValueError(
+                        f"Invalid string tuple format: {item}. "
+                        "Expected (query_name, display_label)."
+                    )
+                query_name, custom_label = item
+                lon, lat = cached_nominatim_query(query=query_name)
+                label = custom_label
+
+            else:
+                # Case 3: Coordinate tuples
+                if len(item) == 3:
+                    # Tuple with explicit label
+                    lon, lat, custom_label = item
+                    label = custom_label
+                elif len(item) == 2:
+                    # Tuple with simple coords
+                    lon, lat = item
+                    label = f"{lon:.2f}, {lat:.2f}"
+                else:
+                    raise ValueError(
+                        f"Invalid numeric tuple format: {item}. "
+                        "Expected (lon, lat) or (lon, lat, label)."
+                    )
+        else:
+            raise TypeError(
+                f"Location item must be a string or tuple, got {type(item)}."
+            )
+
+        if transformer is not None:
+            xy = transformer.transform(lon, lat)
+        else:
+            xy = (lon, lat)
+
+        ax.scatter(*xy, **final_scatter_kwargs)
+
         if annotate:
             ax.annotate(
-                name,
-                lon_lat,
+                label,
+                xy,
                 textcoords=textcoords,
                 xytext=xytext,  # noqa
                 ha=ha,
                 va=va,
-                **other_annotate_kwargs,
+                **final_annotate_kwargs,
             )
 
 

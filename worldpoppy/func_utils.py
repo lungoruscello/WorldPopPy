@@ -11,6 +11,8 @@ from typing import Tuple
 
 import backoff
 import geopandas as gpd
+import numpy as np
+import xarray as xr
 from geopy.exc import GeocoderTimedOut
 from geopy.geocoders import Nominatim
 from pyproj import Transformer, CRS
@@ -21,6 +23,7 @@ from worldpoppy.config import WGS84_CRS
 __all__ = [
     "BboxInvalidError",
     "geolocate_name",
+    "cached_nominatim_query",
     "module_available",
     "log_info_context",
     "validate_bbox_wgs84",
@@ -67,22 +70,50 @@ def geolocate_name(nominatim_query, to_crs=None):
     RuntimeError
         If the Nominatim query has returned None.
     """
-    geolocator = Nominatim(user_agent="MyLocationCacher", timeout=2)
-    located = geolocator.geocode(nominatim_query)
-
-    if located is None:
-        raise RuntimeError(
-            f"Nominatim search for location name '{nominatim_query}' returned no hit."
-        )
-
-
-    lon, lat = located.point.longitude, located.point.latitude
+    lon, lat = cached_nominatim_query(nominatim_query)
     if to_crs is None:
         return lon, lat
 
     transformer = Transformer.from_crs(WGS84_CRS, to_crs, always_xy=True)
     x, y = transformer.transform(lon, lat)
     return x, y
+
+
+@lru_cache(maxsize=None)
+@backoff.on_exception(
+    backoff.expo, GeocoderTimedOut, max_tries=5, jitter=backoff.full_jitter
+)
+def cached_nominatim_query(query):
+    """
+    Return the lon/lat coordinate pair associated with a given location name,
+    based on search results from OSM's 'Nominatim' service.
+
+    Parameters
+    ----------
+    query : str
+        A location name to be geocoded.
+
+    Returns
+    -------
+    Tuple[float, float]
+        The (x, y) coordinate in the target CRS, or (lon, lat) in WGS84.
+
+    Raises
+    ------
+    RuntimeError
+        If the Nominatim query has returned None.
+    """
+    geolocator = Nominatim(user_agent="MyLocationCacher", timeout=2)
+    located = geolocator.geocode(query)
+
+    if located is None:
+        raise RuntimeError(
+            f"Nominatim search for location name '{query}' returned no hit."
+        )
+
+
+    lon, lat = located.point.longitude, located.point.latitude
+    return lon, lat
 
 
 def module_available(module_name):
