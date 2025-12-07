@@ -33,12 +33,12 @@ from tempfile import TemporaryDirectory
 from typing import List, Tuple
 
 import geopandas as gpd
+import numpy as np
 import rioxarray
 import shapely
 import xarray as xr
 from pyproj import CRS, Transformer
 from rasterio.enums import Resampling
-from rioxarray.merge import merge_arrays
 from tqdm.auto import tqdm
 
 from worldpoppy.borders import load_country_borders
@@ -94,7 +94,6 @@ def wp_raster(
     preclip=True,
     to_crs=None,
     res=None,
-    merge_strategy='quality',
     resampling=None,
     download_chunk_size=1024**2,
     download_dry_run=False,
@@ -108,10 +107,6 @@ def wp_raster(
     multiple countries, this function will automatically merge all corresponding
     raster files. If multiple years are requested, the raster data is stacked
     along a new 'year' dimension.
-
-    Optional re-projection and re-sampling of the raster data can be performed
-    either *after* merging country files (merge_strategy='quality') or
-    *beforehand* (merge_strategy='performance').
 
     Parameters
     ----------
@@ -161,29 +156,13 @@ def wp_raster(
     to_crs: str or pyproj.CRS, optional
         Coordinate reference system (CRS) to reproject the raster data into.
         If `to_crs` is not provided, raster data remains in the source CRS.
-
-        Note regarding `merge_strategy`:
-        - If merge_strategy='quality', re-projection is applied *after* merging
-          the rasters.
-        - If merge_strategy='performance', input rasters are re-projected *before*
-          merging.
     res : tuple, optional
         Target resolution. Defines the pixel size of the *final output* raster
         in the units of `to_crs`. Used for aligning data to a specific grid.
-    merge_strategy : str, optional, default='quality'
-        Controls the processing pipeline order to balance RAM usage vs. accuracy.
-
-        - 'quality' (Merge-Then-Reproject): Stitches input rasters in the source
-          CRS first, then warps the result. Preserves geometric continuity and
-          avoids seam artefacts. High RAM usage.
-        - 'performance' (Reproject-Then-Merge): Warps each input raster individually
-          before stitching. Much lower RAM usage for large areas, but may
-          introduce slight edge artefacts or data loss at tile boundaries.
-        Effective when `to_crs` or `res` is provided.
     resampling : str or rasterio.enums.Resampling, optional
         The resampling method used during reprojection or resolution change.
         Options: 'sum', 'mean', 'nearest', 'bilinear', etc.
-        If None, the default strategy for the `product_name` is looked up
+        If None, the default method for the `product_name` is looked up
         in `product_definitions.toml` (e.g., population defaults to 'sum').
     download_chunk_size : int, optional, default=1MB
         The size (in bytes) of chunks to read/write during raster downloads.
@@ -234,7 +213,15 @@ def wp_raster(
             "'cache_downloads' is set to False'."
         )
 
-    other_read_kwargs = {} if other_read_kwargs is None else other_read_kwargs
+    # --- Defaults ---
+    # Note: By default, we always set 'chunks='auto' so that
+    # Dask can set a good block size for the raster data.
+    if other_read_kwargs is None:
+        read_options = {'chunks': 'auto'}
+    else:
+        read_options = other_read_kwargs.copy()
+        if 'chunks' not in read_options:
+            read_options['chunks'] = 'auto'
 
     # --- Resolve Resampling Method ---
     # We need a valid Rasterio Enum for warping.
@@ -268,11 +255,10 @@ def wp_raster(
     shared_processing_kwargs = dict(
         masked=masked,
         mask_and_scale=mask_and_scale,
-        other_read_kwargs=other_read_kwargs,
+        other_read_kwargs=read_options,
         clipping_gdf=clipping_gdf,
         to_crs=to_crs,
         res=res,
-        merge_strategy=merge_strategy,
         resampling=resampling_enum,
         preclip=preclip,
         merge_options=merge_options,
@@ -367,13 +353,11 @@ def merge_rasters(
     preclip=True,
     to_crs=None,
     res=None,
-    merge_strategy='quality',
     resampling=Resampling.average,
     merge_options=None,
 ):
     """
-    Merge multiple rasters using either a Quality (Merge-Then-Reproject) or
-    Performance (Reproject-Then-Merge) strategy.
+    Merge multiple rasters.
 
     This function is a "smart" wrapper around `rioxarray.merge.merge_arrays`.
     It validates that all input rasters share the same critical metadata (CRS,
@@ -411,25 +395,9 @@ def merge_rasters(
     to_crs: str or pyproj.CRS, optional
         Coordinate reference system (CRS) to reproject the raster data into.
         If `to_crs` is not provided, raster data remains in the source CRS.
-
-        Note regarding `merge_strategy`:
-        - If merge_strategy='quality', re-projection is applied *after* merging
-          the rasters.
-        - If merge_strategy='performance', input rasters are re-projected *before*
-          merging.
     res : tuple, optional
         Target resolution. Defines the pixel size of the *final output* raster
         in the units of `to_crs`. Used for aligning data to a specific grid.
-    merge_strategy : str, optional, default='quality'
-        Controls the processing pipeline order to balance RAM usage vs. accuracy.
-
-        - 'quality' (Merge-Then-Reproject): Stitches input rasters in the source
-          CRS first, then warps the result. Preserves geometric continuity and
-          avoids seam artefacts. High RAM usage.
-        - 'performance' (Reproject-Then-Merge): Warps each input raster individually
-          before stitching. Much lower RAM usage for large areas, but may
-          introduce slight edge artefacts or data loss at tile boundaries.
-        Effective when `to_crs` or `res` is provided.
     resampling : rasterio.enums.Resampling, optional, default=Resampling.average
         The resampling method used during reprojection or resolution change.
         Options: Resampling.sum, Resampling.mean, Resampling.nearest, etc.
@@ -462,19 +430,6 @@ def merge_rasters(
          `scale_factor` or `add_offset` attributes.)
     """
 
-    if merge_strategy not in ['quality', 'performance']:
-        raise ValueError(
-            f'Invalid strategy: {merge_strategy}. Must be either '
-            f"'quality' or 'performance'."
-        )
-
-    if merge_strategy == 'performance' and to_crs is None and res is None:
-        merge_strategy = 'quality'
-        logger.debug(
-            "Merge strategy 'performance' requested but no transformation "
-            "(to_crs/res)  provided. Reverting to 'quality' (default merge)."
-        )
-
     # --- Defaults ---
     if merge_options is None:
         merge_options = {}
@@ -486,15 +441,18 @@ def merge_rasters(
     safe_attrs = _validate_raster_attrs(raster_fpaths, masked, mask_and_scale)
 
     # --- Consolidate Read Options ---
-    # This is for logging and for passing to rioxarray.
+    # Redundant chunks check, just in case merge_rasters is
+    # called directly (bypassing wp_raster).
     if other_read_kwargs is None:
-        read_options = {}
+        read_options = {'chunks': 'auto'}
     else:
         read_options = other_read_kwargs.copy()
+        if 'chunks' not in read_options:
+            read_options['chunks'] = 'auto'
     read_options['masked'] = masked
     read_options['mask_and_scale'] = mask_and_scale
 
-    # --- 1. Open Input Rasters & Optional Pre-clip (Lazy) ---
+    # --- Open Input Rasters & Optional Pre-clip (Lazy) ---
     rasters_to_merge = []
 
     # Caching variables to avoid re-calculating geometry for
@@ -547,6 +505,17 @@ def merge_rasters(
                 )
                 continue
 
+            # Prepare for `xarray.merge`, which is strict. If floating point
+            # precision makes one pixel 10.0001 and the next 10.0000, this
+            # creates a new row instead of aligning them. Rounding coords
+            # ensures clean graph construction. For input data in WGS84,
+            # the 5th decimal corresponds to ~1 meter at the equator.
+            da = da.assign_coords({"x": da.x.round(5), "y": da.y.round(5)})
+
+            # Assign a fixed name, which `xarray.merge` needs to recognise
+            # these arrays as belonging to the same variable (mosaicking).
+            da.name = "wpy_data"
+
             rasters_to_merge.append(da)
 
         except Exception as e:
@@ -558,41 +527,23 @@ def merge_rasters(
             "Check your AOI coordinates."
         )
 
-    # --- 2. Execute Strategy ---
-    if merge_strategy == 'performance':
-        # [STRATEGY A: Reproject-Then-Merge]
+    # --- Lazy Merge!  ---
+    da = _lazy_merge_helper(rasters_to_merge, masked)
 
-        warped_rasters = []
-        for da in rasters_to_merge:
-            target_crs = to_crs if to_crs is not None else da.rio.crs
-            warped_da = da.rio.reproject(
-                target_crs, resolution=res, resampling=resampling
-            )
-            warped_rasters.append(warped_da)
+    if to_crs is not None or res is not None:
+        target_crs = to_crs if to_crs is not None else da.rio.crs
+        reproject_kwargs = {'resampling': resampling}
+        if res is not None:
+            reproject_kwargs['resolution'] = res
 
-        da = merge_arrays(warped_rasters, **merge_options)
+        da = da.rio.reproject(target_crs, **reproject_kwargs)
 
-    else:
-        # [STRATEGY B: Merge-Then-Reproject] ('quality')
-
-        da = merge_arrays(rasters_to_merge, **merge_options)
-
-        if to_crs is not None or res is not None:
-            target_crs = to_crs if to_crs is not None else da.rio.crs
-            reproject_kwargs = {'resampling': resampling}
-            if res is not None:
-                reproject_kwargs['resolution'] = res
-
-            da = da.rio.reproject(target_crs, **reproject_kwargs)
-
-    # --- 3. Final Precise Clipping ---
-    # Note: Pre-clipping was done using a buffered bounding box.
-    # Now we clip to the EXACT geometry.
+    # --- Final Precise Clipping ---
     if clipping_gdf is not None:
         geoms = clipping_gdf.geometry.apply(shapely.geometry.mapping)
         da = da.rio.clip(geoms, clipping_gdf.crs, drop=True, all_touched=True)
 
-    # --- 4. Clean-up and create final metadata ---
+    # --- Clean-up and create final metadata ---
     da.attrs = {}
     da.attrs.update(safe_attrs)
 
@@ -605,22 +556,26 @@ def merge_rasters(
     if num_files > 1:
         history_log.append(
             f"Merged from {num_files} input files by worldpoppy "
-            f"on {timestamp} using strategy '{merge_strategy}'."
+            f"on {timestamp}."
+            f""
         )
     else:
         history_log.append(
             f"Processed from 1 input file by worldpoppy "
-            f"on {timestamp} using strategy '{merge_strategy}'."
+            f"on {timestamp}."
         )
 
     if preclip_applied:
-        history_log.append(f"Pre-clipped inputs (buffer=0.05 deg).")
+        history_log.append(f"Pre-clip was applied.")
 
     if clipping_gdf is not None:
-        history_log.append("Clipped to AOI geometry.")
+        history_log.append("Final raster clipped to AOI geometry.")
 
     if to_crs is not None:
         history_log.append(f"Reprojected to new CRS.")
+
+    if res is not None:
+        history_log.append(f"Resampled to 'res'={res}.")
 
     if read_options:
         history_log.append(f"Read options: {read_options}.")
@@ -917,3 +872,50 @@ def _concat_with_info(objs, **kwargs):
             "`xarray` concatenation. (pip install bottleneck)"
         )
     return xr.concat(objs, **kwargs)
+
+
+def _lazy_merge_helper(das, masked):
+    """
+    Lazily merge a list of DataArrays using a 'Painter's Algorithm'.
+
+    To mimic standard GIS behaviour (rasterio.merge), we treat the
+    LAST raster in the list as the 'Top' layer.
+    """
+    if len(das) == 1:
+        return das[0]
+
+    # Reverse the raster list to restore standard Z-Order.
+    # rasterio.merge (and typical GIS) paints the list in order,
+    # meaning the LAST file covers the previous ones.
+    # By contrast, `combine_first` prioritises the object calling.
+    # it. Therefore, to ensure the last file stays on top, we must
+    # start with it.
+
+    # Reverse arrays list: [A, B, C] -> [C, B, A]
+    reversed_das = das[::-1]
+
+    # Start with top layer (C)
+    combined = reversed_das[0]
+
+    # Fill holes with B, then A
+    for other in reversed_das[1:]:
+        combined = combined.combine_first(other)
+
+    # Handle nodata explicitly
+    if masked:
+        # User requested masking -> Data is Float with NaNs.
+        # We must tell GDAL that NaN is the nodata value.
+        combined.rio.write_nodata(np.nan, encoded=True, inplace=True)
+    else:
+        # User requested raw data -> Data is likely Int with a specific marker (e.g. -9999).
+        # combine_first drops this attribute, so we restore it from the first input.
+        original_nodata = das[0].rio.nodata
+        if original_nodata is not None:
+            combined.rio.write_nodata(original_nodata, encoded=True, inplace=True)
+
+    # Recover CRS & name
+    combined.rio.write_crs(das[0].rio.crs, inplace=True)
+    if das[0].name:
+        combined.name = das[0].name
+
+    return combined
