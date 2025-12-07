@@ -204,7 +204,7 @@ def validate_bbox_wgs84(bounds):
     if min_lat < -90 or max_lat > 90:
         raise BboxInvalidError(
             f"Latitude out of bounds ({min_lat}, {max_lat}). "
-            "Values beyond +/-90 suggest that the AOI crosses a pole. "
+            "Values beyond +/-90 suggest that the AoI crosses a pole. "
         )
 
     # Check for logical consistency
@@ -219,7 +219,7 @@ def validate_bbox_wgs84(bounds):
     if min_lon < -180 or max_lon > 180:
         raise BboxInvalidError(
             f"Longitude out of bounds ({min_lon}, {max_lon}). "
-            "Values outside +/-180 suggest that the AOI crosses "
+            "Values outside +/-180 suggest that the AoI crosses "
             "the Anti-Meridian (Date Line)."
         )
 
@@ -234,7 +234,7 @@ def validate_bbox_wgs84(bounds):
 
 def get_buffered_bounds(clipping_gdf, raster_crs, buffer_deg):
     """
-    Calculate a bounding box for the AOI in the target raster CRS,
+    Calculate a bounding box for the AoI in the target raster CRS,
     with a fixed safety buffer applied in WGS84.
 
     Parameters

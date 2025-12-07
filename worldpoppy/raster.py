@@ -14,7 +14,7 @@ Main methods
         Merge multiple raster files and optionally clip the result.
     - :func:`bbox_from_location`
         Generate a bounding box from a location name or GPS coordinate.
-        The result can be used to specify the AOI for `wp_raster`.
+        The result can be used to specify the AoI for `wp_raster`.
 
 """
 import logging
@@ -34,7 +34,6 @@ import xarray as xr
 from pyproj import CRS, Transformer
 from rasterio.enums import Resampling
 from shapely.geometry import box
-from tqdm.auto import tqdm
 
 from worldpoppy.borders import load_country_borders
 from worldpoppy.config import WGS84_CRS, get_cache_dir
@@ -94,10 +93,10 @@ def wp_raster(
     **merge_options,
 ):
     """
-    Return WorldPop data for the user-defined area of interest (AOI) and the
+    Return WorldPop data for the user-defined area of interest (AoI) and the
     specified years (where applicable).
 
-    Note that WorldPop organises its raster files by country. If the AOI spans
+    Note that WorldPop organises its raster files by country. If the AoI spans
     multiple countries, this function will automatically merge all corresponding
     raster files. If multiple years are requested, the raster data is stacked
     along a new 'year' dimension.
@@ -111,7 +110,7 @@ def wp_raster(
     product_name : str
         The name of the WorldPop data product of interest.
     aoi : str, List[str], List[float], Tuple[float], or geopandas.GeoDataFrame
-        The area of interest (AOI) for which to obtain the raster data. Users can specify
+        The area of interest (AoI) for which to obtain the raster data. Users can specify
         this area using:
 
         - one or more three-letter country codes (alpha-3 IS0 codes);
@@ -121,7 +120,7 @@ def wp_raster(
         In the latter two cases, WorldPop data is first downloaded and merged for
         all countries that intersect the area of interest, regardless of how large
         this intersection is. Subsequently, the merged raster is then clipped using
-        the AOI.
+        the AoI.
 
     years : int or List[int] or str, optional
         For annual data products, one or more years of interest or the 'all' keyword
@@ -131,9 +130,9 @@ def wp_raster(
         input rasters will *immediately* be clipped after loading them
         from disk. This is the **manual** pre-clipping boundary.
         If provided, this overrides the **automatic** buffered pre-clipping
-        mechanism (which is applied by default when users pass the AOI as
+        mechanism (which is applied by default when users pass the AoI as
         either a GeoDataFrame or BBOx). Manual pre-clipping is useful when
-        working with country-code AOIs like Chile, where remote outlying
+        working with country-code AoIs like Chile, where remote outlying
         islands result in a merged raster that is largely empty, causing
         RAM explosions. Mutually exclusive with `suppress_pre_clip`.
     cache_downloads: bool, optional, default=True
@@ -220,11 +219,11 @@ def wp_raster(
         if 'chunks' not in read_options:
             read_options['chunks'] = 'auto'
 
-        # --- Process the AOI ---
+        # --- Process the AoI ---
         # The output 'aoi' variable holds either the original GeoDataFrame or the ISO codes.
     aoi, iso3_codes, orig_aoi_type = _standardise_aoi(aoi)
 
-    # --- Validate/Process pre_clip_bbox based on AOI type ---
+    # --- Validate/Process pre_clip_bbox based on AoI type ---
     # The pre_clip_bbox is only allowed for ISO codes.
     if pre_clip_bbox is not None:
         validate_bbox_wgs84(pre_clip_bbox)
@@ -238,7 +237,7 @@ def wp_raster(
         elif orig_aoi_type == 'gdf':
             pre_clip_bbox = None
             logger.warning(
-                'Ignoring `pre_clip_bbox` for GeoDataFrame AOI. Relying on '
+                'Ignoring `pre_clip_bbox` for GeoDataFrame AoI. Relying on '
                 "the GeoDataFrame's bounding box for automatic pre-clip instead."
             )
 
@@ -610,13 +609,13 @@ def merge_rasters(
             pre_clip_method = "Manual"
 
         elif clipping_gdf is not None:
-            # Case 2: Automatically inferred BBox (from GeoDataFrame or original BBox AOI)
+            # Case 2: Automatically inferred BBox (from GeoDataFrame or original BBox AoI)
             # The calculation must still be done inside the loop to handle CRS changes,
             # but we set the stage here.
             pre_clip_method = "Auto"
 
         else:
-            # Case 3: ISO codes without explicit pre_clip_bbox, or AOI is None
+            # Case 3: ISO codes without explicit pre_clip_bbox, or AoI is None
             # No pre-clipping optimisation supported.
             pre_clip_method = None
 
@@ -683,8 +682,8 @@ def merge_rasters(
     # ... rest of function remains the same ...
     if not rasters_to_merge:
         raise ValueError(
-            "No raster data found intersecting the buffered AOI. "
-            "Check your AOI coordinates."
+            "No raster data found intersecting the buffered AoI. "
+            "Check your AoI coordinates."
         )
 
     # --- Lazy Merge!  ---
@@ -719,7 +718,7 @@ def merge_rasters(
         history_log.append(f"Pre-clip was applied.")
 
     if clipping_gdf is not None:
-        history_log.append("Final raster clipped to AOI geometry.")
+        history_log.append("Final raster clipped to AoI geometry.")
 
     if read_options:
         history_log.append(f"Read options: {read_options}.")
@@ -827,9 +826,9 @@ def bbox_from_location(centre, width_degrees=None, width_km=None):
 
 def _standardise_aoi(aoi):
     """
-    Parses various AOI input formats (Bounding Box, GeoDataFrame, or
+    Parses various AoI input formats (Bounding Box, GeoDataFrame, or
     country codes) into a standardised GeoDataFrame, a list of ISO3 codes,
-    and an indicator coding for the AOI type the user originally passed.
+    and an indicator coding for the AoI type the user originally passed.
     """
 
     orig_aoi_type = None
