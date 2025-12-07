@@ -1,13 +1,15 @@
 """
 Collection of various plotting utility functions.
 """
-
+import logging
 from matplotlib import pyplot as plt
 from pyproj import Transformer
 
 from worldpoppy.config import WGS84_CRS
-from worldpoppy.func_utils import cached_nominatim_query
+from worldpoppy.func_utils import cached_nominatim_query, NominatimSearchEmptyError
 from worldpoppy.manifest_loader import get_all_isos
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "clean_axis",
@@ -97,11 +99,6 @@ def plot_location_markers(
     **scatter_kwargs :
         Additional keywords passed to `scatter`.
 
-    Raises
-    ------
-    RuntimeError
-        If a Nominatim query has returned None.
-
     Notes
     -----
     **Geocoding Reliability Warning**
@@ -117,6 +114,7 @@ def plot_location_markers(
     ``(longitude, latitude, label)`` or ``(longitude, latitude)``.
 
     """
+
     ax = plt.gca() if ax is None else ax
 
     # Prepare scatter kwargs
@@ -147,47 +145,59 @@ def plot_location_markers(
         transformer = Transformer.from_crs(WGS84_CRS, to_crs, always_xy=True)
 
     for item in locations:
-        if isinstance(item, str):
-            # Case 1: Simple location name string
-            lon, lat = cached_nominatim_query(query=item)
-            label = item
+        try:
+            if isinstance(item, str):
+                # Case 1: Simple location name string
+                lon, lat = cached_nominatim_query(query=item)
+                label = item
 
-        elif isinstance(item, tuple):
-            # Check the type of the first element to distinguish between
-            # ("Query", "Label") and (Lon, Lat, ...)
-            first_element = item[0]
+            elif isinstance(item, tuple):
+                # Check the type of the first element to distinguish between
+                # ("Query", "Label") and (Lon, Lat, ...)
+                first_element = item[0]
 
-            if isinstance(first_element, str):
-                # Case 2: (Location Name, Display Label)
-                if len(item) != 2:
-                    raise ValueError(
-                        f"Invalid string tuple format: {item}. "
-                        "Expected (query_name, display_label)."
-                    )
-                query_name, custom_label = item
-                lon, lat = cached_nominatim_query(query=query_name)
-                label = custom_label
-
-            else:
-                # Case 3: Coordinate tuples
-                if len(item) == 3:
-                    # Tuple with explicit label
-                    lon, lat, custom_label = item
+                if isinstance(first_element, str):
+                    # Case 2: (Location Name, Display Label)
+                    if len(item) != 2:
+                        raise ValueError(
+                            f"Invalid string tuple format: {item}. "
+                            "Expected (query_name, display_label)."
+                        )
+                    query_name, custom_label = item
+                    lon, lat = cached_nominatim_query(query=query_name)
                     label = custom_label
-                elif len(item) == 2:
-                    # Tuple with simple coords
-                    lon, lat = item
-                    label = f"{lon:.2f}, {lat:.2f}"
-                else:
-                    raise ValueError(
-                        f"Invalid numeric tuple format: {item}. "
-                        "Expected (lon, lat) or (lon, lat, label)."
-                    )
-        else:
-            raise TypeError(
-                f"Location item must be a string or tuple, got {type(item)}."
-            )
 
+                else:
+                    # Case 3: Coordinate tuples
+                    # These do not require geocoding, but we keep them inside the loop flow
+                    if len(item) == 3:
+                        # Tuple with explicit label
+                        lon, lat, custom_label = item
+                        label = custom_label
+                    elif len(item) == 2:
+                        # Tuple with simple coords
+                        lon, lat = item
+                        label = f"{lon:.2f}, {lat:.2f}"
+                    else:
+                        raise ValueError(
+                            f"Invalid numeric tuple format: {item}. "
+                            "Expected (lon, lat) or (lon, lat, label)."
+                        )
+            else:
+                raise TypeError(
+                    f"Location item must be a string or tuple, got {type(item)}."
+                )
+
+        except NominatimSearchEmptyError:
+            # Determine the name we were trying to find for the log message
+            failed_query = item[0] if isinstance(item, tuple) else item
+            logger.warning(
+                f"Nominatim returned no results for location '{failed_query}'. "
+                "Skipping plotting for this location."
+            )
+            continue
+
+        # --- Transformation & Plotting ---
         if transformer is not None:
             xy = transformer.transform(lon, lat)
         else:
@@ -232,4 +242,3 @@ def clean_axis(ax=None, title=None, remove_xy_ticks=False):
     if remove_xy_ticks:
         ax.set_xticks([])
         ax.set_yticks([])
-

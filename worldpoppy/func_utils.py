@@ -22,6 +22,7 @@ from worldpoppy.config import WGS84_CRS
 
 __all__ = [
     "BboxInvalidError",
+    "NominatimSearchEmptyError",
     "geolocate_name",
     "cached_nominatim_query",
     "module_available",
@@ -38,6 +39,12 @@ class BboxInvalidError(Exception):
     Raised when the bounds for a purported bounding box are invalid,
     assuming the bounds are specified using the WGS84 CRS.
     """
+
+    pass
+
+
+class NominatimSearchEmptyError(Exception):
+    """Raised when a Nominatim search returns no result."""
 
     pass
 
@@ -67,8 +74,8 @@ def geolocate_name(nominatim_query, to_crs=None):
 
     Raises
     ------
-    RuntimeError
-        If the Nominatim query has returned None.
+    NominatimSearchEmptyError
+        If the Nominatim query crashed or returned None.
     """
     lon, lat = cached_nominatim_query(nominatim_query)
     if to_crs is None:
@@ -100,17 +107,20 @@ def cached_nominatim_query(query):
 
     Raises
     ------
-    RuntimeError
-        If the Nominatim query has returned None.
+    NominatimSearchEmptyError
+        If the Nominatim query crashed or returned None.
     """
-    geolocator = Nominatim(user_agent="MyLocationCacher", timeout=2)
-    located = geolocator.geocode(query)
+    try:
+        geolocator = Nominatim(user_agent="MyLocationCacher", timeout=2)
+        located = geolocator.geocode(query)
+    except Exception as e:
+        # We re-raise *any* error as the same custom exception
+        # since this simplifies error handling in callees like
+        # `plot_utils.plot_location_markers`.
+        raise NominatimSearchEmptyError(f"Nominatim search failed with error: {e}")
 
     if located is None:
-        raise RuntimeError(
-            f"Nominatim search for location name '{query}' returned no hit."
-        )
-
+        raise NominatimSearchEmptyError(f"No hit returned for location '{query}'.")
 
     lon, lat = located.point.longitude, located.point.latitude
     return lon, lat
