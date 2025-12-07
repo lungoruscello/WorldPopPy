@@ -82,12 +82,13 @@ def wp_raster(
     aoi,
     years=None,
     *,
+    pre_clip_bbox=None,
     cache_downloads=True,
     skip_download_if_exists=True,
     masked=False,
     mask_and_scale=False,
     other_read_kwargs=None,
-    preclip=True,
+    suppress_pre_clip=False,
     download_chunk_size=1024**2,
     download_dry_run=False,
     **merge_options,
@@ -100,6 +101,10 @@ def wp_raster(
     multiple countries, this function will automatically merge all corresponding
     raster files. If multiple years are requested, the raster data is stacked
     along a new 'year' dimension.
+
+    This function always returns a **lazy Dask array**, improving memory management
+    for large areas. It also supports **automatic** or **manual** pre-clipping of
+    input rasters to minimise the memory footprint further.
 
     Parameters
     ----------
@@ -121,6 +126,16 @@ def wp_raster(
     years : int or List[int] or str, optional
         For annual data products, one or more years of interest or the 'all' keyword
         (str). For static data products, this argument must be None (default).
+    pre_clip_bbox : Tuple[float, float, float, float], optional
+        A bounding box (min_lon, min_lat, max_lon, max_lat) to which
+        input rasters will *immediately* be clipped after loading them
+        from disk. This is the **manual** pre-clipping boundary.
+        If provided, this overrides the **automatic** buffered pre-clipping
+        mechanism (which is applied by default when users pass the AOI as
+        either a GeoDataFrame or BBOx). Manual pre-clipping is useful when
+        working with country-code AOIs like Chile, where remote outlying
+        islands result in a merged raster that is largely empty, causing
+        RAM explosions. Mutually exclusive with `suppress_pre_clip`.
     cache_downloads: bool, optional, default=True
         Whether to cache downloaded source rasters.
     skip_download_if_exists : bool, optional, default=True
@@ -140,12 +155,9 @@ def wp_raster(
         Dictionary with additional keyword arguments that are passed to
         `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
         when reading input rasters (e.g., `lock` or `band_as_variable`).
-    preclip : bool, optional, default=True
-        If True, input rasters are cropped to the bounding box of the AoI
-        (plus a small safety buffer) immediately after loading. This reduces
-        RAM usage when processing small AOIs within large raster files.
-        Only used when the AOI is specified with a GeoDataFrame or
-        bounding box.
+    suppress_pre_clip : bool, optional, default=False
+        If True, no **automatic** or **manual** pre-clipping is ever applied when
+        loading input rasters. Mutually exclusive with `pre_clip_bbox`.
     download_chunk_size : int, optional, default=1MB
         The size (in bytes) of chunks to read/write during raster downloads.
         Larger chunks may improve performance, especially on systems with
@@ -195,9 +207,12 @@ def wp_raster(
             "'cache_downloads' is set to False'."
         )
 
-    # --- Defaults ---
-    # Note: By default, we always set 'chunks='auto' so that
-    # Dask can set a good block size for the raster data.
+    if suppress_pre_clip and pre_clip_bbox is not None:
+        raise ValueError("Cannot provide `pre_clip_bbox` when `suppress_pre_clip` is True.")
+
+        # --- Defaults ---
+        # Note: By default, we always set 'chunks='auto' so that
+        # Dask can set a good block size for the raster data.
     if other_read_kwargs is None:
         read_options = {'chunks': 'auto'}
     else:
@@ -205,19 +220,40 @@ def wp_raster(
         if 'chunks' not in read_options:
             read_options['chunks'] = 'auto'
 
-    # --- Process the AOI ---
-    # Beware: _standardise_aoi converts BBox tuples to a GeoDataFrame automatically.
-    aoi, iso3_codes = _standardise_aoi(aoi)
+        # --- Process the AOI ---
+        # The output 'aoi' variable holds either the original GeoDataFrame or the ISO codes.
+    aoi, iso3_codes, orig_aoi_type = _standardise_aoi(aoi)
+
+    # --- Validate/Process pre_clip_bbox based on AOI type ---
+    # The pre_clip_bbox is only allowed for ISO codes.
+    if pre_clip_bbox is not None:
+        validate_bbox_wgs84(pre_clip_bbox)
+
+        if orig_aoi_type == 'bbox':
+            pre_clip_bbox = None
+            logger.warning(
+                'Ignoring `pre_clip_bbox` since `aoi` is a bounding box itself. '
+                "Relying on this box for automatic pre-clip instead."
+            )
+        elif orig_aoi_type == 'gdf':
+            pre_clip_bbox = None
+            logger.warning(
+                'Ignoring `pre_clip_bbox` for GeoDataFrame AOI. Relying on '
+                "the GeoDataFrame's bounding box for automatic pre-clip instead."
+            )
 
     # --- Prepare Shared Raster-processing Arguments ---
+    # `clipping_gdf` is used for the final precise clip AND for the
+    # automatically inferred pre-clip bounds.
     clipping_gdf = aoi if isinstance(aoi, gpd.GeoDataFrame) else None
 
     shared_processing_kwargs = dict(
         masked=masked,
         mask_and_scale=mask_and_scale,
         other_read_kwargs=read_options,
+        pre_clip_bbox=pre_clip_bbox,
         clipping_gdf=clipping_gdf,
-        preclip=preclip,
+        suppress_pre_clip=suppress_pre_clip,
         merge_options=merge_options,
     )
 
@@ -253,7 +289,9 @@ def wp_raster(
         # across years).
         # The call below performs a "smart" validation that depends on the user's
         # flags. See `_validate_raster_attrs` docstring for a full explanation.
-        global_safe_attrs = _validate_raster_attrs(all_raster_paths, masked, mask_and_scale)
+        global_safe_attrs = _validate_raster_attrs(
+            all_raster_paths, masked, mask_and_scale
+        )
 
         # Merge the actual rasters separately by year
         annual_rasters = []
@@ -289,7 +327,9 @@ def wp_raster(
         time_series.attrs.update(global_safe_attrs)  # re-apply the safe attrs
 
         # Apply the *nested* history attribute we collected
-        time_series.attrs['history'] = annual_history  # TODO dict may not be NetCDF-compliant
+        time_series.attrs['history'] = (
+            annual_history  # TODO dict may not be NetCDF-compliant
+        )
         time_series.attrs['input_files'] = annual_fnames  # ''
 
         return time_series.squeeze()
@@ -329,7 +369,7 @@ def wp_warp(
     resampling : str or rasterio.enums.Resampling, optional
         The resampling method to use (e.g., 'nearest', 'bilinear', 'sum').
         If None, defaults to 'nearest'.
-    rechunk : bool or dict, optional, default=True
+    rechunk : bool, int, or dict, optional, default=True
         Whether to enforce a uniform chunk structure before warping.
 
         - If True (default): Re-chunks to {'x': 2048, 'y': 2048}.
@@ -340,6 +380,7 @@ def wp_warp(
           Use this if you know your input Dask graph is not fragmented,
           or if you explicitly want to process the warp in-memory (eager).
         - If dict: Applies the specified chunks (e.g. {'x': 1024, 'y': 1024}).
+        - If int K: Applies the uniform chunk size {'x': K, 'y': K}.
 
     Returns
     -------
@@ -349,7 +390,9 @@ def wp_warp(
 
     # --- No-op Check ---
     if to_crs is None and res is None:
-        logger.debug("wp_warp: No CRS or Resolution change requested. Returning original array.")
+        logger.debug(
+            "wp_warp: No CRS or Resolution change requested. Returning original array."
+        )
         return da
 
     # --- Resolve Resampling ---
@@ -382,11 +425,14 @@ def wp_warp(
     if rechunk:
         if isinstance(rechunk, dict):
             chunks = rechunk
+        elif isinstance(rechunk, int):
+            # NEW: Convert integer K to {'x': K, 'y': K}
+            chunks = {'x': rechunk, 'y': rechunk}
         else:
             # Default safe size (~32MB per chunk for float64)
             chunks = {'x': 2048, 'y': 2048}
 
-        # We only rechunk dimensions that actually exist
+        # We only rechunk dimensions that actually exist (usually 'x' and 'y')
         valid_chunks = {k: v for k, v in chunks.items() if k in da.dims}
         if valid_chunks:
             da = da.chunk(valid_chunks)
@@ -439,8 +485,9 @@ def merge_rasters(
     masked=False,
     mask_and_scale=False,
     other_read_kwargs=None,
+    pre_clip_bbox=None,
     clipping_gdf=None,
-    preclip=True,
+    suppress_pre_clip=False,
     merge_options=None,
 ):
     """
@@ -471,13 +518,14 @@ def merge_rasters(
         `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
         when reading input rasters (e.g., `lock`
         or `band_as_variable`).
+    pre_clip_bbox : Tuple[float, float, float, float], optional
+        An explicit bounding box to use for pre-clipping the input rasters.
+        If provided, this overrides the default buffered pre-clipping.
     clipping_gdf : geopandas.GeoDataFrame, optional
-        GeoDataFrame with geometries used to clip the merged raster.
-    preclip : bool, optional, default=True
-        If True, and if `clipping_gdf` is provided, input rasters are cropped
-        to the bounding box of the geometry (plus a small safety buffer)
-        immediately after loading. This reduces RAM usage significantly when
-        processing small AOIs within large raster files.
+        GeoDataFrame with geometries used to clip the merged raster. This is
+        used for the **final precise clip**.
+    suppress_pre_clip : bool, optional, default=False
+        If True, disables all pre-clipping optimisations.
     merge_options : dict, optional
         A dictionary of keyword arguments passed directly to
         `rioxarray.merge.merge_arrays`, which give more control over how input
@@ -519,11 +567,15 @@ def merge_rasters(
     first.
     """
 
+    # --- Argument Validation ---
+    if suppress_pre_clip and pre_clip_bbox is not None:
+        raise ValueError("`pre_clip_bbox` must be None when `suppress_pre_clip` is True.")
+
     # --- Defaults ---
     if merge_options is None:
         merge_options = {}
 
-    # --- Validate Metadata ---
+    # --- Metadata Validation ---
     safe_attrs = _validate_raster_attrs(raster_fpaths, masked, mask_and_scale)
 
     # --- Consolidate Read Options ---
@@ -536,50 +588,80 @@ def merge_rasters(
     read_options['masked'] = masked
     read_options['mask_and_scale'] = mask_and_scale
 
+    # ------------------------------------------------------------------
     # --- Open Input Rasters & Optional Pre-clip (Lazy) ---
+    # ------------------------------------------------------------------
     rasters_to_merge = []
 
     # Caching variables to avoid re-calculating geometry for
     # every file if the CRS is consistent across the batch.
-    cached_clip_box = None
+    cached_automatic_clip_box = None
     cached_crs = None
+    final_pre_clip_box = None  # Stores the bbox that will be used for clipping
 
     # We track if pre-clipping actually happened for the history log
     preclip_applied = False
 
+    # --- Determine the FINAL Pre-Clipping Box (outside the loop) ---
+    if not suppress_pre_clip:
+        if pre_clip_bbox is not None:
+            # Case 1: Explicit BBox provided by user
+            final_pre_clip_box = pre_clip_bbox
+            pre_clip_method = "Manual"
+
+        elif clipping_gdf is not None:
+            # Case 2: Automatically inferred BBox (from GeoDataFrame or original BBox AOI)
+            # The calculation must still be done inside the loop to handle CRS changes,
+            # but we set the stage here.
+            pre_clip_method = "Auto"
+
+        else:
+            # Case 3: ISO codes without explicit pre_clip_bbox, or AOI is None
+            # No pre-clipping optimisation supported.
+            pre_clip_method = None
+
+    # --- Start Raster Loop ---
     for path in raster_fpaths:
         try:
             da = rioxarray.open_rasterio(path, **read_options)
 
-            # [OPTIMISATION] Buffered pre-clip
-            # If enabled, use `da.rio.clip_box` to slice the raster immediately.
-            if preclip and clipping_gdf is not None:
+            # --- [OPTIMISATION] Apply Pre-Clipping Slice (Lazy) ---
+            if final_pre_clip_box is not None or pre_clip_method == "Auto":
                 try:
-                    current_crs = da.rio.crs
+                    if final_pre_clip_box is not None:
+                        # Case 1: Use the constant, explicit BBox provided by the user.
+                        clip_box_to_use = final_pre_clip_box
+                    else:
+                        # Case 2: Calculate/use the buffered bounds derived from clipping_gdf.
+                        current_crs = da.rio.crs
+                        if (
+                            cached_automatic_clip_box is None
+                            or current_crs != cached_crs
+                        ):
+                            cached_automatic_clip_box = get_buffered_bounds(
+                                clipping_gdf, raster_crs=current_crs, buffer_deg=0.1
+                            )
+                            cached_crs = current_crs
+                            logger.debug(
+                                f"Calculated automatic pre-clip bounds: {cached_automatic_clip_box}"
+                            )
 
-                    # Calculate buffered bounds (only if CRS changed or first run)
-                    if cached_clip_box is None or current_crs != cached_crs:
-                        cached_clip_box = get_buffered_bounds(
-                            clipping_gdf, raster_crs=current_crs, buffer_deg=0.1
-                        )
-                        cached_crs = current_crs
-                        logger.debug(f"Calculated pre-clip bounds: {cached_clip_box}")
+                        clip_box_to_use = cached_automatic_clip_box
 
-                    # Perform the slice.
-                    # This is lazy (Dask) and happens instantly.
-                    da = da.rio.clip_box(*cached_clip_box)
+                    # Perform the slice. This is lazy (Dask) and happens instantly.
+                    da = da.rio.clip_box(*clip_box_to_use)
                     preclip_applied = True
 
                 except Exception as e:
                     logger.warning(
                         f"Pre-clipping failed for {Path(path).name}. "
-                        f"Skipping optimization and loading full input raster. Reason: {e}"
+                        f"Skipping optimisation and loading full input raster. Reason: {e}"
                     )
 
-            # Check for empty arrays (no overlap with buffered bbox)
+            # Check for empty arrays (no overlap with pre-clip BBox)
             if da.sizes['x'] == 0 or da.sizes['y'] == 0:
                 logger.debug(
-                    f"Skipping {Path(path).name} (no overlap with buffered AOI bbox)."
+                    f"Skipping {Path(path).name} (no overlap with pre-clip BBox)."
                 )
                 continue
 
@@ -598,6 +680,7 @@ def merge_rasters(
         except Exception as e:
             raise RasterReadError(f"Failed to read {path}: {e}")
 
+    # ... rest of function remains the same ...
     if not rasters_to_merge:
         raise ValueError(
             "No raster data found intersecting the buffered AOI. "
@@ -609,6 +692,7 @@ def merge_rasters(
 
     # --- Final Precise Clipping ---
     if clipping_gdf is not None:
+        # Note: This executes the final, precise polygonal clip, removing ocean/water.
         geoms = clipping_gdf.geometry.apply(shapely.geometry.mapping)
         da = da.rio.clip(geoms, clipping_gdf.crs, drop=True, all_touched=True)
 
@@ -624,11 +708,14 @@ def merge_rasters(
     history_log = []
 
     if num_files > 1:
-        history_log.append(f"Merged from {num_files} input files by worldpoppy on {timestamp}.")
+        history_log.append(
+            f"Merged from {num_files} input files by worldpoppy on {timestamp}."
+        )
     else:
         history_log.append(f"Processed from 1 input file by worldpoppy on {timestamp}.")
 
     if preclip_applied:
+        # This will show up if *any* pre-clip happened (explicit or inferred)
         history_log.append(f"Pre-clip was applied.")
 
     if clipping_gdf is not None:
@@ -688,7 +775,7 @@ def bbox_from_location(centre, width_degrees=None, width_km=None):
     else:
         raise ValueError("Location must be a string or a (lon, lat) tuple.")
 
-    # --- Handle bbox width ---
+    # --- Handle BBox width ---
     num_provided = (width_degrees is None) + (width_km is None)
     if num_provided != 1:
         raise ValueError(
@@ -741,8 +828,11 @@ def bbox_from_location(centre, width_degrees=None, width_km=None):
 def _standardise_aoi(aoi):
     """
     Parses various AOI input formats (Bounding Box, GeoDataFrame, or
-    country codes) into a standardized GeoDataFrame and a list of ISO3 codes.
+    country codes) into a standardised GeoDataFrame, a list of ISO3 codes,
+    and an indicator coding for the AOI type the user originally passed.
     """
+
+    orig_aoi_type = None
 
     if isinstance(aoi, (list, tuple)):
         if not isinstance(aoi[0], str):
@@ -750,6 +840,7 @@ def _standardise_aoi(aoi):
             validate_bbox_wgs84(aoi)
             box_poly = box(*aoi)
             aoi = gpd.GeoDataFrame(geometry=[box_poly], crs=WGS84_CRS)
+            orig_aoi_type = 'bbox'
 
     if isinstance(aoi, gpd.GeoDataFrame):
         # Case: GeoDataFrame passed
@@ -758,10 +849,14 @@ def _standardise_aoi(aoi):
             world, aoi.to_crs(WGS84_CRS), predicate='intersects', how='right'
         )
         iso3_codes = sorted(joined.iso3.unique())
+        if orig_aoi_type is None:  # avoid over-writing existing 'bbox' type
+            orig_aoi_type = 'gdf'
+
     else:
         if isinstance(aoi, str):
             # Case: single apparent ISO-code passed
             iso3_codes = [aoi]
+            orig_aoi_type = 'iso'
         else:
             if not isinstance(aoi[0], str):
                 raise ValueError(
@@ -769,8 +864,9 @@ def _standardise_aoi(aoi):
                 )
             # Case: several apparent ISO-codes passed
             iso3_codes = aoi
+            orig_aoi_type = 'iso'
 
-    return aoi, iso3_codes
+    return aoi, iso3_codes, orig_aoi_type
 
 
 def _validate_raster_attrs(raster_fpaths, masked, mask_and_scale):
