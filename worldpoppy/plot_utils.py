@@ -41,7 +41,7 @@ def plot_country_borders(iso3_codes, ax=None, to_crs=None, **kwargs):
     ax = plt.gca() if ax is None else ax
 
     user_kwargs = dict() if kwargs is None else kwargs
-    kwargs = dict(color='None', edgecolor='black', linewidth=1)
+    kwargs = dict(color='None', edgecolor='black', linewidth=0.5)
     kwargs.update(**user_kwargs)
 
     world = load_country_borders()

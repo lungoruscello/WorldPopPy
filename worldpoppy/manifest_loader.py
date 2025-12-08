@@ -135,6 +135,7 @@ __all__ = [
     "get_all_product_names",
     "get_static_product_names",
     "get_all_dataset_names",
+    "resolve_product_years",
 ]
 
 
@@ -174,11 +175,11 @@ def wp_manifest(
     iso3_codes : str or List[str], optional
         One or more three-letter ISO codes indicating the countries
         of interest.
-    years : int or List[int], optional
-        One or more years of interest. This will filter manifest entries based
-        on the 'year' column and will return any results matching that year,
-        including entries for *static* datasets that are tagged with the year
-        of data recording (e.g., 2000 for 'srtm_topo').
+    years : int or List[int] or str, optional
+        One or more years of interest, or the 'all' keyword.
+        - If years are provided, filters the manifest to those specific years.
+        - If 'all', returns entries for all available years.
+        - If None (default), no filtering on year is performed.
     static_only : bool, optional
         If True, only return manifest entries for static datasets (i.e., those
         *not* part of a multi-year time series). Mutually exclusive with
@@ -234,10 +235,14 @@ def wp_manifest(
             _validate_isos(iso3_codes)
             mdf = mdf[mdf['iso3'].isin(iso3_codes)].copy()
 
-        if years is not None:
+        # Only filter by years if years is NOT None and NOT 'all'.
+        # If years is 'all', we implicitly select all years (no filter).
+        if years is not None and years != 'all':
             _validate_years(years)
             mdf = mdf[mdf['year'].isin(years)].copy()
-        elif static_only:
+
+        # Note: We apply static/multi-year filters AFTER explicit year filters.
+        if static_only:
             mdf = mdf[mdf['multi_year'] == False].copy()
         elif multi_year_only:
             mdf = mdf[mdf['multi_year'] == True].copy()
@@ -264,9 +269,11 @@ def wp_manifest_constrained(product_name, iso3_codes, years=None):
     iso3_codes : str or List[str]
          One or more three-letter ISO codes indicating the countries
          of interest.
-    years : int or List[int], optional
-        The specific year(s) of interest. This is required for multi-year
-        products. # TODO 'all'
+    years : int or List[int] or str, optional
+        The specific year(s) of interest.
+        - If years are provided, validates availability for those specific years.
+        - If 'all', checks availability for *every* year recorded in the manifest.
+        - If None, validates that the product is static and has no year dimension.
 
     Returns
     -------
@@ -280,6 +287,12 @@ def wp_manifest_constrained(product_name, iso3_codes, years=None):
         or if data is not available for all requested countries and/or years.
     """
 
+    # --- Handle user arguments ---
+    # Resolve years='all' immediately
+    # This translates 'all' -> [2000, 2001...] or None, allowing the
+    # strict validation logic below to proceed unchanged.
+    years = resolve_product_years(product_name, years)
+
     if isinstance(iso3_codes, str):
         iso3_codes = [iso3_codes]
     if isinstance(years, int):
@@ -288,13 +301,10 @@ def wp_manifest_constrained(product_name, iso3_codes, years=None):
     requested_years = set(years) if years else set()
     target_iso_set = set(iso3_codes)
 
-    # Placeholder for the final, validated years to be used in the query
-    final_query_years = None  # noqa
-
-    # get the "ground truth" for the product
+    # Get the "ground truth" for the product
     is_multi_year, available_years, available_isos = _get_product_info(product_name)
 
-    # check available countries
+    # Check available countries
     if unknown_isos := target_iso_set - available_isos:
         raise ValueError(
             f"Product '{product_name}' is not available for all requested countries. "
@@ -302,6 +312,9 @@ def wp_manifest_constrained(product_name, iso3_codes, years=None):
         )
 
     # --- Check available time and assign final_query_years ---
+    # Placeholder for the final, validated years to be used in the query
+    final_query_years = None  # noqa
+
     if is_multi_year:
         # Product is multi-year, so `years` is ambiguous and required
         if not years:
@@ -344,7 +357,7 @@ def wp_manifest_constrained(product_name, iso3_codes, years=None):
             # The year is either validated (if provided) or inferred (if None provided)
             final_query_years = {single_year}
 
-    # load full manifest
+    # --- Load full manifest ---
     mdf = _get_cleaned_manifest()
 
     # --- Build query ---
@@ -387,8 +400,9 @@ def show_supported_data_products(
         show supported data products.
     years : int or List[int] or str, optional
         For annual data products, either one or more years (int or List[int]) for
-        which to show results or the 'all' keyword (str) to implicitly drop
-        static data products.
+        which to show results, or the 'all' keyword (str).
+        - If specific years are provided, products are filtered to match those years.
+        - If 'all' or None is provided, all products (including static ones) are considered.
     keywords : str or List[str], optional
         A single search term (str) or a list of search terms.
         If None or empty, the original DataFrame is returned.
@@ -735,6 +749,58 @@ def get_multi_year_product_names():
     mdf = _get_cleaned_manifest()
     uniq = set(mdf[mdf.multi_year]['product_name'])
     return sorted(uniq)
+
+
+def resolve_product_years(product_name, years):
+    """
+    Resolve a user's 'years' argument (including 'all') into a concrete list
+    of years or None, consistent with the worldpoppy manifest.
+
+    Logic:
+    - If years is a list/int: Return as list (standard behavior).
+    - If years is 'all':
+        - Multi-year product: Return all available years (List[int]).
+        - Static product w/ year: Return the single year (List[int]).
+        - Static product no year: Return None.
+    - If years is None: Return None.
+
+    Parameters
+    ----------
+    product_name : str
+        The exact name of the WorldPop product.
+    years : int, List[int], str or None
+        The years argument to resolve.
+
+    Returns
+    -------
+    List[int] or None
+        The concrete list of years for the downloader, or None for static
+        products without a recorded year.
+    """
+    if years is None:
+        return None
+
+    # Handle explicit lists/ints immediately
+    if years != 'all':
+        if isinstance(years, int):
+            return [years]
+        if isinstance(years, (list, tuple)):
+            return list(years)
+        # Fallback for unexpected input types, pass through for downstream validation
+        return years
+
+    # Handle 'all' strategy
+    # Re-use existing internal helper to get truth from manifest
+    is_multi_year, available_years, _ = _get_product_info(product_name)
+
+    # Case: Static, No Year (available_years is empty set)
+    # e.g., 'pxl_area'. 'all' resolves to None (the static dataset itself).
+    if not available_years:
+        return None
+
+    # Case: Multi-year OR Static-with-Year (e.g., 'pop_g1' or 'srtm_topo')
+    # We return all available years as a sorted list.
+    return sorted(list(available_years))
 
 
 @lru_cache()
