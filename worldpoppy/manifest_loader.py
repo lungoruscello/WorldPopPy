@@ -931,6 +931,35 @@ def _validate_manifest(mdf):
             "one product type (e.g., 'global1') and one 'project' category (e.g., 'Covariates')."
         )
 
+    # --- NON-FATAL WARNINGS ---
+    # Check inferred resolution
+    # If arcsecs is NaN, our regex failed to parse the description.
+    if mdf['arcsecs'].isna().any():
+        bad_prods = mdf.loc[mdf['arcsecs'].isna(), 'product_name'].unique()
+        logger.warning(
+            f"MANIFEST QUALITY: Could not infer resolution (arcsecs) for {len(bad_prods)} "
+            f"products. Check regex in `infer_resolution_from_description`. "
+            f"Products: {sorted(bad_prods)[:5]}..."
+        )
+
+    # Check inferred data series
+    # If data_series is 'unknown', our URL matching failed.
+    if (mdf['data_series'] == 'unknown').any():
+        bad_prods = mdf.loc[mdf['data_series'] == 'unknown', 'product_name'].unique()
+        logger.warning(
+            f"MANIFEST QUALITY: Could not infer 'data_series' (Global 1 vs 2) for "
+            f"{len(bad_prods)} products. Check `infer_data_series`. "
+            f"Products: {sorted(bad_prods)[:5]}..."
+        )
+
+    # Check raw API metadata
+    # If these are null, WorldPop might have changed their API structure.
+    if mdf['project'].isna().any() or mdf['series_category'].isna().any():
+        logger.warning(
+            "MANIFEST QUALITY: Some rows are missing 'project' or 'series_category'. "
+            "The WorldPop API structure may have changed."
+        )
+
 
 def _validate_product_name(product_name):
     if product_name not in get_all_product_names():
