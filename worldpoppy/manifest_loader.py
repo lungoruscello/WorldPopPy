@@ -113,14 +113,18 @@ from functools import lru_cache
 import numpy as np
 import pandas as pd
 
-from worldpoppy.config import RAW_MANIFEST_CACHE_PATH, PRODUCT_BASE_NAME_MAP, DEBUG, ESA_LAND_COVER_DESC_MAP
+from worldpoppy.config import (
+    RAW_MANIFEST_CACHE_PATH,
+    PRODUCT_BASE_NAME_MAP,
+    ESA_LAND_COVER_DESC_MAP,
+    ESA_LAND_COVER_ALIAS_MAP,
+    PRODUCT_NOTES_MAP,
+    DEBUG)
 from worldpoppy.func_utils import log_info_context
 from worldpoppy.manifest_builder import build_raw_manifest_from_api
 from worldpoppy.manifest_utils import (
-    get_band_alias,
     infer_resolution_from_description,
     infer_data_series,
-    build_final_notes_map,
     format_url_to_emoji
 )
 
@@ -515,7 +519,7 @@ def _get_cleaned_manifest():
     mdf['base_name'] = mdf['api_slug'].map(PRODUCT_BASE_NAME_MAP)
 
     # 3. Map band names for ESA land-cover data to human-readable aliases
-    mdf['band_alias'] = mdf.band.apply(get_band_alias)
+    mdf['band_alias'] = mdf.band.map(ESA_LAND_COVER_ALIAS_MAP)
 
     # 4. Concatenate
     #    a. Start by setting the product_name to the base_name
@@ -535,7 +539,7 @@ def _get_cleaned_manifest():
 
     # --- Assign short, curated product notes ---
     # (Used in `show_supported_data_products`)
-    notes_lookup = build_final_notes_map(mdf)
+    notes_lookup = _build_final_notes_map(mdf)
     mdf['product_notes'] = mdf['product_name'].map(notes_lookup)
 
     # --- Mark multi-year products ---
@@ -806,6 +810,43 @@ def resolve_product_years(product_name, years):
     return sorted(list(available_years))
 
 
+def _build_final_notes_map(mdf):
+    """
+    Build the final `quick_notes` map from two sources.
+
+    It merges:
+    1. For NON-BANDED products: Uses the `PRODUCT_NOTES_MAP`.
+    2. For BANDED products: Uses the `ESA_LAND_COVER_DESC_MAP`.
+
+    This provides a single, clean note for every unique product_name.
+    """
+    final_notes = {}
+
+    # 1. Handle BANDED products first
+    # The note for a banded product *is* its band description.
+    band_mask = pd.isnull(mdf.band_alias)==False
+    banded_df = mdf[band_mask]
+    if not banded_df.empty:
+        banded_names = banded_df.drop_duplicates('product_name').set_index(
+            'product_name'
+        )['band']
+
+        final_notes.update(banded_names.map(ESA_LAND_COVER_DESC_MAP).to_dict())
+
+    # 2. Handle NON-BANDED products
+    non_banded_df = mdf[~band_mask]
+    if not non_banded_df.empty:
+        # We need to map product_name -> api_slug
+        non_banded_lookup = non_banded_df.drop_duplicates('product_name').set_index(
+            'product_name'
+        )['api_slug']
+        # Now map api_slug -> raw quick note
+        non_banded_notes = non_banded_lookup.map(PRODUCT_NOTES_MAP)
+        final_notes.update(non_banded_notes.to_dict())
+
+    return final_notes
+
+
 @lru_cache()
 def _get_product_info(product_name):
     """
@@ -906,13 +947,14 @@ def _check_missing_config(mdf):
 
 
 def _validate_manifest(mdf):
+    # --- FATAL ERRORS ---
     if mdf["remote_path"].isnull().any() or mdf["remote_name"].isnull().any():
         raise ManifestValidationError(
             "Fatal: Manifest contains rows with missing remote file paths/names."
         )
 
     if mdf.duplicated(["dataset_name", "iso3"]).any():
-        ManifestValidationError(
+        raise ManifestValidationError(
             "Fatal: Manifest contains duplicated dataset names at the country level."
         )
 

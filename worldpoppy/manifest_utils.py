@@ -4,8 +4,6 @@ from pathlib import Path
 
 import pandas as pd
 
-from worldpoppy.config import ESA_LAND_COVER_DESC_MAP, ESA_LAND_COVER_ALIAS_MAP, PRODUCT_NOTES_MAP
-
 logger = logging.getLogger(__name__)
 
 year_extract_pattern = re.compile(r"(?<!\d{4}_)(\d{4})(?!_\d{4})")
@@ -87,9 +85,8 @@ def extract_unique_bands(filenames):
 
     TODO: For AgeSex_structures data, the assumption of *exactly one*
      differing does not hold. Generalise?
-
-
     """
+    
     if not filenames or len(filenames) < 2:
         return None
 
@@ -213,57 +210,6 @@ def are_unique_integers_consecutive(unique_int_list):
     max_val = max(unique_int_list)
 
     return (max_val - min_val + 1) == len(unique_int_list)
-
-
-def get_band_alias(band_name):
-    if not isinstance(band_name, str):
-        return None
-
-    return ESA_LAND_COVER_ALIAS_MAP.get(band_name)
-
-
-def get_band_description(band_name):
-    if not isinstance(band_name, str):
-        return None
-
-    return ESA_LAND_COVER_DESC_MAP.get(band_name)
-
-
-def build_final_notes_map(mdf):
-    """
-    Build the final `quick_notes` map from two sources.
-
-    It merges:
-    1. For NON-BANDED products: Uses the `PRODUCT_NOTES_MAP`.
-    2. For BANDED products: Uses the `ESA_LAND_COVER_DESC_MAP`.
-
-    This provides a single, clean note for every unique product_name.
-    """
-    final_notes = {}
-
-    # 1. Handle BANDED products first
-    # The note for a banded product *is* its band description.
-    band_mask = pd.isnull(mdf.band_alias)==False
-    banded_df = mdf[band_mask]
-    if not banded_df.empty:
-        banded_names = banded_df.drop_duplicates('product_name').set_index(
-            'product_name'
-        )['band']
-
-        final_notes.update(banded_names.map(ESA_LAND_COVER_DESC_MAP).to_dict())
-
-    # 2. Handle NON-BANDED products
-    non_banded_df = mdf[~band_mask]
-    if not non_banded_df.empty:
-        # We need to map product_name -> api_slug
-        non_banded_lookup = non_banded_df.drop_duplicates('product_name').set_index(
-            'product_name'
-        )['api_slug']
-        # Now map api_slug -> raw quick note
-        non_banded_notes = non_banded_lookup.map(PRODUCT_NOTES_MAP)
-        final_notes.update(non_banded_notes.to_dict())
-
-    return final_notes
 
 
 def format_url_to_emoji(url):
