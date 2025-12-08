@@ -42,6 +42,7 @@ from worldpoppy.config import (
     METADATA_API_URL,
     METADATA_API_TIMEOUT,
     RAW_MANIFEST_CACHE_PATH,
+    RAW_MANIFEST_TIMESTAMP_PATH,
     DOWNLOADABLE_ISO3_CODES,
 )
 from worldpoppy.manifest_utils import *
@@ -82,10 +83,30 @@ def build_raw_manifest_from_api(force_rebuild=False):
         is False.
     """
 
-    # check if we need to run
+    # Check if we need to run
     if RAW_MANIFEST_CACHE_PATH.is_file() and not force_rebuild:
-        mtime = RAW_MANIFEST_CACHE_PATH.stat().st_mtime  # FIXME
-        age_days = (datetime.now().timestamp() - mtime) / (3600 * 24)
+        age_days = 0
+
+        # 1. Try to read manifest age from the sidecar timestamp file (Preferred)
+        if RAW_MANIFEST_TIMESTAMP_PATH.is_file():
+            try:
+                with open(RAW_MANIFEST_TIMESTAMP_PATH, 'r') as f:
+                    ts_str = f.read().strip()
+                    last_build_time = datetime.fromisoformat(ts_str)
+                    age_days = (datetime.now() - last_build_time).days
+            except Exception as e:
+                logger.warning(
+                    f"Could not read manifest timestamp sidecar: {e}. "
+                    "Falling back to file system time."
+                )
+                # Fallback to system time if read fails
+                mtime = RAW_MANIFEST_CACHE_PATH.stat().st_mtime
+                age_days = (datetime.now().timestamp() - mtime) / (3600 * 24)
+
+        # 2. Fallback to file system time (Legacy/Dev scenarios)
+        else:
+            mtime = RAW_MANIFEST_CACHE_PATH.stat().st_mtime
+            age_days = (datetime.now().timestamp() - mtime) / (3600 * 24)
 
         if age_days > 180:
             logger.warning(
@@ -167,7 +188,13 @@ def build_raw_manifest_from_api(force_rebuild=False):
     # (This will be our raw, uncleaned data manifest).
     raw_mdf = pd.DataFrame(raw_manifest_rows)
     try:
+        # 1. Save the actual data
         raw_mdf.to_feather(RAW_MANIFEST_CACHE_PATH, compression="zstd")
+
+        # 2. Save the timestamp sidecar
+        with open(RAW_MANIFEST_TIMESTAMP_PATH, 'w') as f:
+            f.write(datetime.now().isoformat())
+
         logger.warning(
             f"Updated raw data manifest saved to: {RAW_MANIFEST_CACHE_PATH} "
             f"({len(raw_mdf)} supported remote files found)"

@@ -22,6 +22,7 @@ __all__ = [
     "ROOT_DIR",
     "ASSET_DIR",
     "RAW_MANIFEST_CACHE_PATH",
+    "RAW_MANIFEST_TIMESTAMP_PATH",
     "METADATA_API_URL",
     "DATA_SERVER_URL",
     "METADATA_API_TIMEOUT",
@@ -46,6 +47,7 @@ DEFAULT_MAX_CONCURRENCY = max(1, cpu_count() - 1)
 ROOT_DIR = Path(__file__).parent
 ASSET_DIR = ROOT_DIR / 'assets'
 RAW_MANIFEST_CACHE_PATH = ASSET_DIR / "raw_api_manifest.feather"
+RAW_MANIFEST_TIMESTAMP_PATH = ASSET_DIR / "raw_api_manifest_timestamp.txt"
 CUSTOM_MAPPING_TOML_PATH = ASSET_DIR / "product_definitions.toml"
 
 METADATA_API_URL = "https://hub.worldpop.org/rest/data"
