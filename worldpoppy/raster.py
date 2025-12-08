@@ -393,6 +393,8 @@ def wp_warp(
         - If dict: Applies the specified chunks (e.g. {'x': 1024, 'y': 1024}).
         - If int K: Applies the uniform chunk size {'x': K, 'y': K}.
 
+        # TODO: Note the experimental nature of the re-chunk workflow
+
     Returns
     -------
     xarray.DataArray
@@ -440,8 +442,8 @@ def wp_warp(
             # NEW: Convert integer K to {'x': K, 'y': K}
             chunks = {'x': rechunk, 'y': rechunk}
         else:
-            # Default safe size (~32MB per chunk for float64)
-            chunks = {'x': 2048, 'y': 2048}
+            # Default size (~64MB per chunk for float32)
+            chunks = {'x': 4096, 'y': 4096}
 
         # We only rechunk dimensions that actually exist (usually 'x' and 'y')
         valid_chunks = {k: v for k, v in chunks.items() if k in da.dims}
@@ -1001,6 +1003,9 @@ def _concat_with_info(objs, **kwargs):
 def _lazy_merge_helper(das, masked):
     """
     Lazily merge a list of DataArrays using a 'Painter's Algorithm'.
+
+    # TODO: Note the experimental nature of this function (which is only
+       intended to avoid eager execution of a 'lazy' Dask array)
     """
     if len(das) == 1:
         return das[0]
