@@ -113,7 +113,7 @@ from functools import lru_cache
 import numpy as np
 import pandas as pd
 
-from worldpoppy.config import RAW_MANIFEST_CACHE_PATH, PRODUCT_BASE_NAME_MAP, DEBUG
+from worldpoppy.config import RAW_MANIFEST_CACHE_PATH, PRODUCT_BASE_NAME_MAP, DEBUG, ESA_LAND_COVER_DESC_MAP
 from worldpoppy.func_utils import log_info_context
 from worldpoppy.manifest_builder import build_raw_manifest_from_api
 from worldpoppy.manifest_utils import (
@@ -530,7 +530,7 @@ def _get_cleaned_manifest():
         mdf['base_name'] + '_' + mdf['band_alias']
 
     # 5. Apply fallbacks
-    #    If any product failed mapping, use its API slug
+    #    If any product failed mapping (base_name is NaN), use its API slug
     mdf['product_name'] = mdf['product_name'].fillna(mdf['api_slug'])
 
     # --- Assign short, curated product notes ---
@@ -567,10 +567,14 @@ def _get_cleaned_manifest():
     mdf['arcsecs'] = mdf.series_desc.apply(infer_resolution_from_description)
 
     # --- Validate & clean-up ---
-    # check remaining manifest data
+    # Check remaining manifest data
     _validate_manifest(mdf)
 
-    # re-order major columns to be sensible
+    # --- MISSING CONFIG WARNINGS ---
+    # We run this at the very end to catch new API content.
+    _check_missing_config(mdf)
+
+    # Re-order major columns to be sensible
     final_cols = [
         "wpy_id",
         "product_name",
@@ -586,9 +590,8 @@ def _get_cleaned_manifest():
         "product_notes",
         "series_category",
         "api_entry_title"
-
     ]
-    # add any extra columns that might be present
+    # Account for additional columns that might be present
     other_cols = sorted([col for col in mdf.columns if col not in final_cols])
     mdf = mdf.reindex(columns=final_cols + other_cols)
 
@@ -849,6 +852,57 @@ def _get_product_info(product_name):
     available_isos = set(mdf_prod['iso3'].dropna())
 
     return is_multi_year, available_years, available_isos
+
+
+def _check_missing_config(mdf):
+    """
+    Check for WorldPop data series that are missing configurations in the
+    product_definitions.toml file.
+
+    Note: This function is primarily for the package maintainer to identify
+    new data series released by WorldPop that need curation.
+    """
+    def _warn_if_missing(items, context_msg):
+        if len(items) > 0:
+            unique_items = sorted(list(set(items)))
+            logger.warning(
+                f"CONFIG WARNING: Found {len(unique_items)} {context_msg} "
+                f"in product_definitions.toml.\n"
+                f"Missing: {unique_items}"
+            )
+
+    # Check for missing Base Names
+    # Rows where the base_name column is NaN (meaning the map lookup failed)
+    missing_slugs = mdf.loc[mdf['base_name'].isna(), 'api_slug']
+    _warn_if_missing(
+        missing_slugs, "data series without a curated 'base_name'"
+    )
+
+    # Check for missing Band Aliases
+    # Rows that *have* a band ID but failed to map to an alias
+    missing_aliases = mdf.loc[mdf['band'].notna() & mdf['band_alias'].isna(), 'band']
+    _warn_if_missing(
+        missing_aliases, "bands without a 'band_alias'"
+    )
+
+    # Check for missing Band Descriptions
+    # This requires checking the keys of the description map directly,
+    # as the description is not stored in the DataFrame.
+    all_bands = set(mdf['band'].dropna())
+    defined_descriptions = set(ESA_LAND_COVER_DESC_MAP.keys())
+    missing_descriptions = all_bands - defined_descriptions
+    _warn_if_missing(
+        missing_descriptions, "bands without a 'band_description'"
+    )
+
+    # Check for missing Product Notes
+    # We only check products that HAVE a valid base_name to avoid redundant noise.
+    valid_base = mdf['base_name'].notna()
+    missing_notes = mdf.loc[mdf['product_notes'].isna() & valid_base, 'product_name']
+    _warn_if_missing(
+        missing_notes,
+        "products without a description in 'product_notes'"
+    )
 
 
 def _validate_manifest(mdf):
