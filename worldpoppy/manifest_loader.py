@@ -610,7 +610,7 @@ def _get_raw_manifest():
     """
 
     # trigger a re-crawl and r-processing if the cache is empty
-    build_raw_manifest_from_api(force_crawl=False)
+    build_raw_manifest_from_api(force_rebuild=False)
 
     if not RAW_MANIFEST_CACHE_PATH.is_file():
         raise FileNotFoundError(

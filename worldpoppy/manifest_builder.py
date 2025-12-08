@@ -1,7 +1,7 @@
 """
 Core "engine" for building a raw data manifest for the `worldpoppy` library.
 
-This module contains all the logic for crawling the WorldPop metadata API,
+This module contains all the logic for traversing the WorldPop metadata API,
 parsing the results, and saving them to a new cache file (RAW_MANIFEST_CACHE_PATH).
 
 Its main and only public function is `build_raw_manifest_from_api()`. However,
@@ -9,7 +9,7 @@ users will rarely need to import that function directly. Instead, it is called
 by the separate `manifest_loader` module whenever a cached version of the raw
 manifest does not exist.
 
-For a detailed, high-level explanation of this module's API crawl strategy,
+For a detailed, high-level explanation of this module's API traversal strategy,
 related terminology (e.g., "Leaf Node", "Sample Payload"), and data-parsing
 logic, please see the `manifest_build_strategy.md` document in the project root.
 
@@ -29,8 +29,6 @@ When processing operations fail, an entire raster-data series is dropped from th
 raw manifest and will hence not be supported by the `worldpoppy` package.
 
 """
-
-# TODO: remove legacy reference to API "crawl" except where accurate
 
 from datetime import datetime
 from math import floor
@@ -58,46 +56,48 @@ class APIRequestError(Exception):
     pass
 
 
-def build_raw_manifest_from_api(force_crawl=False):
+def build_raw_manifest_from_api(force_rebuild=False):
     """
-    Crawl WorldPop's meta-data API and analyse the results to build a new,
+    Query WorldPop's meta-data API and analyse the results to build a new,
     raw manifest of raster datasets for `worldpoppy`. We call this manifest
     "raw" because it will be further checked and filtered (where needed)
     by the `manifest_loader` module.
 
     This is a SERIAL (single-threaded) implementation.
 
-    Phase 1: Discover "Leaf Nodes" by recursively crawling the API
+    Phase 1: Discover "Leaf Nodes" by recursively crawling the API hierarchy
     (using `_discover_leaf_nodes`).
 
     Phase 2: Processes each discovered "Leaf Node" (using `_process_leaf_node`)
     by applying a "Sample -> Analyse -> Parse" strategy that generates our
     final list of raw manifest rows. This phase is "robust", meaning a
     failure on one Leaf Node will be logged and skipped, allowing the
-    crawl to continue.
+    raw manifest build to continue.
 
     Parameters
     ----------
-    force_crawl : bool, optional
+    force_rebuild : bool, optional
         If True, forces a full re-crawl and re-processing of WorldPop's meta-data
         API, even if cached results from a previous run exist on disk. Default
         is False.
     """
 
     # check if we need to run
-    if RAW_MANIFEST_CACHE_PATH.is_file() and not force_crawl:
-        mtime = RAW_MANIFEST_CACHE_PATH.stat().st_mtime
+    if RAW_MANIFEST_CACHE_PATH.is_file() and not force_rebuild:
+        mtime = RAW_MANIFEST_CACHE_PATH.stat().st_mtime  # FIXME
         age_days = (datetime.now().timestamp() - mtime) / (3600 * 24)
 
-        if age_days > 90:
+        if age_days > 180:
             logger.warning(
-                f"Found results from cached API crawl (cached {floor(age_days)} "
-                f"days ago). Use `build_raw_manifest_from_api(force_crawl=True)` to overwrite."
+                f"worldpoppy's existing data manifest was built {floor(age_days)} "
+                f"days ago. Use `build_raw_manifest_from_api(force_rebuild=True)` "
+                "to overwrite.\nNote that this will trigger a fresh traversal "
+                "of WorldPop's meta-data API."
             )
         return
 
     logger.warning(
-        "Crawling WorldPop's meta-data API to find supported data series & download URLs..."
+        "Traversing WorldPop's meta-data API to index supported data series..."
     )
 
     try:
@@ -105,13 +105,13 @@ def build_raw_manifest_from_api(force_crawl=False):
         # Discover candidate data series in one call (serially)
         leaf_nodes = _discover_leaf_nodes()
         if not leaf_nodes:
-            logger.error("API crawl failed: No supported data series found.")
+            logger.error("Manifest update failed: No supported data series found.")
             return
 
         # --- Phase 2 ---
         # Generate well-formatted listings of supported raster files for
-        # all leaf nodes (serially).
-        logger.info(f"Phase 2: Processing {len(leaf_nodes)} Leaf Nodes (serially)...")
+        # all Leaf Nodes (serially).
+        logger.info(f"Phase 2: Processing {len(leaf_nodes)} API Leaf Nodes (serially)...")
 
         # This will be a list of lists
         raw_manifest_rows_nested = []
@@ -120,12 +120,12 @@ def build_raw_manifest_from_api(force_crawl=False):
         # The `try...except Exception` block *inside* this loop is intentional.
         # It ensures that a failure on a single Leaf Node (e.g., an APIRequestError
         # from _get_sample_payload or a parsing error) is logged and skipped.
-        # This allows the crawl to continue for all other nodes.
+        # This allows the build to continue for all other nodes.
         #
         # The *outer* `try...except` blocks are for *fatal* errors
-        # (like a failure in Phase 1) that must abort the entire crawl.
+        # (like a failure in Phase 1) that must abort the entire build.
 
-        for leaf_node in tqdm(leaf_nodes, desc="Processing Leaf Nodes"):
+        for leaf_node in tqdm(leaf_nodes, desc="Processing API Leaf Nodes"):
             try:
                 # We call _process_leaf_node inside its *own* try/except.
                 result_list = _process_leaf_node(
@@ -148,11 +148,11 @@ def build_raw_manifest_from_api(force_crawl=False):
     except APIRequestError as e:
         # This "outer" block will *only* catch critical failures,
         # such as a network error in `_discover_leaf_nodes`.
-        logger.error(f"API crawl failed with critical error: {e}")
+        logger.error(f"Manifest update failed with critical error: {e}")
         return
     except Exception as e:
         # This catches any other unexpected startup error
-        logger.error(f"API crawl failed with unexpected error: {e}", exc_info=True)
+        logger.error(f"Manifest update failed with unexpected error: {e}", exc_info=True)
         return
 
     # --- Post-Processing ---
@@ -160,22 +160,22 @@ def build_raw_manifest_from_api(force_crawl=False):
     raw_manifest_rows = [row for sublist in raw_manifest_rows_nested for row in sublist]
 
     if not raw_manifest_rows:
-        logger.error("API crawled returned no data. Check API status or logs.")
+        logger.error("API traversal returned no data. Check API status or logs.")
         return
 
-    # Save crawl results to disk.
+    # Save build results to disk.
     # (This will be our raw, uncleaned data manifest).
     raw_mdf = pd.DataFrame(raw_manifest_rows)
     try:
         raw_mdf.to_feather(RAW_MANIFEST_CACHE_PATH, compression="zstd")
         logger.warning(
-            f"Updated API crawl results saved to: {RAW_MANIFEST_CACHE_PATH} "
-            f"({len(raw_mdf)} supported files found)"
+            f"Updated raw data manifest saved to: {RAW_MANIFEST_CACHE_PATH} "
+            f"({len(raw_mdf)} supported remote files found)"
         )
 
     except Exception as e:
         logger.error(
-            f"Failed to save new API crawl results to {RAW_MANIFEST_CACHE_PATH}: {e}"
+            f"Failed to save updated raw data manifest to {RAW_MANIFEST_CACHE_PATH}: {e}"
         )
 
 
@@ -260,7 +260,7 @@ def _discover_leaf_nodes():
 
     # start the recursive API crawl!
     all_leaf_nodes = []
-    for node in tqdm(top_nodes, desc="Discovering API leaf nodes"):
+    for node in tqdm(top_nodes, desc="Discovering API Leaf Nodes"):
         if "alias" in node and "name" in node:
             alias = node["alias"]  # noqa
             name = node["name"]  # noqa
@@ -279,7 +279,7 @@ def _discover_leaf_nodes():
 
     logger.info(
         f"Phase 1 crawl complete. Found {len(all_leaf_nodes)} "
-        "total Leaf Nodes. Now filtering..."
+        "total API Leaf Nodes. Now filtering..."
     )
 
     # 2. Filter the results
@@ -313,7 +313,7 @@ def _discover_leaf_nodes():
     # 3. Log final count
     num_supported = len(leaf_nodes_to_process)
     logger.info(
-        f"Phase 1 filtering complete: {num_supported} supported Leaf Nodes found."
+        f"Phase 1 filtering complete: {num_supported} supported API Leaf Nodes found."
     )
 
     return leaf_nodes_to_process
