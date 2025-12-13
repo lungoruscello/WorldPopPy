@@ -2,7 +2,7 @@ import logging
 import time
 import pytest
 from datetime import datetime
-from tests.test_utils import needs_internet, isolated_manifest_assets
+from tests.test_utils import needs_internet
 import worldpoppy.manifest_builder  # Import target for patching
 
 

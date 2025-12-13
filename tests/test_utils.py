@@ -1,7 +1,11 @@
 import functools
 import socket
+from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
+import xarray as xr
+from affine import Affine
 
 
 # --- Fixtures ---
@@ -83,6 +87,87 @@ def isolated_raster_cache(monkeypatch, tmp_path):
     monkeypatch.setenv('WORLDPOPPY_CACHE_DIR', str(new_cache_dir))
 
     yield new_cache_dir
+
+
+@pytest.fixture
+def mock_raster_factory(tmp_path):
+    """
+    Returns a factory function that creates a GeoTIFF in a temporary directory.
+
+    Arguments:
+    - filename: Name of the file to create.
+    - data_array: Numpy array of values.
+    - origin: Tuple (min_x, max_y) specifying the top-left corner coordinates.
+    - res: Pixel resolution (default 1.0).
+    - crs: Coordinate reference system (default EPSG:4326).
+    - nodata: The nodata value to burn into the file metadata (default -9999).
+    - **attrs: Arbitrary metadata to attach to the raster (e.g. scale_factor=10).
+    """
+    from worldpoppy.config import WGS84_CRS
+
+    def _create(
+        filename,
+        data_array,
+        origin=(0, 0),
+        res=1.0,
+        crs=WGS84_CRS,
+        nodata=-9999,
+        **attrs
+    ):
+        height, width = data_array.shape
+        x_start, y_start = origin
+
+        # Create the transform automatically
+        # (Top-left X, Pixel Width, 0, Top-left Y, 0, -Pixel Height)
+        transform = Affine.translation(x_start, y_start) * Affine.scale(res, -res)
+
+        # Generate Coordinate Arrays (Pixel Centers)
+        #   X: start + half_res, start + 1.5*res, ...
+        xs = np.arange(width) * res + x_start + (res / 2)
+        #   Y: start - half_res, start - 1.5*res, ... (negative because Y goes down)
+        ys = y_start - (np.arange(height) * res) - (res / 2)
+
+        # Build DataArray
+        da = xr.DataArray(data_array, dims=("y", "x"), coords={"y": ys, "x": xs})
+
+        # Attach arbitrary attributes (NEW: supports scale_factor checks)
+        if attrs:
+            da.attrs.update(attrs)
+
+        # Write Geospatial Metadata
+        da.rio.write_crs(crs, inplace=True)
+        da.rio.write_transform(transform, inplace=True)
+        da.rio.write_nodata(nodata, inplace=True)
+
+        # Save
+        file_path = tmp_path / filename
+        da.rio.to_raster(file_path)
+
+        return file_path
+
+    return _create
+
+@pytest.fixture
+def mock_downloader(monkeypatch):
+    """
+    Fixture that mocks `WorldPopDownloader` to return a MagicMock instance.
+
+    This ensures that tests do not attempt real HTTP requests. The returned
+    mock instance can be configured in tests (e.g. `mock_dl.download.return_value = ...`).
+    """
+    # We patch the class where it is imported/used: worldpoppy.raster
+    import worldpoppy.raster as raster_module
+
+    # 1. Create the mock instance (the object returned when class is instantiated)
+    mock_instance = MagicMock()
+
+    # 2. Create the mock class (the factory)
+    mock_class = MagicMock(return_value=mock_instance)
+
+    # 3. Patch the class in the module
+    monkeypatch.setattr(raster_module, "WorldPopDownloader", mock_class)
+
+    return mock_instance
 
 
 # --- Network Helpers ---
