@@ -40,8 +40,6 @@ __all__ = [
     "get_max_concurrency",
 ]
 
-DEBUG = False
-
 DEFAULT_CACHE_DIR = Path(platformdirs.user_cache_dir(appname="worldpoppy"))
 DEFAULT_MAX_CONCURRENCY = max(1, cpu_count() - 1)
 ROOT_DIR = Path(__file__).parent
@@ -67,6 +65,11 @@ WGS84_CRS = 'EPSG:4326'
 RED = 'xkcd:brick red'
 BLUE = 'xkcd:sea blue'
 GOLDEN = 'xkcd:goldenrod'
+
+ENABLE_HEAVY_E2E_TESTS = False
+# > Set the above to True only when you explicitly want to run heavy
+#   E2E tests that perform full API traversals.
+DEBUG = False
 
 
 def get_cache_dir():

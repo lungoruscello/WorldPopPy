@@ -1,13 +1,20 @@
 import logging
 import time
-import pytest
 from datetime import datetime
-from tests.test_utils import needs_internet
+
+import pytest
+
 import worldpoppy.manifest_builder  # Import target for patching
+from tests.test_utils import needs_internet
+from worldpoppy.config import ENABLE_HEAVY_E2E_TESTS
 
 
 @pytest.mark.e2e
 @needs_internet
+@pytest.mark.skipif(
+    not ENABLE_HEAVY_E2E_TESTS,
+    reason="Heavy E2E tests are disabled in config.py"
+)
 def test_e2e_manifest_builder_lifecycle(isolated_manifest_assets, caplog, monkeypatch):
     """
     Runs a full e2e test of the manifest builder logic.
