@@ -1,21 +1,22 @@
-import pytest
 import socket
+
+import pytest
 
 
 @pytest.fixture
 def no_manifest_update(monkeypatch):
     """
-    Fixture to patch `build_wp_manifest` with a no-op function.
+    Fixture to prevent the manifest builder from running.
 
-    This patch ensures that regular unit tests never trigger a manifest
-    update check on the WorldPop FTP server. Tests will instead run
-    against the locally cached manifest.
+    This patches `build_raw_manifest_from_api` in the builder module
+    with a no-op function. This ensures unit tests do not trigger
+    internet activity or file I/O related to manifest updates.
     """
-    from worldpoppy import manifest
+    import worldpoppy as wpy
 
     monkeypatch.setattr(
-        manifest,
-        "build_wp_manifest",
+        wpy.manifest_builder,
+        "build_raw_manifest_from_api",
         lambda *args, **kwargs: None,  # do nothing
     )
 
@@ -23,53 +24,61 @@ def no_manifest_update(monkeypatch):
 @pytest.fixture
 def isolated_manifest_assets(monkeypatch, tmp_path):
     """
-    Fixture to isolate manifest assets for an e2e download test.
+    Fixture to isolate manifest assets (Feather + Timestamp Sidecar).
 
-    This patches the manifest module's internal path variables
-    (_raw_hash_fpath, _cleaned_manifest_fpath), which normally
-    point to ASSET_DIR. Instead, it redirects them to a new,
-    empty temporary directory.
+    This redirects the manifest paths to a temporary directory.
+    Critically, it patches the variables in `config`, `manifest_loader`,
+    AND `manifest_builder` to ensure consistency, as these modules
+    import the path constants directly.
 
-    This ensures the e2e test runs with a "cold start" (no existing
-    manifest) and does not interfere with the user's real (or bundled)
-    manifest files.
-
-    Note: This fixture does *not* affect the raster cache directory.
+    Yields
+    ------
+    pathlib.Path
+        The temporary directory containing the isolated manifest assets.
     """
-    from worldpoppy import manifest
+    import worldpoppy as wpy
 
-    new_hash_path = tmp_path / "raw_manifest_hash.txt"
-    new_manifest_path = tmp_path / "manifest.feather"
-    new_check_date_path = tmp_path / "last_manifest_check.txt"
+    # 1. Define temp paths
+    new_manifest_path = tmp_path / "raw_api_manifest.feather"
+    new_timestamp_path = tmp_path / "raw_api_manifest_timestamp.txt"
 
-    # patch the module-level variables inside manifest.py
-    monkeypatch.setattr(manifest, "_raw_hash_fpath", new_hash_path)
-    monkeypatch.setattr(manifest, "_cleaned_manifest_fpath", new_manifest_path)
-    monkeypatch.setattr(manifest, "_last_check_date_fpath", new_check_date_path)
+    # 2. Patch 'RAW_MANIFEST_CACHE_PATH' in all locations
+    # (Required because modules use: from worldpoppy.config import RAW_MANIFEST_CACHE_PATH)
+    monkeypatch.setattr(wpy.config, "RAW_MANIFEST_CACHE_PATH", new_manifest_path)
+    monkeypatch.setattr(
+        wpy.manifest_loader, "RAW_MANIFEST_CACHE_PATH", new_manifest_path
+    )
+    monkeypatch.setattr(
+        wpy.manifest_builder, "RAW_MANIFEST_CACHE_PATH", new_manifest_path
+    )
 
-    # yield the temp directory path so the test can inspect it
+    # 3. Patch 'RAW_MANIFEST_TIMESTAMP_PATH' in all locations
+    # (Note: Loader might not import this yet, but Config and Builder do)
+    monkeypatch.setattr(
+        wpy.config, "RAW_MANIFEST_TIMESTAMP_PATH", new_timestamp_path
+    )
+    monkeypatch.setattr(
+        wpy.manifest_builder, "RAW_MANIFEST_TIMESTAMP_PATH", new_timestamp_path
+    )
+
+    # Yield the temp path for inspection in tests
     yield tmp_path
 
 
 @pytest.fixture
 def isolated_raster_cache(monkeypatch, tmp_path):
     """
-    Fixture to isolate the WorldPopPy raster cache for an e2e test.
+    Fixture to isolate the WorldPopPy raster cache.
 
     This patches the 'WORLDPOPPY_CACHE_DIR' environment variable to
-    point to a new, empty temporary directory.
-
-    This ensures the e2e test runs with a "cold start" (no existing
-    raster cache) and does not interfere with the user's real cache.
+    point to a new, empty temporary directory. `worldpoppy.config.get_cache_dir`
+    will pick this up dynamically.
     """
-
     new_cache_dir = tmp_path / "test_raster_cache"
-    new_cache_dir.mkdir()
-    monkeypatch.setenv(  # automatically handles teardown
-        'WORLDPOPPY_CACHE_DIR', str(new_cache_dir)
-    )
+    new_cache_dir.mkdir(parents=True, exist_ok=True)
 
-    # yield the temp cache path so the test can inspect it
+    monkeypatch.setenv('WORLDPOPPY_CACHE_DIR', str(new_cache_dir))
+
     yield new_cache_dir
 
 
@@ -82,5 +91,6 @@ def is_online():
     except OSError:
         return False
 
-# create a custom "mark" that skips if we are offline
+
+# Custom "mark" that skips tests if offline
 needs_internet = pytest.mark.skipif(not is_online(), reason="No internet connection")

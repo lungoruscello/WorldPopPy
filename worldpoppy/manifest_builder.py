@@ -298,6 +298,7 @@ def _discover_leaf_nodes():
                 continue
 
             if DEBUG and alias.lower() != 'covariates':
+                # TODO: Use a top node with fewer data series for debugging
                 # reduce number of API calls in debug mode
                 continue
 
