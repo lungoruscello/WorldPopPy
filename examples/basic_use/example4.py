@@ -1,8 +1,9 @@
 """
 Example 4: Check download requirements for a large data request.
 
-Shows how to change the default cache directory and how to preview
-download requirements with the `download_dry_run` flag.
+Illustrates
+1. Changing the default cache directory.
+2. Previewing download requirements with the `download_dry_run` flag.
 """
 
 import os
@@ -18,9 +19,9 @@ assert get_cache_dir() == Path(new_cache_dir)
 
 years = list(range(2015, 2025))
 _ = wp_raster(
-    product_name='pop_g2_r25a',  # one of the population data products from the Global 2 series
+    product_name='pop_g2_r25a',  # population data from the Global 2 series
     aoi='CAN USA MEX'.split(),
-    years=2020,
+    years=years,
     download_dry_run=True
 )
 # Setting `download_dry_run=True` will only check download requirements
