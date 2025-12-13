@@ -1,7 +1,7 @@
 import pytest
 
 
-@pytest.mark.integrat3ion
+@pytest.mark.integration
 def test_wp_manifest_constrained_raises():
     """
     TODO
