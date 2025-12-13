@@ -109,7 +109,7 @@ def wp_raster(
 
     This function implements several optimisation techniques to minimise
     the memory footprint involved when working with raster data from large
-     countries # TODO provide a few more details.
+    countries # TODO provide a few more details.
 
     Parameters
     ----------

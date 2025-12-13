@@ -27,12 +27,15 @@ Warning:
 """
 
 import pytest
-from worldpoppy import wp_raster, wp_warp
+
+from tests.test_utils import needs_internet_or_cache
 
 # Common equal-area projection for Europe (ETRS89-extended / Lambert Equal Area)
 LAEA_EUROPE = "EPSG:3035"
 
+
 @pytest.mark.integration
+@needs_internet_or_cache
 @pytest.mark.parametrize(
     "case_name, iso_codes, target_crs",
     [
@@ -45,6 +48,8 @@ def test_mass_conservation(case_name, iso_codes, target_crs):
     Parametrised test verifying that merging and warping adjacent countries
     preserves the total population count relative to individual raw rasters.
     """
+    from worldpoppy import wp_raster, wp_warp
+
     print(f"\n--- Testing Case: {case_name} ---")
     year = 2020
 
