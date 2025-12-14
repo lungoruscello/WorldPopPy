@@ -222,6 +222,7 @@ def wp_manifest(
 
     # get the full manifest
     mdf = _get_cleaned_manifest()
+    mdf = mdf.copy(deep=True)
 
     # apply filters
     with log_info_context(logger):
@@ -439,7 +440,7 @@ def show_supported_data_products(
     )
 
     if static_only:
-        mdf = mdf[mdf['multi_year'] == False]
+        mdf = mdf[mdf['multi_year'] == False].copy()
 
     if mdf.empty:
         print("No data products found matching the specified filters.")
@@ -448,13 +449,37 @@ def show_supported_data_products(
     if any([iso3_codes, years, keywords]):
         print("Showing unique products matching filters:\n")
 
+    # --- Aggregation Logic for Resolutions ---
+    def _format_resolution_info(pd_series):
+        # 1. Separate valid resolutions and NaNs
+        uniq_vals = pd_series.unique()
+        valid_nums = sorted([x for x in uniq_vals if pd.notna(x)])
+        has_nan = any(pd.isna(x) for x in uniq_vals)
+
+        # 2. Format resolution numbers: remove decimal point if integer (e.g. 3.0 -> "3")
+        fmt_list = [str(int(x)) if x == int(x) else str(x) for x in valid_nums]
+
+        # 3. Append "NaN" at summary if it existed
+        if has_nan:
+            fmt_list.append("NaN")
+
+        return ", ".join(fmt_list)
+
+    # Apply the resolution formatting
+    # product_name -> "3", "3, 30", or "3, NaN"
+    res_map = mdf.groupby('product_name')['arcsecs'].apply(_format_resolution_info)
+    mdf['resolution'] = mdf['product_name'].map(res_map)
+
     # --- Select and clean-up columns for display ---
-    cols = 'product_name product_notes multi_year project data_series summary_url'.split()
+    # Added 'resolution' to the selection list
+    cols = 'product_name product_notes resolution multi_year project data_series summary_url'.split()
+
     products = mdf[cols].drop_duplicates(subset='product_name')
     products.rename(
         columns={
             'product_name': 'Product name',
             'product_notes': 'Product notes',
+            'resolution': 'Res. (arcsec)',
             'multi_year': 'Multi-year?',
             'project': 'Project',
             'data_series': 'Data series',
