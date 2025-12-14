@@ -1016,39 +1016,64 @@ def _concat_with_info(objs, **kwargs):
 
 def _lazy_merge_helper(das, masked):
     """
-    Lazily merge a list of DataArrays using a 'Painter's Algorithm'.
+    Lazily merge a list of DataArrays using a 'Painter's Algorithm' with
+    Tree Reduction to minimise Dask graph depth.
 
-    # TODO: Note the experimental nature of this function (which is only
-       intended to avoid eager execution of a 'lazy' Dask array)
+    Strategy:
+        Instead of merging linearly (A+B)+C+D... which creates a deep graph (Depth ~N),
+        we merge pairwise ((A+B) + (C+D))... which creates a shallower tree (Depth ~log2 N).
+        This is helps avoid recursion errors during graph construction for continental-scale
+        merges (e.g., 50+ countries).
+
+    Note:
+        This helper is ONLY used when lazy loading (via Dask) is active
+        (i.e., `chunks` is not None). It is NOT the default merge path for eager
+        execution (which uses `rioxarray.merge.merge_arrays` instead).
     """
+    if not das:
+        raise ValueError("Cannot merge empty list of rasters.")
+
     if len(das) == 1:
         return das[0]
 
-    # Reverse the raster list to restore standard Z-Order.
-    # rasterio.merge (and typical GIS) paints the list in order,
-    # meaning the LAST file covers the previous ones.
-    # By contrast, `combine_first` prioritises the object calling.
-    # it. Therefore, to ensure the last file stays on top, we must
-    # start with it.
+    # --- Establish Z-order ---
+    # Reverse rasters to establish Z-order priority (Top -> Bottom)
+    # The first element in 'current_layer' is the one that stays on top.
+    # We do this because `combine_first` prioritises the caller (self).
+    current_layer = das[::-1]
 
-    # Reverse arrays list: [A, B, C] -> [C, B, A]
-    reversed_das = das[::-1]
+    # --- Pairwise Merging ---
+    # Iterative Tree Reduction
+    # We loop until only one merged array remains.
+    while len(current_layer) > 1:
+        next_layer = []
 
-    # Start with top layer (C)
-    combined = reversed_das[0]
+        # Step through the list in pairs
+        for i in range(0, len(current_layer), 2):
+            left = current_layer[i]
 
-    # Fill holes with B, then A
-    for other in reversed_das[1:]:
-        combined = combined.combine_first(other)
+            # If there is a right partner, merge them
+            if i + 1 < len(current_layer):
+                right = current_layer[i + 1]
+                # 'left' is strictly above 'right' in Z-order list
+                merged = left.combine_first(right)
+                next_layer.append(merged)
+            else:
+                # Orphan element at the end, carry it over to the next round
+                next_layer.append(left)
 
-    # Handle nodata explicitly
+        current_layer = next_layer
+
+    combined = current_layer[0]
+
+    # --- Clean the Metadata ---
     if masked:
-        # User requested masking -> Data is Float with NaNs.
+        # User requested masking    -> Data is Float with NaNs.
         # We must tell GDAL that NaN is the nodata value.
         combined.rio.write_nodata(np.nan, encoded=True, inplace=True)
     else:
         # User requested raw data -> Data probably uses another nodata value (e.g. -9999).
-        # ` combine_first` drops this attribute, so we restore it from the first input.
+        # `combine_first` drops this attribute, so we restore it from the first input.
         original_nodata = das[0].rio.nodata
         if original_nodata is not None:
             combined.rio.write_nodata(original_nodata, encoded=True, inplace=True)
