@@ -1,5 +1,5 @@
 """
-Population Mass Conservation Sanity Check.
+Sanity Check for the Conservation of Population Mass.
 
 This test performs a sanity check of the `worldpoppy` pipeline using real-world data.
 It validates that merging and warping adjacent countries does not introduce significant
@@ -11,8 +11,8 @@ Test Cases:
    the ratio of "border pixels" relative to total area, making edge effects easier
    to detect.
 
-2. **Adriatic Trio (SVN, HRV, BIH):**
-   Three small neighbouring countries with especially complex borders, where Croatia
+2. **Adriatic Quintet (SVN, HRV, BIH, MNE, ALB):**
+   Five small Adriatic countries with especially complex borders, where Croatia
    wraps around Bosnia like a crescent, creating a complex "hole-filling" scenario
    that challenges the merging logic differently than simple stacking.
 
@@ -22,8 +22,8 @@ Note on Terminology:
     is bypassed.
 
 Warning:
-    This test requires an internet connection and will download approx. 60-100MB per case
-    if files are not already present in the cache.
+    This test requires an internet connection and will download approx. 60-130MB per case
+    *if* files are not already present in the cache.
 """
 
 import pytest
@@ -40,20 +40,26 @@ LAEA_EUROPE = "EPSG:3035"
     "case_name, iso_codes, target_crs",
     [
         ("BeNeLux", ["BEL", "NLD", "LUX"], LAEA_EUROPE),
-        ("Adriatic Trio", ["SVN", "HRV", "BIH"], LAEA_EUROPE),
+        ("Adriatic Quintet", ["SVN", "HRV", "BIH", "MNE", "ALB"], LAEA_EUROPE),
     ],
 )
-def test_mass_conservation(case_name, iso_codes, target_crs):
+def test_mass_conservation_eager(case_name, iso_codes, target_crs):
     """
     Parametrised test verifying that merging and warping adjacent countries
     preserves the total population count relative to individual raw rasters.
+
+    This integration test focuses only on the case with eager data loading
+    and merging (`chunks=None`). For an integration test involving a comparison
+    between eager and lazy raster merges , see the separate
+    `test_lazy_eager_merge_consistency` module.
     """
     from worldpoppy import wp_raster, wp_warp
 
     print(f"\n--- Testing Case: {case_name} ---")
     year = 2020
 
-    # 1. Pipeline Operation: Merge & Warp
+    # --- Pipeline Operation ---
+    # Merge & Warp
     # Fetch and merge the countries into one grid
     combined_da = wp_raster(
         product_name='pop_g1',
@@ -73,7 +79,8 @@ def test_mass_conservation(case_name, iso_codes, target_crs):
     # Calculate the total mass of the processed result
     processed_total = float(combined_warped.sum())
 
-    # 2. Control Operation: Sum of Individual Raw Country Rasters
+    # --- Control Operation ---
+    # Get Sum of Individual Raw Country Rasters
     # Load input rasters individually to get the "ground truth" sum.
     # We do not warp these; we just want the raw sum of people in the files.
     raw_total = 0.0
@@ -89,7 +96,7 @@ def test_mass_conservation(case_name, iso_codes, target_crs):
         raw_total += float(da.sum())
         da.close()
 
-    # 3. Assert Discrepancy
+    # --- Check Discrepancy Size ---
     # We expect some discrepancy due to interpolation noise and border rasterisation.
     diff = abs(processed_total - raw_total)
     discrepancy_ratio = diff / raw_total
