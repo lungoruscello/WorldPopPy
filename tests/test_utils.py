@@ -217,3 +217,17 @@ def needs_internet_or_cache(func):
             raise e
 
     return wrapper
+
+
+# --- Other Decorators ---
+
+def needs_raw_manifest(func):
+    """
+    Decorator that skips the test if the raw manifest file (feather)
+    does not exist in the assets directory.
+    """
+    from worldpoppy.config import RAW_MANIFEST_CACHE_PATH
+
+    if not RAW_MANIFEST_CACHE_PATH.exists():
+        return pytest.mark.skip(reason="Raw manifest file not found in assets.")(func)
+    return func
