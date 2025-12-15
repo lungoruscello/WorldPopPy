@@ -328,8 +328,9 @@ def _discover_leaf_nodes():
             continue
 
         if iso3 not in DOWNLOADABLE_ISO3_CODES:
-            print('unsupported ISO3 code:', iso3)
-            print('Full Leaf Node:', leaf_node)
+            if DEBUG:
+                print('unsupported ISO3 code:', iso3)
+                print('Full Leaf Node:', leaf_node)
             msg = f"Skipping node {api_path}: Type of data series not recognised (iso3={iso3})."
             logger.info(msg)
             continue
@@ -953,12 +954,12 @@ def _build_dataset_record(
             "band": band,
             "remote_name": filename,
             # --- Series-Level Metadata ---
-            "series_desc": series_metadata.get("desc"),
-            "series_category": series_metadata.get("category"),
-            "source": series_metadata.get("source"),
-            "project": series_metadata.get("project"),
+            "api_project": series_metadata.get("project"),
+            "api_series_desc": series_metadata.get("desc"),
+            "api_series_category": series_metadata.get("category"),
+            "api_source": series_metadata.get("source"),
             # --- Dataset-Level Metadata ---
-            "summary_url": summary_url,
+            "sample_summary_url": summary_url,
         }
 
     except (KeyError, TypeError, ValueError) as e:

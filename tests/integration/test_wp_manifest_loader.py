@@ -47,11 +47,11 @@ def augmented_raw_manifest(tmp_path, monkeypatch):
                     "year": year,
                     "band": band,
                     "remote_name": f"{filename_stem}.tif",
-                    "series_desc": "Detecting aliens",
-                    "series_category": "Extraterrestrial",
-                    "source": "NASA",
-                    "project": "X-Files",
-                    "summary_url": None,
+                    "api_series_desc": "Detecting aliens",
+                    "api_series_category": "Extraterrestrial",
+                    "api_source": "NASA",
+                    "api_project": "X-Files",
+                    "sample_summary_url": None,
                 }
             )
 

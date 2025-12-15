@@ -65,6 +65,8 @@ columns:
 - data_series (str):
     The larger data series to  which the  raster file belongs (either
     "global1" or "global2").
+- arcsecs (Int64):
+    The inferred resolution in arc-seconds (e.g., 3, 30) or <NA>.
 
 **Download & File Columns:**
 - dataset_name (str):
@@ -73,12 +75,12 @@ columns:
     The full URL to download the .tif file.
 - remote_name (str):
     The filename of the remote .tif file.
-- summary_url (str):
+- sample_summary_url (str):
     A sample URL to the WorldPop summary page associated with this dataset.
 
 **Raw API Columns (for advanced use):**
 - api_path (str):
-    The path to the "leaf node" in WorldPop's meta-data API that is associated
+    The path to the "Leaf Node" in WorldPop's meta-data API that is associated
     with this dataset (e.g., "pop/wpgp" or  "covariates/G2_NT_lights"). This
     is a powerful field for debugging and advanced use. You can use it to
     explore the raw meta-data API data directly. For example:
@@ -90,20 +92,16 @@ columns:
     documentation file).
 - api_slug (str):
     The final part of the `api_path` (e.g., "G2_NT_lights").
-- series_category (str):
-    The raw category text from the meta-data API.
 - api_entry_title (str):
     The raw title text from the meta-data API.
-- series_desc (str):
-    The raw long-form description from the meta-data API.
-- project (str):
+- api_project (str):
     The raw project name from the meta-data API (e.g., "Covariates").
-- source (str):
+- api_series_category (str):
+    The raw category text from the meta-data API.
+- api_series_desc (str):
+    The raw long-form description from the meta-data API.
+- api_source (str):
     The raw source text from the meta-data API.
-- arcsecs (Int64):
-    The inferred resolution in arc-seconds (e.g., 3, 30) or <NA>.
-- band (str):
-    The band name for multi-band products (e.g., "dst011") or None.
 """
 import logging
 import sys
@@ -475,7 +473,7 @@ def show_supported_data_products(
 
     # --- Select and clean-up columns for display ---
     # Added 'resolution' to the selection list
-    cols = 'product_name product_notes resolution multi_year project data_series summary_url'.split()
+    cols = 'product_name product_notes resolution multi_year api_project data_series sample_summary_url'.split()
 
     products = mdf[cols].drop_duplicates(subset='product_name')
     products.rename(
@@ -484,9 +482,9 @@ def show_supported_data_products(
             'product_notes': 'Product notes',
             'resolution': 'Res. (arcsec)',
             'multi_year': 'Multi-year?',
-            'project': 'Project',
+            'api_project': 'Project',
             'data_series': 'Data series',
-            'summary_url': 'Example',
+            'sample_summary_url': 'Example',
         },
         inplace=True,
     )
@@ -596,7 +594,7 @@ def _get_cleaned_manifest():
 
     # --- Infer data series and apparent raster resolution ---
     mdf["data_series"] = mdf.remote_path.apply(infer_data_series)
-    mdf['arcsecs'] = mdf.series_desc.apply(infer_resolution_from_description)
+    mdf['arcsecs'] = mdf.api_series_desc.apply(infer_resolution_from_description)
 
     # --- Validate & clean-up ---
     # Check remaining manifest data
@@ -606,26 +604,37 @@ def _get_cleaned_manifest():
     # We run this at the very end to catch new API content.
     _check_missing_config(mdf)
 
-    # Re-order major columns to be sensible
-    final_cols = [
+    # --- Clean Columns ---
+    # Drop processing columns that are not needed
+    drop_cols = "base_name band band_alias".split()
+    mdf.drop(drop_cols, axis=1, inplace=True)
+
+    # Re-order columns
+    maj_cols = [
         "wpy_id",
         "product_name",
         "iso3",
         "year",
         "multi_year",
+        "product_notes",
+        "data_series",
+        "arcsecs",
         "dataset_name",
         "remote_path",
         "remote_name",
+        "sample_summary_url",
         "api_path",
         "api_slug",
-        "data_series",
-        "product_notes",
-        "series_category",
-        "api_entry_title"
+        "api_entry_title",
+        "api_project",
+        "api_series_category",
+        "api_series_desc",
+        "api_source",
     ]
+
     # Account for additional columns that might be present
-    other_cols = sorted([col for col in mdf.columns if col not in final_cols])
-    mdf = mdf.reindex(columns=final_cols + other_cols)
+    other_cols = sorted([col for col in mdf.columns if col not in maj_cols])
+    mdf = mdf.reindex(columns=maj_cols + other_cols)
 
     return mdf
 
@@ -996,7 +1005,7 @@ def _validate_manifest(mdf):
         )
 
     prod_check1 = np.all(mdf.groupby('product_name').data_series.nunique() == 1)
-    prod_check2 = np.all(mdf.groupby('product_name').project.nunique() == 1)
+    prod_check2 = np.all(mdf.groupby('product_name').api_project.nunique() == 1)
 
     if not (prod_check1 & prod_check2):
         raise ManifestValidationError(
@@ -1027,9 +1036,9 @@ def _validate_manifest(mdf):
 
     # Check raw API metadata
     # If these are null, WorldPop might have changed their API structure.
-    if mdf['project'].isna().any() or mdf['series_category'].isna().any():
+    if mdf['api_project'].isna().any() or mdf['api_series_desc'].isna().any():
         logger.warning(
-            "MANIFEST QUALITY: Some rows are missing 'project' or 'series_category'. "
+            "MANIFEST QUALITY: Some rows are missing 'project' or 'api_series_desc'. "
             "The WorldPop API structure may have changed."
         )
 
