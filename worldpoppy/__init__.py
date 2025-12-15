@@ -8,8 +8,11 @@ __author_email__ = "lungoruscello@gmail.com"
 from .config import *
 from .download import WorldPopDownloader, purge_cache
 from .manifest_loader import (
-    wp_manifest, show_supported_data_products,
-    get_all_isos, get_static_product_names
+    show_supported_data_products,
+    wp_manifest,
+    get_product_info,
+    get_all_isos,
+    get_static_product_names
 )
 from .raster import wp_raster, wp_warp, merge_rasters, bbox_from_location
 from .borders import load_country_borders

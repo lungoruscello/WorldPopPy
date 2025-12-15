@@ -135,6 +135,7 @@ __all__ = [
     "wp_manifest",
     "wp_manifest_constrained",
     "show_supported_data_products",
+    "get_product_info",
     "get_all_isos",
     "get_all_product_names",
     "get_static_product_names",
@@ -307,7 +308,9 @@ def wp_manifest_constrained(product_name, iso3_codes, years=None):
     target_iso_set = set(iso3_codes)
 
     # Get the "ground truth" for the product
-    is_multi_year, available_years, available_isos = _get_product_info(product_name)
+    info = get_product_info(product_name)
+    available_years,available_isos = info['years'], info['iso3_codes']
+    is_multi_year = info['is_multi_year']
 
     # Check available countries
     if unknown_isos := target_iso_set - available_isos:
@@ -728,6 +731,56 @@ def _filter_manifest_by_keyword(mdf, keywords=None):
 # --- Manifest-dependent helper functions ---
 
 @lru_cache()
+def get_product_info(product_name):
+    """
+    Retrieve coverage and type information for a specific data product.
+
+    This function queries the manifest to determine if a product is part of a
+    multi-year time series and returns the sets of available years and
+    countries (ISO3 codes).
+
+    Parameters
+    ----------
+    product_name : str
+        The exact, curated name of the data product to query (e.g., 'pop_g1').
+
+    Returns
+    -------
+    dict
+        A dictionary containing the following keys:
+        - **is_multi_year** (bool):
+            True if the product is a multi-year time series, False otherwise.
+        - **years** (set[int]):
+            A set of all unique years (non-nullable integers) for which this
+            product has data. For static products, this set may be empty or
+            contain a single year (the year of data recording).
+        - **iso3_codes** (set[str]):
+            A set of all unique ISO3 codes indicating the countries for which
+            this product has data.
+
+    Note
+    ----
+    This function returns the *union* of all available years and countries.
+    It does *not* guarantee that data exists for every combination of
+    year and country (i.e., the data matrix may be sparse).
+    """
+    _validate_product_name(product_name)
+
+    mdf = _get_cleaned_manifest()
+    mdf_prod = mdf[mdf.product_name == product_name]
+
+    info = dict(
+        # We can trust the results below since "mixed-type"
+        # products are already filtered out by get_wp_manifest
+        years=set(mdf_prod['year'].dropna().astype(int)),
+        iso3_codes=set(mdf_prod['iso3'].dropna()),
+        is_multi_year=mdf_prod.iloc[0]['multi_year']
+    )
+
+    return info
+
+
+@lru_cache()
 def get_all_isos():
     """
     Gets all unique ISO3 codes from the manifest.
@@ -823,7 +876,8 @@ def resolve_product_years(product_name, years):
 
     # Handle 'all' strategy
     # Re-use existing internal helper to get truth from manifest
-    is_multi_year, available_years, _ = _get_product_info(product_name)
+    info = get_product_info(product_name)
+    available_years, available_isos = info['years'], info['iso3_codes']
 
     # Case: Static, No Year (available_years is empty set)
     # e.g., 'pxl_area'. 'all' resolves to None (the static dataset itself).
@@ -870,54 +924,6 @@ def _build_final_notes_map(mdf):
         final_notes.update(non_banded_notes.to_dict())
 
     return final_notes
-
-
-@lru_cache()
-def _get_product_info(product_name):
-    """
-    Helper to get year info for a specific product.
-
-    This is the primary helper for `wp_manifest_constrained` to validate
-    a user's `years` argument. It checks if a product is multi-year and
-    returns the set of all unique, non-null years associated with it.
-
-    Parameters
-    ----------
-    product_name : str
-        The exact product name to query.
-
-    Returns
-    -------
-    tuple[bool, set]
-        - is_multi_year (bool): True if the product is a multi-year series.
-        - available_years (set): A set of all unique years (non-nullable
-                                 integers) for which this product has data.
-                                 For static products, this set may be empty
-                                 or contain a single year only (likely the
-                                 year of data recording).
-        - available_countries (set): A set of all unique ISO3 codes,
-                                     indicating the countries for which
-                                     this product has data. Note that
-                                     we do *not* check whether data for
-                                     all *combinations* of countries and
-                                     years is available.
-    """
-    _validate_product_name(product_name)
-
-    mdf = _get_cleaned_manifest()
-    mdf_prod = mdf[mdf.product_name == product_name]
-
-    # get the type (we can trust this, as "mixed-type"
-    # products are already filtered out by get_wp_manifest)
-    is_multi_year = mdf_prod.iloc[0]['multi_year']
-
-    # get the years
-    available_years = set(mdf_prod['year'].dropna().astype(int))
-
-    # get the countries
-    available_isos = set(mdf_prod['iso3'].dropna())
-
-    return is_multi_year, available_years, available_isos
 
 
 def _check_missing_config(mdf):
