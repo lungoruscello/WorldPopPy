@@ -171,27 +171,47 @@ class WorldPopDownloader:
             If not all requested files were successfully downloaded
         """
 
-        # delete artefacts from previously interrupted downloads
+        # --- Prepare ---
+        # Delete artefacts from previously interrupted downloads
         _repair_cache()
 
-        # fetch download manifest (will validate user query)
+        # Fetch download manifest (will validate user query)
         filtered_mdf = wp_manifest_constrained(product_name, iso3_codes, years)
 
-        # assemble URLs and local paths
+        # Assemble URLs and local paths
         data = filtered_mdf[['product_name', 'iso3', 'year']].values
         local_paths = [self._build_local_fpath(*tup) for tup in data]
         remote_paths = filtered_mdf['remote_path'].tolist()
 
-        if dry_run:
-            with log_info_context(logger):
-                # prepare arguments for parallel processing
-                # (no chunk size needed)
-                args = [
-                    (r, l, skip_download_if_exists)
-                    for r, l in zip(remote_paths, local_paths)
-                ]
+        # --- Filter Phase: Identify Actual Work ---
+        # We separate the requested files into those we actually need to
+        # download (network tasks) and those we can "take" from the cache.
+        tasks = []
 
+        for remote, local in zip(remote_paths, local_paths):
+            if skip_download_if_exists and local.is_file():
+                continue
+            # If we are here, we either do not have the file, or we are
+            # forcing a re-download.
+            tasks.append((remote, local))
+
+        num_cached = len(local_paths) - len(tasks)
+
+        # --- Execution Phase ---
+        if dry_run:
+            # Case A: Dry Run
+            if not tasks:
+                print(f"Dry run: All {len(local_paths)} files already exist locally.")
+                return local_paths, filtered_mdf
+
+            with log_info_context(logger):
                 print("Dry run: calculating number and size of files to download...\n")
+                if num_cached > 0:
+                    print(f"(Skipping {num_cached} files already in cache)")
+
+                # Prepare arguments for parallel processing
+                # We only process the files in the 'tasks' list
+                args = [(r, l, skip_download_if_exists) for r, l in tasks]
 
                 res = pqdm(
                     args,
@@ -208,19 +228,26 @@ class WorldPopDownloader:
                         f"{len(errors)} HEAD request(s) failed. Details:\n{formatted}"
                     )
 
+                # Sum only the tasks we actually checked
                 total_size = sum(r.value for r in res if r.success and r.value > 0)
-                total_files = sum(1 for r in res if r.success and r.value > 0)
 
-                print(f"No. of files to download: {total_files}")
+                print(f"No. of files to download: {len(tasks)}")
                 print(f"Total est. download size: {round(total_size / 1e6, 2):,} MB")
 
         else:
-            # prepare arguments for parallel processing
-            # (chunk size now needed)
-            args = [
-                (r, l, skip_download_if_exists, chunk_size)
-                for r, l in zip(remote_paths, local_paths)
-            ]
+            # Case A: Real Download Mode
+            if not tasks:
+                # No network tasks -> No progress bar (just a clean log message).
+                logger.info(f"All {len(local_paths)} requested files found in cache.")
+                return local_paths, filtered_mdf
+
+            if num_cached > 0:
+                logger.info(
+                    f"Found {num_cached} files in cache; downloading {len(tasks)} new files."
+                )
+
+            # Prepare arguments for parallel processing
+            args = [(r, l, skip_download_if_exists, chunk_size) for r, l in tasks]
 
             res = pqdm(
                 args,
@@ -236,8 +263,6 @@ class WorldPopDownloader:
                 raise DownloadError(
                     f"{len(errors)} download(s) failed. Details:\n{formatted}"
                 )
-
-            assert len(res) == len(local_paths)
 
         return local_paths, filtered_mdf
 
