@@ -232,7 +232,6 @@ def wp_manifest(
         elif keywords is not None:
             mdf = _filter_manifest_by_keyword(mdf, keywords)
             if mdf.empty:
-                print(f"No data found matching keyword: '{keywords}'")
                 return mdf
 
         if iso3_codes is not None:
@@ -252,7 +251,6 @@ def wp_manifest(
             mdf = mdf[mdf['multi_year'] == True].copy()
 
         if mdf.empty:
-            print(f"No data found matching selected filter(s)")
             return mdf
 
         return mdf
