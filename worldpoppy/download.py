@@ -133,7 +133,7 @@ class WorldPopDownloader:
         years=None,
         skip_download_if_exists=True,
         dry_run=False,
-        chunk_size=1024**2,
+        chunk_size=1024*1024*4,
     ):
         """
         Asynchronously download a collection of country-specific WorldPop rasters.
@@ -155,7 +155,7 @@ class WorldPopDownloader:
             If True, only check how many files would need to be downloaded if `dry_run`
             was False. Report the number and size of required file downloads, but do not
             actually fetch or return any data.
-        chunk_size : int, optional, default=1MB
+        chunk_size : int, optional, default=4MB
             The size (in bytes) of chunks to read/write during download. Larger chunks
             may improve performance, especially on systems with real-time file scanning
             (e.g., antivirus).
@@ -278,7 +278,7 @@ class WorldPopDownloader:
         remote_url,
         local_path,
         skip_if_exists=True,
-        chunk_size=1024*2
+        chunk_size=1024*1024*4
     ):
         """
         Download a WorldPop raster with automatic retries.
@@ -291,7 +291,7 @@ class WorldPopDownloader:
             The local file path where the raster will be saved.
         skip_if_exists : bool, optional, default=True
             Whether to skip the download if the file already exists locally.
-        chunk_size : int, optional, default=1MB
+        chunk_size : int, optional, default=4MB
             The size (in bytes) of chunks to read/write during download.
             Larger chunks may improve performance, especially on systems
             with real-time file scanning (e.g., antivirus).

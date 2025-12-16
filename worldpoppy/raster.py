@@ -184,10 +184,10 @@ def wp_raster(
     suppress_pre_clip : bool, optional, default=False
         If True, no **automatic** or **manual** pre-clipping is ever applied when
         loading input rasters. Mutually exclusive with `pre_clip_bbox`.
-    download_chunk_size : int, optional, default=1MB
+    download_chunk_size : int, optional, default=4MB
         The size (in bytes) of chunks to read/write during raster downloads.
-        Larger chunks may improve performance, especially on systems with
-        real-time file scanning (e.g., antivirus).
+        The large, default chunk size aims to improve performance on systems
+        with real-time file scanning (e.g., antivirus).
     download_dry_run : bool, optional, default=False
         If True, only check how many raster files would need to be downloaded
         from WorldPop if `download_dry_run` was False. Report the number and
