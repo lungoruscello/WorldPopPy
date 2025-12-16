@@ -83,6 +83,7 @@ def wp_raster(
     aoi,
     years=None,
     *,
+    name=None,
     chunks=None,
     pre_clip_bbox=None,
     cache_downloads=True,
@@ -127,6 +128,10 @@ def wp_raster(
         all countries that intersect the area of interest, regardless of how large
         this intersection is. Subsequently, the merged raster is then clipped using
         the AoI.
+    name : str, optional
+        A custom name for the returned DataArray. This is useful for plotting
+        (it appears as the title/label) or when converting to a Dataset.
+        Defaults to `product_name` if not provided.
     chunks : str, int, dict or None, optional, default=None
         If chunks is provided, the raster data is loaded into a *Dask* array
         for better memory management.
@@ -258,6 +263,10 @@ def wp_raster(
                 "the GeoDataFrame's bounding box for automatic pre-clip instead."
             )
 
+    # --- Default Naming ---
+    if name is None:
+        name = product_name
+
     # --- Prepare Shared Raster-processing Arguments ---
     # `clipping_gdf` is used for the final precise clip AND for the
     # automatically inferred pre-clip bounds.
@@ -271,6 +280,7 @@ def wp_raster(
         pre_clip_bbox=pre_clip_bbox,
         clipping_gdf=clipping_gdf,
         suppress_pre_clip=suppress_pre_clip,
+        name=name,
     )
 
     with TemporaryDirectory() if not cache_downloads else get_cache_dir() as d:
@@ -320,6 +330,10 @@ def wp_raster(
             dim='year',
             combine_attrs='drop_conflicts',
         )
+
+        # Ensure correct name after concat
+        if name is not None:
+            time_series.name = name
 
         # --- Metadata Construction (Executive Summary) ---
         time_series.attrs = {}
@@ -453,7 +467,7 @@ def wp_warp(
         if isinstance(rechunk, dict):
             chunks = rechunk
         elif isinstance(rechunk, int):
-            # NEW: Convert integer K to {'x': K, 'y': K}
+            # Convert integer K to {'x': K, 'y': K}
             chunks = {'x': rechunk, 'y': rechunk}
         else:
             # Default size (~64MB per chunk for float32)
@@ -509,6 +523,7 @@ def wp_warp(
 def merge_rasters(
     raster_fpaths,
     *,
+    name=None,
     chunks=None,
     masked=False,
     mask_and_scale=False,
@@ -529,6 +544,8 @@ def merge_rasters(
     ----------
     raster_fpaths : List[Path] or List[str]
         List of paths to the input raster files that are to be merged.
+    name : str, optional
+        A custom name for the returned DataArray.
     chunks : str, int, dict or None, optional, default='auto'
         If chunks is provided, the raster data is loaded into a *Dask* array
         for better memory management.
@@ -741,6 +758,10 @@ def merge_rasters(
     da.attrs['wpy_masked'] = str(masked)
     if mask_and_scale:
         da.attrs['wpy_mask_and_scale'] = "True"
+
+    # --- Set User Name ---
+    if name is not None:
+        da.name = name
 
     return da
 
