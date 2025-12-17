@@ -1,7 +1,7 @@
 """
-Example 4: Check download requirements for a large data request.
+Workflow Example 1: Check Download Requirements for a Large Data Request.
 
-Illustrates
+Illustrates:
 1. Changing the default cache directory.
 2. Previewing download requirements with the `download_dry_run` flag.
 """
@@ -12,11 +12,13 @@ from pathlib import Path
 from worldpoppy import wp_raster
 from worldpoppy.config import get_cache_dir, ROOT_DIR
 
-# set new cache directory
+# 1. Set a New Cache Directory
+# (For demonstration only)
 new_cache_dir = ROOT_DIR / 'tmp_cache'
 os.environ['WORLDPOPPY_CACHE_DIR'] = str(new_cache_dir)
 assert get_cache_dir() == Path(new_cache_dir)
 
+# 2. Download Dry Run
 years = list(range(2015, 2025))
 _ = wp_raster(
     product_name='pop_g2_r25a',  # population data from the Global 2 series
@@ -29,5 +31,5 @@ _ = wp_raster(
 # actually be downloaded or processed. Also, the return type of `wp_raster`
 # will be None.
 
-# revert back to default
+# 3. Revert Back to Default Cache Dir
 del os.environ['WORLDPOPPY_CACHE_DIR']
