@@ -217,9 +217,9 @@ def plot_location_markers(
             )
 
 
-def clean_axis(ax=None, title=None, remove_xy_ticks=False):
+def clean_axis(ax=None, title=None, remove_xy_ticks=True):
     """
-    Clean up a matplotlib axis by removing labels and setting equal aspect.
+    Clean up a matplotlib axis by setting equal aspect and removing labels.
 
     Parameters
     ----------
