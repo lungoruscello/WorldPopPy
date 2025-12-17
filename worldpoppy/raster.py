@@ -9,7 +9,7 @@ Main methods
         Retrieve WorldPop data for arbitrary geographical areas and
         multiple years (where applicable).
     - :func:`wp_warp`
-        Reproject or resample a WorldPop raster (lazy).
+        Reproject or resample a WorldPop raster.
     - :func:`merge_rasters`
         Merge multiple raster files and optionally clip the result.
     - :func:`bbox_from_location`
@@ -92,7 +92,7 @@ def wp_raster(
     mask_and_scale=False,
     other_read_kwargs=None,
     suppress_pre_clip=False,
-    download_chunk_size=1024**2,
+    download_chunk_size=1024*1024*4,
     download_dry_run=False,
 ):
     """
@@ -379,14 +379,18 @@ def wp_warp(
     to_crs=None,
     res=None,
     resampling=None,
-    rechunk=False,
+    **kwargs
 ):
     """
-    Reproject or resample a WorldPop raster.
+    Reproject or resample a raster.
 
-    This function handles the complexities of lazy Dask execution, ensuring that
-    operations work efficiently even on merged datasets with fragmented chunk
-    structures (which often occur after `wp_raster`).
+    This is a convenience wrapper around `rioxarray.reproject` that handles
+    Nodata values, memory materialisation (handling Dask vs Eager), and
+    Enum-based "resampling" arguments.
+
+    WARNING: This function is EAGER. It triggers immediate computation.
+    If 'da' is a lazy Dask array, it will be loaded into memory (materialised)
+    before processing.
 
     It supports three modes:
     1. Reprojection: Change CRS (provide `to_crs`).
@@ -408,20 +412,10 @@ def wp_warp(
     resampling : str or rasterio.enums.Resampling, optional
         The resampling method to use (e.g., 'nearest', 'bilinear', 'sum').
         If None, defaults to 'nearest'.
-    rechunk : bool, int, or dict, optional, default=False
-        Whether to enforce a uniform chunk structure before warping.
-
-        - If True: Re-chunks to {'x': 2048, 'y': 2048}.
-          **Note:** If `da` is currently loaded in RAM (eager), this converts
-          it into a lazy Dask array. This protects against memory overflows
-          if the target grid is significantly larger than the input.
-        - If False (default): Passes the array directly to rioxarray.
-          Use this if you know your input Dask graph is not fragmented,
-          or if you explicitly want to process the warp in-memory (eager).
-        - If dict: Applies the specified chunks (e.g. {'x': 1024, 'y': 1024}).
-        - If int K: Applies the uniform chunk size {'x': K, 'y': K}.
-
-        # TODO: Note the experimental nature of the re-chunk workflow
+    **kwargs : dict
+        Additional keyword arguments passed directly to
+        `rioxarray.reproject <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray.raster_array.RasterArray.reproject>`_.
+        Useful for passing specific GDAL warp options.
 
     Returns
     -------
@@ -456,28 +450,6 @@ def wp_warp(
     if target_crs is None:
         raise ValueError("Input raster has no CRS and 'to_crs' was not provided.")
 
-    # --- Safety Re-chunking ---
-    # The 'combine_first' operation used in `merge_rasters` creates an irregular
-    # Dask graph. Passing this directly to 'reproject' often causes rioxarray
-    # to trigger an eager computation (loading everything to RAM). Re-chunking
-    # solves this.
-    # Beware: If you pass raster data that is already loaded, rechunking will
-    # convert this to a Dask array. Use rechunk=False to suppress.
-    if rechunk:
-        if isinstance(rechunk, dict):
-            chunks = rechunk
-        elif isinstance(rechunk, int):
-            # Convert integer K to {'x': K, 'y': K}
-            chunks = {'x': rechunk, 'y': rechunk}
-        else:
-            # Default size (~64MB per chunk for float32)
-            chunks = {'x': 4096, 'y': 4096}
-
-        # We only rechunk dimensions that actually exist (usually 'x' and 'y')
-        valid_chunks = {k: v for k, v in chunks.items() if k in da.dims}
-        if valid_chunks:
-            da = da.chunk(valid_chunks)
-
     # --- Resolve Nodata (Corrected) ---
     fill_value = da.rio.nodata
 
@@ -493,6 +465,16 @@ def wp_warp(
             "from valid data."
         )
 
+    # --- Handle Dask Arrays (Explicit Eager Load) ---
+    # rioxarray.reproject is not truly lazy and often triggers computation implicitly.
+    # We make this explicit here to avoid "hidden" memory spikes.
+    if da.chunks is not None:
+        logger.warning(
+            "wp_warp: Input is a lazy Dask array. Materialising into memory "
+            "before warping."
+        )
+        da.load()
+
     # --- Execute Warp ---
     reproject_kwargs = {'resampling': resampling_enum}
     if res is not None:
@@ -502,6 +484,10 @@ def wp_warp(
     # (including new padding areas) uses this value.
     if fill_value is not None:
         reproject_kwargs['nodata'] = fill_value
+
+    # Merge explicit args with user-provided kwargs
+    # (kwargs overwrite defaults if conflicts exist, though unlikely given keys)
+    reproject_kwargs.update(kwargs)
 
     warped = da.rio.reproject(target_crs, **reproject_kwargs)
 
@@ -1051,6 +1037,10 @@ def _lazy_merge_helper(das, masked):
         (i.e., `chunks` is not None). It is NOT the default merge path for eager
         execution (which uses `rioxarray.merge.merge_arrays` instead).
     """
+    # TODO: Document that lazy-merging country rasters can create very deep Dask graphs.
+    #  In many workflows, it likely is better to downsample individual country
+    #  rasters first and merge them afterwards.
+
     if not das:
         raise ValueError("Cannot merge empty list of rasters.")
 
