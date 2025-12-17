@@ -57,7 +57,7 @@ def plot_location_markers(
         annotate=True,
         color='k',
         textcoords="offset points",
-        xytext=(7, -7),
+        xytext=(0, -10),
         ha='left',
         va='center',
         other_annotate_kwargs=None,
