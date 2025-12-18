@@ -1119,6 +1119,12 @@ def _lazy_merge_helper(das, masked):
 
     combined = current_layer[0]
 
+    # --- Fix Coordinate Flip ---
+    # Check if y coordinate is ascending (increasing)
+    if combined.y[-1] > combined.y[0]:
+        # Flip it to match standard Rasterio/GDAL convention (Top-Left origin)
+        combined = combined.sortby("y", ascending=False)
+
     # --- Clean the Metadata ---
     if masked:
         # User requested masking    -> Data is Float with NaNs.
