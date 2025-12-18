@@ -313,14 +313,15 @@ class WorldPopDownloader:
         try:
             with open(tmp_path, "wb+") as f:
                 with httpx.stream("GET", remote_url, timeout=DATA_DOWNLOAD_TIMEOUT) as response:
-                    total = int(response.headers["Content-Length"])
+                    response.raise_for_status()
+
+                    total = int(response.headers.get("Content-Length", 0))
                     pbar = tqdm(total=total, unit="B", unit_scale=True, leave=False)
                     with pbar:
                         pbar.set_description(f"Downloading {remote_fname}...")
                         for chunk in response.iter_raw(chunk_size=chunk_size):
                             f.write(chunk)
                             pbar.update(len(chunk))
-                    response.raise_for_status()
 
             # Only after the download has finished do we rename the temporary
             # file to its proper name. In this way, crashing downloads will
