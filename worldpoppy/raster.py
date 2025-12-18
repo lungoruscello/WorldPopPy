@@ -1093,7 +1093,9 @@ def _lazy_merge_helper(das, masked):
     # --- WARNING ---
     warnings.warn(
         "Merging multiple country rasters lazily via Dask is an "
-        "experimental feature. Please inspect your results carefully.",
+        "experimental feature. You should only use lazy merging "
+        "if eager merging (via rioxarray) is impossible due to "
+        "memory constraints. Also, please inspect your results carefully.",
         UserWarning,
         stacklevel=2
     )
@@ -1136,7 +1138,7 @@ def _lazy_merge_helper(das, masked):
 
     # --- Clean the Metadata ---
     if masked:
-        # User requested masking    -> Data is Float with NaNs.
+        # User requested masking  -> Data is Float with NaNs.
         # We must tell GDAL that NaN is the nodata value.
         combined.rio.write_nodata(np.nan, encoded=True, inplace=True)
     else:
