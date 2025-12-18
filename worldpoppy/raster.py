@@ -450,15 +450,11 @@ def wp_warp(
     if target_crs is None:
         raise ValueError("Input raster has no CRS and 'to_crs' was not provided.")
 
-    # --- Resolve Nodata (Corrected) ---
+    # --- Standardise Nodata ---
+    da = _standardise_rio_nodata_meta(da)
     fill_value = da.rio.nodata
 
-    # If nodata is undefined but data is float, we default to NaN.
-    if fill_value is None and np.issubdtype(da.dtype, np.floating):
-        fill_value = np.nan
-        da = da.rio.write_nodata(fill_value, encoded=True)
-
-    elif fill_value is None:
+    if fill_value is None:
         logger.warning(
             "Warping integer raster without a defined nodata value. "
             "Padding areas may default to 0, which may be indistinguishable "
@@ -669,7 +665,11 @@ def merge_rasters(
 
     for path in raster_fpaths:
         try:
+            # --- Open ---
+            # We fix a missing 'nodata' attribute from .rio immediately
+            # upon load to avoid metada ambiguity
             da = rioxarray.open_rasterio(path, **read_options)
+            da = _standardise_rio_nodata_meta(da, masked, mask_and_scale)
 
             # --- Apply Pre-Clipping Slice (Lazy with Dask) ---
             if processing_clip_box is not None:
@@ -688,7 +688,8 @@ def merge_rasters(
                 )
                 continue
 
-            # Align coordinates for clean graph construction
+            # -- Round Coordinates ---
+            # To avoid floating-point issues in a downstream merge.
             da = da.assign_coords({"x": da.x.round(5), "y": da.y.round(5)})
 
             # Assign fixed variable name for mosaicking
@@ -1008,6 +1009,40 @@ def _read_raster_attrs(path, masked, mask_and_scale):
         ) from e
 
 
+def _standardise_rio_nodata_meta(da, masked=False, mask_and_scale=False):
+    """
+    Standardise the .rio 'nodata' metadata attribute for floating-point rasters.
+
+    This function resolves the ambiguity where floating-point arrays (either
+    implicitly float or explicitly masked) rely on `NaN` to represent missing
+    data, but lack the specific metadata attribute telling downstream tools
+    that `NaN` is indeed the nodata value.
+
+    Behavior:
+    1. If `masked` or `mask_and_scale` is True:
+       The array is treated as Float/NaN. We strictly enforce `nodata=np.nan`.
+    2. If Raw Data (`masked=False`):
+       - If the array is Float and `nodata` is missing, we default it to `np.nan`.
+       - If the array is Integer OR already has a valid `nodata` (e.g., -9999),
+         we leave it *unchanged* to avoid corrupting raw data.
+    """
+    # Case A: Explicit Masking requested
+    # The data IS Float/NaN, so we label it as such.
+    if masked or mask_and_scale:
+        # We check if the metadata is missing OR set to something other than NaN
+        # (though usually it is just None)
+        if da.rio.nodata is None or not np.isnan(da.rio.nodata):
+            da.rio.write_nodata(np.nan, encoded=True, inplace=True)
+        return da
+
+    # Case B: Implicit Float
+    fill_value = da.rio.nodata
+    if fill_value is None and np.issubdtype(da.dtype, np.floating):
+        da.rio.write_nodata(np.nan, encoded=True, inplace=True)
+
+    return da
+
+
 def _concat_with_info(objs, **kwargs):
     """
     Thin wrapper for `xarray.concat` which logs an info message if the optional
@@ -1018,7 +1053,14 @@ def _concat_with_info(objs, **kwargs):
             "Installing the optional `bottleneck` module may accelerate "
             "`xarray` concatenation. (pip install bottleneck)"
         )
-    return xr.concat(objs, **kwargs)
+
+    da = xr.concat(objs, **kwargs)
+
+    # We again restore .rio's 'nodata' metadata attribute since
+    # `concat` will likely have dropped it
+    da = _standardise_rio_nodata_meta(da)
+
+    return da
 
 
 def _lazy_merge_helper(das, masked):
