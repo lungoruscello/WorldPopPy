@@ -413,6 +413,12 @@ def purge_cache(dry_run=True, keep_country_borders=False):
 
     total_size = num_matched = num_deleted = 0
     for path in fpaths:
+        if not path.is_file():
+            # Currently, we have no sub-dirs in the cache dir, but this
+            # can change in future. For directories, .unlink() would raise
+            # an error.
+            continue
+
         if keep_country_borders and 'level0' in path.name:
             continue
 
