@@ -1086,8 +1086,17 @@ def _lazy_merge_helper(das, masked):
     if not das:
         raise ValueError("Cannot merge empty list of rasters.")
 
+    # --- No-op Check ---
     if len(das) == 1:
         return das[0]
+
+    # --- WARNING ---
+    warnings.warn(
+        "Merging multiple country rasters lazily via Dask is an "
+        "experimental feature. Please inspect your results carefully.",
+        UserWarning,
+        stacklevel=2
+    )
 
     # --- Establish Z-order ---
     # Reverse rasters to establish Z-order priority (Top -> Bottom)
