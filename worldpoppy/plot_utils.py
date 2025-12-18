@@ -217,7 +217,7 @@ def plot_location_markers(
             )
 
 
-def clean_axis(ax=None, title=None, remove_xy_ticks=True):
+def clean_axis(ax=None, title=None, remove_xy_ticks=True, **title_kwargs):
     """
     Clean up a matplotlib axis by setting equal aspect and removing labels.
 
@@ -227,13 +227,15 @@ def clean_axis(ax=None, title=None, remove_xy_ticks=True):
         Axis to clean. Defaults to current axis.
     title : str, optional
         Title to set on the axis.
-    remove_xy_ticks : bool, optional, default=False
+    remove_xy_ticks : bool, optional, default=True
         If True, remove both x and y ticks on the axis.
+    **title_kwargs :
+        Additional keyword arguments passed to ax.set_title() (e.g., fontsize, loc, color).
     """
     ax = plt.gca() if ax is None else ax
 
     if title is not None:
-        ax.set_title(title)
+        ax.set_title(title, **title_kwargs)
 
     ax.set_aspect('equal')
     ax.set_xlabel('')
