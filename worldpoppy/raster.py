@@ -141,6 +141,19 @@ def wp_raster(
           Equivalent to passing {'x': K, 'y': K}.
         - If dict (e.g., {'x': 1024, 'y': 1024}), that specific chunking is used.
     years : int or List[int] or str or None, optional
+        One or more years of interest or a keyword string. For static data
+        products, this argument is usually None (default).
+
+        * **'all'**: Retrieve all available data for the specified product.
+            * For **multi-year** products, this returns a 3D array stacked
+              along the `year` dimension (unless only one year exists,
+              in which case it returns a 2D array).
+            * For **static** products, returns the single available raster.
+        * **'first'**: Retrieve data for the earliest available year.
+        * **'last'**: Retrieve data for the most recent available year.
+        * **None**: (Default) for static data products.
+
+    years : int or List[int] or str or None, optional
         One or more years of interest or the 'all' keyword (str). For static data
         products, this argument is usually None (default) or the 'all' keyword.
 
@@ -201,7 +214,9 @@ def wp_raster(
     xarray.DataArray or None
         The combined raster data.
         - For static products, dimensions are ``(y, x)``.
-        - For multi-year products, dimensions are ``(year, y, x)``.
+        - For multi-years products, dimensions are likewise ``(y, x)`` IF
+          users only request a single year.
+        - If multiple years are requested, dimensions are ``(year, y, x)``.
         Returns None if `download_dry_run` is True.
 
     Raises

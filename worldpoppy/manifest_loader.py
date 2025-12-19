@@ -178,10 +178,12 @@ def wp_manifest(
     iso3_codes : str or List[str], optional
         One or more three-letter ISO codes indicating the countries
         of interest.
-    years : int or List[int] or str, optional
-        One or more years of interest, or the 'all' keyword.
+    years : int, List[int], or str, optional
+        One or more years of interest, or a keyword string.
         - If years are provided, filters the manifest to those specific years.
-        - If 'all', returns entries for all available years.
+        - If 'all': Returns entries for all available years.
+        - If 'first': Returns the earliest available year (requires `product_name`).
+        - If 'last': Returns the most recent available year (requires `product_name`).
         - If None (default), no filtering on year is performed.
     static_only : bool, optional
         If True, only return manifest entries for static datasets (i.e., those
@@ -218,6 +220,18 @@ def wp_manifest(
         iso3_codes = [iso3_codes]
     if isinstance(years, int):
         years = [years]
+
+    # --- Keyword Logic for years ---
+    # We must resolve 'first'/'last' here because the generic filter logic
+    # below does not know about product-specific time ranges.
+    if isinstance(years, str) and years in ('first', 'last'):
+        if product_name is None:
+            raise ValueError(
+                f"You cannot use the relative year keyword '{years}' without "
+                "specifying a `product_name`."
+            )
+        # This will return a concrete list like [2020]
+        years = resolve_product_years(product_name, years)
 
     # get the full manifest
     mdf = _get_cleaned_manifest()
@@ -271,10 +285,12 @@ def wp_manifest_constrained(product_name, iso3_codes, years=None):
     iso3_codes : str or List[str]
          One or more three-letter ISO codes indicating the countries
          of interest.
-    years : int or List[int] or str, optional
+    years : int, List[int], or str, optional
         The specific year(s) of interest.
         - If years are provided, validates availability for those specific years.
-        - If 'all', checks availability for *every* year recorded in the manifest.
+        - If 'all': Checks availability for *every* year recorded in the manifest.
+        - If 'first': Checks availability for the earliest year.
+        - If 'last': Checks availability for the most recent year.
         - If None, validates that the product is static and has no year dimension.
 
     Returns
@@ -290,7 +306,7 @@ def wp_manifest_constrained(product_name, iso3_codes, years=None):
     """
 
     # --- Handle user arguments ---
-    # Resolve years='all' immediately
+    # Resolve years='all'/'first'/'last' immediately
     # This translates 'all' -> [2000, 2001...] or None, allowing the
     # strict validation logic below to proceed unchanged.
     years = resolve_product_years(product_name, years)
@@ -845,7 +861,7 @@ def get_multi_year_product_names():
 
 def resolve_product_years(product_name, years):
     """
-    Resolve a user's 'years' argument (including 'all') into a concrete list
+    Resolve a user's 'years' argument (including keywords) into a concrete list
     of years or None, consistent with the worldpoppy manifest.
 
     Logic:
@@ -854,6 +870,9 @@ def resolve_product_years(product_name, years):
         - Multi-year product: Return all available years (List[int]).
         - Static product w/ year: Return the single year (List[int]).
         - Static product no year: Return None.
+    - If years is 'first' or 'last':
+        - Return the earliest or latest available year as a single-item list.
+        - Raises ValueError if the product has no year dimension.
     - If years is None: Return None.
 
     Parameters
@@ -861,7 +880,7 @@ def resolve_product_years(product_name, years):
     product_name : str
         The exact name of the WorldPop product.
     years : int, List[int], str or None
-        The years argument to resolve.
+        The years argument to resolve. Supports 'all', 'first', 'last'.
 
     Returns
     -------
@@ -873,27 +892,44 @@ def resolve_product_years(product_name, years):
         return None
 
     # Handle explicit lists/ints immediately
-    if years != 'all':
+    if isinstance(years, (int, list, tuple)):
         if isinstance(years, int):
             return [years]
-        if isinstance(years, (list, tuple)):
-            return list(years)
-        # Fallback for unexpected input types, pass through for downstream validation
-        return years
+        return list(years)
 
-    # Handle 'all' strategy
-    # Re-use existing internal helper to get truth from manifest
-    info = get_product_info(product_name)
-    available_years, available_isos = info['years'], info['iso3_codes']
+    # Handle string keywords ('all', 'first', 'last')
+    if isinstance(years, str):
+        # Re-use existing internal helper to get truth from manifest
+        info = get_product_info(product_name)
+        available_years = info['years']
 
-    # Case: Static, No Year (available_years is empty set)
-    # e.g., 'pxl_area'. 'all' resolves to None (the static dataset itself).
-    if not available_years:
-        return None
+        # Case: Static, No Year (available_years is empty set)
+        # e.g., 'pxl_area'. 'all' resolves to None (the static dataset itself).
+        if not available_years:
+            if years == 'all':
+                return None
+            else:
+                # 'first'/'last' is invalid for yearless products
+                raise ValueError(
+                    f"Product '{product_name}' is not linked to any year. "
+                    f"Cannot resolve keyword '{years}'."
+                )
 
-    # Case: Multi-year OR Static-with-Year (e.g., 'pop_g1' or 'srtm_topo')
-    # We return all available years as a sorted list.
-    return sorted(list(available_years))
+        # Sort years for deterministic selection
+        sorted_years = sorted(list(available_years))
+
+        # Case: Multi-year OR Static-with-Year (e.g., 'pop_g1' or 'srtm_topo')
+        if years == 'all':
+            return sorted_years
+        elif years == 'first':
+            return [sorted_years[0]]
+        elif years == 'last':
+            return [sorted_years[-1]]
+        else:
+            raise ValueError(f"years='{years}' is not a valid option.")
+
+    # Fallback for unexpected input types, pass through for downstream validation
+    return years
 
 
 def _build_final_notes_map(mdf):
