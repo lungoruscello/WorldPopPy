@@ -11,7 +11,7 @@ Note:
     for `worldpoppy`'s memory management. Since the WorldPop project stores data by
     country, you MUST download the full ~2GB elevation raster for Russia. Once this
     data is downloaded, however, `worldpoppy` will only load a small slice of it
-    into RAM.
+    into RAM given the relatively small AoI.
 """
 
 import geopandas
@@ -30,19 +30,13 @@ print("If a cached file does not exist, it will be downloaded.")
 aoi_gdf = geopandas.read_feather(ASSET_DIR / 'southern_kamchatka.feather')
 
 # --- Fetch Data ---
-# The downloader will fetch the full Russia dataset (~2GB) because this is
-# how raster files are stored on the server. However, `wp_raster` detects
-# that your AoI is small. It will:
-#   a) Download the full file to disk (if not cached).
-#   b) Open it lazily.
-#   c) Ignore all raster pixels located outside a slightly buffered bounding
+# The downloader must fetch the full Russia dataset because this is how
+# raster files are stored server-side. However, when loading the data,
+# `wp_raster` detects that your AoI is small. It will then:
+#   1) Open the raster lazily.
+#   2) Discard all raster pixels located outside a slightly buffered bounding
 #      box surrounding your AoI.
-# Result: Your RAM usage should stay low, although the source file is huge.
-#
-# This optimisation draws on the `clip_box` function from `rioxarray`.
-# It is used whenever the AoI is specified using a GeoDataFrame or
-# bounding box, but can be suppressed with `suppress_pre_clip=True`.
-#
+#  ->  Result: RAM usage stays low, although the source file is huge.
 kam_topo = wp_raster(
     product_name='srtm_elevation_g1',
     aoi=aoi_gdf,
@@ -58,27 +52,33 @@ utm_57n = "EPSG:32657"
 kam_topo_warped = wp_warp(
     kam_topo,
     to_crs=utm_57n,
-    res=500,  # target resolution in units of 'to_crs' (here: metres)
+    res=500,  # Target resolution in units of 'to_crs' (here: metres)
     resampling='mean'
 )
 print(f"Warped shape: {kam_topo_warped.shape}")
 
 # --- Plot ---
+# Make a standard canvas for the "repo gallery".
+fig, ax = plt.subplots(figsize=(6, 6), layout='compressed')
+
+# We disable the colorbar only to save space in the gallery
 kam_topo_warped.plot(
-    cmap='gist_earth',
+    cmap='gist_earth', ax=ax,
     vmin=0, vmax=2_000, alpha=0.95,
-    # The colorbar *is* informative, but we need to save space in the 2x2 "repo gallery"
     add_colorbar=False
 )
 
 # Annotate
-location = (160.642, 56.057, 'Klyuchevskoy Volcano')
+locations = [
+    (160.642, 56.057, 'Klyuchevskoy Volcano'),
+    (158.633, 53.042, 'Petropavlovsk-Kamch.'),
+    ]
 plot_location_markers(
-    location,
+    locations,
     xytext=(-90, 15),
     to_crs=utm_57n,
-    color='white',  # Fill colour for the scatter point (also used as default text colour)
-    s=10,  # Size of scatter point
+    color='white',      # Fill colour for the scatter point (also: the default text colour)
+    s=10,               # Size of scatter point
     edgecolors='black', # Border colour for scatter point
     other_annotate_kwargs=dict(  # Additional text options for "pro" look
         weight="bold",
@@ -88,7 +88,7 @@ plot_location_markers(
 )
 
 # Clean plot
-clean_axis(title='Topography of Southern Kamchatka')
+clean_axis(title='The Topography of Southern Kamchatka', fontweight='bold')
 
 if __name__ == "__main__":
     plt.show()

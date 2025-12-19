@@ -9,8 +9,7 @@ from matplotlib.colors import LogNorm
 
 from worldpoppy import wp_raster, wp_warp, clean_axis, plot_country_borders
 
-# 1. Fetch & Merge Data
-# Iconic example: night lights on the Korean Peninsula
+# 1. Fetch & Merge Data: Night lights on the Korean Peninsula
 ntl_data = wp_raster(
     product_name="ntl_viirs_g2",  # Night lights from "Global 2" series
     aoi=["PRK", "KOR"],
@@ -30,10 +29,16 @@ ntl_data_warped = wp_warp(
 )
 
 # 3. Plot (Log-scale)
+# Make a standard canvas for the "repo gallery".
+fig, ax = plt.subplots(figsize=(6, 6), layout='compressed')
+
 # We add a small constant (+0.1) rather than +1 to better preserve some of
 # the order-of-magnitude differences between the dark North and bright South.
-(ntl_data_warped + 0.1).plot(cmap="inferno", norm=LogNorm(), add_colorbar=False)
-clean_axis(title="Night Lights,\nKorean Peninsula (2023)")
+(ntl_data_warped + 0.1).plot(
+    cmap="inferno", ax=ax,
+    norm=LogNorm(), add_colorbar=False
+)
+clean_axis(title="Korean Peninsula:\nNight Lights (2023)", fontweight='bold')
 
 if __name__ == "__main__":
     plt.show()

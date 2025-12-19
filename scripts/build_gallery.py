@@ -8,8 +8,8 @@ GALLERY_MAP = {
     "examples/quickstart/02_sihanoukville_lights.py": "gallery/quick02_sihanoukville.png",
     "examples/quickstart/03_korea_lights.py":         "gallery/quick03_korea.png",
     "examples/quickstart/04_west_africa_growth.py":   "gallery/quick04_west_africa.png",
-    "examples/large_rasters/01_kamchatka_topo_eager.py":       "gallery/large01_kamchatka.png",
-    "examples/large_rasters/02_chile_argentina_roads_dask.py": "gallery/large02_chile_dask.png",  # Memory intensive
+    "examples/large_rasters/01_kamchatka_topo_eager.py":  "gallery/large01_kamchatka.png",
+    "examples/large_rasters/02-chile_weather_dask.py":    "gallery/large02_chile_dask.png",
 }
 
 
@@ -57,11 +57,12 @@ def build_gallery():
         # Check if a figure actually exists (handle scripts that might fail silently)
         if plt.get_fignums():
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            fig.savefig(output_path, dpi=300, bbox_inches='tight')
+            fig.savefig(output_path, dpi=300)
             print(f"   ✅ Saved to {img_name}")
             plt.close('all')
         else:
             print(f"   ⚠️ No figure produced by {script_path.name}")
+
 
 if __name__ == "__main__":
     build_gallery()

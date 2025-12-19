@@ -21,12 +21,25 @@ ntl_data = wp_raster(
 # 2. Plot: Side-by-side comparison
 # We use Xarray's built-in plotting to create a facet grid by year.
 p = (ntl_data + 1).plot(
-    col="year", cmap="inferno", vmax=50,
-    norm=LogNorm(), figsize=(8, 4),
+    col="year",
+    cmap="inferno",
+    vmax=50,
+    norm=LogNorm(),
+    figsize=(10, 5),
     add_colorbar=False  # Remove since raw radiance units are rarely intuitive
 )
 
-plt.suptitle('Night-light Growth in Sihanoukville', fontsize=12, y=1.03)
+# Make space for a "super" title
+p.fig.subplots_adjust(top=0.875)
+
+# Add the title in the resulting gap
+p.fig.suptitle(
+    'Night-light Growth in Sihanoukville',
+    fontsize=12,
+    fontweight='bold',
+)
+
+
 for ax in p.axs.flat:
     clean_axis(ax)
 
