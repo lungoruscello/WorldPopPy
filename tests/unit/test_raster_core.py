@@ -229,7 +229,7 @@ def test_merge_raises_incompatible_error(
 
     # --- Act & Assert ---
     with pytest.raises(IncompatibleRasterError) as exc:
-        merge_rasters([path_ref, path_bad])
+        merge_rasters([path_ref, path_bad], masked=False, mask_and_scale=False)
 
     # Ensure the error message specifically identifies WHICH attribute failed
     assert f"Input rasters do not share the same {error_substring}" in str(exc.value)
