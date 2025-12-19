@@ -9,7 +9,7 @@ from matplotlib.colors import LogNorm
 
 from worldpoppy import wp_raster, wp_warp, clean_axes
 
-# 1. Fetch & Merge Data: Night lights on the Korean Peninsula
+# 1. Fetch & Merge Data
 ntl_data = wp_raster(
     product_name="ntl_viirs_g2",  # Night lights from "Global 2" series
     aoi=["PRK", "KOR"],

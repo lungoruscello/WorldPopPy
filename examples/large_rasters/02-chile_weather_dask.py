@@ -5,21 +5,19 @@ Illustrates:
 1. Explicit, manual pre-clipping of large country rasters when the AoI
    is specified using **country codes**.
 2. Using Dask (`chunks='auto'`) to lazy-load raster data.
-3. Pre-coarsening raster data before further processing-
+3. Pre-coarsening raster data before further processing.
 4. Managing the degree of parallelism, and thus the peak memory load,
    by explicitly setting the number of Dask workers.
 
 Note:
     Specifying the Area of Interest (AoI) using a country code can lead to
     issues when a country's territory includes remote outlying islands.
-    This is the case for Chile, which enjoys sovereignty over Rapa Nui
-    (Easter Island), which lies thousands of kilometres from the Chilean
-    "mainland". WorldPop rasters for Chile are therefore very large and
-    cover extensive areas in the South Pacific that will not be of interest
-    in a typical analysis. To handle such cases, `wp_raster` provides
-    the `pre_clip_bbox` argument by which users can force explicit, lazy
-    pre-clipping of a country raster. We illustrate this below using
-    data on average temperature and precipitation for Chile.
+    For instance, Chile includes Rapa Nui (Easter Island), resulting in
+    WorldPop rasters that span thousands of kilometres of empty ocean.
+    To address this issue, `wp_raster` provides the `pre_clip_bbox`
+    argument. This forces a lazy pre-clip of the source raster to a
+    specific region (e.g., the Chilean mainland), avoiding the processing
+    of irrelevant data.
 """
 
 import matplotlib.colors as mcolors

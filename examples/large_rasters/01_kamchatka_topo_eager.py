@@ -11,7 +11,7 @@ Note:
     for `worldpoppy`'s memory management. Since the WorldPop project stores data by
     country, you MUST download the full ~2GB elevation raster for Russia. Once this
     data is downloaded, however, `worldpoppy` will only load a small slice of it
-    into RAM given the relatively small AoI.
+    into RAM (based on the specified AoI).
 """
 
 import geopandas
@@ -57,7 +57,7 @@ print(f"Warped shape: {kam_topo_warped.shape}")
 # Make a standard canvas for the "repo gallery".
 fig, ax = plt.subplots(figsize=(6, 6), layout='compressed')
 
-# We disable the colorbar only to save space in the gallery
+# We disable the colorbar merely to save space in the gallery
 kam_topo_warped.plot(
     cmap='gist_earth', ax=ax,
     vmin=0, vmax=2_000, alpha=0.95,
