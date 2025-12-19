@@ -115,11 +115,6 @@ mdf.head()
 
 * **Examples:** See the [`examples/`](./examples/) folder in this repository.
 
-## Acknowledgements
-
-**WorldPopPy** is inspired by the World Bank's [BlackMarblePy](https://github.com/worldbank/blackmarblepy/tree/main) package, which provided the blueprint for the  
-download module used in this library and informed the API design.
-
 ## Example Gallery
 
 <table>
@@ -153,6 +148,9 @@ download module used in this library and informed the API design.
       </p>
     </td>
   </tr>
+</table>
+
+<table>
   <tr>
     <td width="50%" valign="top">
       <h3 align="center">3. Automatic Memory Optimisation</h3>
@@ -184,6 +182,11 @@ download module used in this library and informed the API design.
     </td>
   </tr>
 </table>
+
+## Acknowledgements
+
+**WorldPopPy** is inspired by the World Bank's [BlackMarblePy](https://github.com/worldbank/blackmarblepy/tree/main) package, which provided the blueprint for the  
+download module used in this library and informed the API design.
 
 ## Licence
 
