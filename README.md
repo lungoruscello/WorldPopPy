@@ -1,6 +1,6 @@
 # WorldPopPy <img src="worldpoppy/assets/icon.png" alt="WorldPopPy icon" width="60" height="60"/>
 
-*A Python package for downloading and pre-processing WorldPop raster data for any region on earth*
+*A Python client for downloading, merging, and processing WorldPop raster data.*
 
 <!-- 
 Keywords: WorldPop Python package, download and combine WorldPop datasets, global raster data, population rasters, land cover rasters, night lights imagery, Python GIS toolkit
@@ -9,224 +9,184 @@ Keywords: WorldPop Python package, download and combine WorldPop datasets, globa
 [![PyPI Latest Release](https://img.shields.io/pypi/v/WorldPopPy.svg)](https://pypi.org/project/WorldPopPy/)
 [![License](https://img.shields.io/badge/license-MPL_2.0-green.svg)](https://github.com/lungoruscello/WorldPopPy/blob/master/LICENSE.txt)
 
-**WorldPopPy** is a Python package that helps you work with geospatial data from the [WorldPop project](https://www.worldpop.org/).
-WorldPop offers [global, gridded geo-datasets](https://www.worldpop.org/datacatalog/) on population dynamics, land-cover features, night-light emissions, 
-and several other attributes of human and natural geography. This package streamlines the process of downloading, combining, 
-and cleaning WorldPop data for different geographic regions and years.
+**WorldPopPy** provides a programmatic interface to the [WorldPop](https://www.worldpop.org/) open data archive.
+
+WorldPop provides global, gridded datasets on population dynamics, night-light emissions, land cover, and much more. 
+These datasets are typically distributed as individual files per country. **WorldPopPy** abstracts the process of
+data discovery, retrieval, and preprocessing. Users query data by Area of Interest (AOI). The library automatically 
+identifies the necessary country rasters, downloads them, and merges them into a unified dataset.
+
+(See the [Example Gallery](#example-gallery) below for a visual overview of the library's capabilities).
 
 ## Key Features
 
-* Fetch data for any region on earth by passing GeoDataFrames, country codes, or bounding boxes.
-* Easy handling of annual time-series through integration with [`xarray`](https://docs.xarray.dev/en/stable/).
-* Parallel data downloads with retry mechanism and ability to preview estimated download sizes (dry run).
-* Auto-updating manifest file so you stay up-to-date with WorldPop’s latest available datasets.
+* Fetch data for any region by passing GeoDataFrames, country codes, or geographic bounding boxes.
+* Easy handling of raster time-series through integration with [`xarray`](https://docs.xarray.dev/en/stable/).
+* Parallel data downloads with automatic retries, local caching, and dry-run logic.
+* Optimisations to handle large country rasters, including automatic spatial subsetting and optional lazy loading with Dask.
+* Searchable data manifest, allowing you to quickly find WorldPop products of interest.
 
 ## Installation
 
-**WorldPopPy** is available on [PyPI](https://pypi.org/project/WorldPopPy/) and can be
-installed using `pip`:
-
-`pip install worldpoppy`
-
-## Documentation
-
-- Stable: https://worldpoppy.readthedocs.io/en/stable/
-- Latest: https://worldpoppy.readthedocs.io/en/latest/
-
+```bash
+pip install worldpoppy
+```
 
 ## Quickstart
+### Example 1: Merging raster data for several countries 
 
 ```python
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
-from worldpoppy import wp_raster, clean_axis
+from worldpoppy import wp_raster, clean_axes, plot_country_borders
 
-# Fetch night-light data for the Korean Peninsula.
-# Data is returned as an `xarray.DataArray` ready for analysis and plotting
-viirs_data = wp_raster(
-    product_name='viirs_100m',  # name of WorldPop's night-light product
-    aoi=['PRK', 'KOR'],  # three-letter country codes for North and South Korea  
-    years=2015,
-    masked=True,  # mask missing values with NaN (instead of WorldPop's default fill value),
-)  
+# Fetch & Merge Population Rasters
+# Data is returned as xarray.DataArray ready for analysis and plotting.
+countries = ['THA', 'KHM', 'LAO', 'VNM']
+pop_data = wp_raster(
+    product_name='pop_g2_1km_r25a',  # Low-res. pop. estimates (Global 2 series)
+    aoi=countries, years=2024
+)
 
-# Downsample the data to speed-up plotting
-lowres = viirs_data.coarsen(x=5, y=5, boundary='trim').mean()
+# Plot (Log-scale) 
+# We use fillna(0) to represent areas without population and +1 to avoid log(0).
+(pop_data.fillna(0) + 1).plot(norm=LogNorm(), cmap='inferno', size=6)
 
-# Plot
-lowres.plot(vmin=0.1, cmap='inferno', norm=LogNorm())
-clean_axis(title='Night Lights (2015)\nKorean Peninsula')
-
+plot_country_borders(countries, edgecolor='white', linewidth=0.5)
+clean_axes(title=f"Lower Mekong Region (2024):\n{pop_data.sum() / 1e6:.1f}M People")
 plt.show()
 ```
+<img src="worldpoppy/assets/gallery/quick01_mekong_pop.png" alt="Population in the Lower Mekong Region, 2024" width="225"/> 
 
-<img src="worldpoppy/assets/korea_viirs.png" alt="Night light emissions in Korean Peninsula, 2015" width="280"/> 
-
-## More detailed example
-
-Below, we visualise **population growth** in a patch of West Africa from 2000 to 2020. The geographic area of interest 
-is selected with a helper function that can convert a location name into a bounding box. The example below also shows
-you how to re-project WorldPop data into a different Coordinate Reference System (CRS).
+### Example 2: Built-in Support for Time-series
 
 ```python
 import matplotlib.pyplot as plt
-import numpy as np
+from matplotlib.colors import LogNorm
 
-from worldpoppy import *
+from worldpoppy import wp_raster, bbox_from_location, clean_axes
 
-# Define the area of interest 
-# Note: `bbox_from_location` runs a `Nominatim` query under the hood 
-aoi_box = bbox_from_location('Accra', width_km=500)  # returns (min_lon, min_lat, max_lon, max_lat)
-
-# Define the target CRS (optional)
-aeqa_africa = "ESRI:102022"  # an Albers Equal Area projection optimised for Africa
-
-# Fetch the population data
-pop_data = wp_raster(
-    product_name='ppp',  # name of the WorldPop product (here: # of people per raster cell)
-    aoi=aoi_box,  # you could also pass a GeoDataFrame or official country codes
-    years=[2000, 2020],  # the years of interest (for annual WorldPop products only)
-    masked=True,  # mask missing values with NaN (instead of WorldPop's default fill value)
-    to_crs=aeqa_africa  # if None is provided, CRS of the source data will be kept (EPSG:4326)
+# Fetch Two Years of Night-light Data for Sihanoukville
+ntl_data = wp_raster(
+    product_name="ntl_viirs_g2",
+    aoi=bbox_from_location("Preah Sihanouk", width_km=100),
+    years=[2015, 2023],  # Stacked along "year" dimension of DataArray 
 )
 
-# Compute population changes on downsampled data
-lowres = pop_data.coarsen(x=10, y=10, year=1, boundary='trim').reduce(np.sum)  # will propagate NaNs
-pop_change = lowres.sel(year=2020) - lowres.sel(year=2000)
+# Plot: Xarray can create a facet grid by year
+p = (ntl_data + 1).plot(
+    col="year", figsize=(10, 5),
+    cmap="inferno", vmax=50, norm=LogNorm(),
+    add_colorbar=False  # Remove since radiance units are not intuitive
+)
 
-# Plot
-pop_change.plot(cmap='coolwarm', vmax=1_000, cbar_kwargs=dict(shrink=0.85))
-clean_axis(title='Estimated population change (2000 to 2020)', remove_xy_ticks=True)
-
-# Add visual references
-plot_country_borders(['GHA', 'TOG', 'BEN'], edgecolor='white', to_crs=aeqa_africa)
-plot_location_markers(['Accra', 'Kumasi', 'Lomé'], to_crs=aeqa_africa)
-
-plt.show()
+p.fig.suptitle('Night-light Growth in Sihanoukville', fontsize=12, fontweight='bold')
+p.fig.subplots_adjust(top=0.875)
+clean_axes(p)
 ```
+<img src="worldpoppy/assets/gallery/quick02_sihanoukville.png" alt="Night lights in Sihanoukville, 2015-2023" width="500"/>
 
-<img src="worldpoppy/assets/accra_pop.png" alt="Population change in Accra and Lomé region, 2000 to 2020" width="400"/> 
+## Finding Data
 
-## Finding datasets
-
-To explore which types of data you can currently download with the library, you can use the 
-`show_supported_data_products` function. That function accepts the `keyword`, `iso3_codes`, `years`, and
-`static_only` arguments as optional filters.  
-
-For instance, the call below will print a list of all supported data products that mention the keyphrase "number of people"
-in either the product name or product description _and_ are available (for at least one country) for the year 2020:
+Use `show_supported_data_products` to get a quick overview of what is supported by **WorldPopPy**:
 
 ```python
 from worldpoppy import show_supported_data_products
 
-show_supported_data_products(keyword='number of people', years=[2020])
-```
+# Print data products related to "population" from the Global 2 series 
+show_supported_data_products(keywords=["population", "global2"])
 
-With the `static_only` argument, you can focus only on supported WorldPop datasets that are static (instead of updated
-in annual increments):
+# Print static (single-year) data products available for Brazil
+show_supported_data_products(static_only=True, iso3_codes="BRA")
+``` 
 
-```python
-from worldpoppy import show_supported_data_products
+Alternatively, you can also get the library's full data manifest as a pandas DataFrame:
 
-show_supported_data_products(static_only=True)
-```
-
-
-## Further details
-
-### Data dimensions
-
-Calling [`wp_raster()`](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/raster.py#L70) will always 
-return an **`xarray.DataArray`**. The array dimensions, however, depend on the user query. If you request data for more 
-than one year, the returned array will include a *year* dimension in addition to the raster data's two spatial dimensions 
-(*x* and *y*). By contrast, the *year* dimension will be omitted if you request data for a single year only, or if the 
-WorldPop product in question is static anyway (e.g., when requesting [elevation data](https://github.com/lungoruscello/WorldPopPy/blob/master/examples/example5.py)). 
-
-### Managing the local cache
-
-By default, downloaded source data from WorldPop will be cached on disk for re-use. To disable caching, set `cache_downloads=False` 
-when calling `wp_raster()`. The default cache directory (which depends on your platform) can be changed by pointing the 
-`WORLDPOPPY_CACHE_DIR` environment variable to the desired location, as shown [here](https://github.com/lungoruscello/WorldPopPy/blob/master/examples/example4.py).
-
-Use the following function to delete all cached data or simply check the local cache size:
-
-```python
-from worldpoppy import purge_cache
-
-purge_cache(dry_run=True)
-# dry run will only print a cache summary and not delete any files
-```
-
-### Download dry runs
-
-Before you request data for large geographic areas and/or many years, you may want to check download requirements first. 
-Setting `download_dry_run=True` will check download requirements and print a summary: 
-
-```python
-from worldpoppy import wp_raster
-
-_ = wp_raster(
-    product_name='ppp',
-    aoi='CAN USA MEX'.split(),
-    years='all',  # query all available years for the specified product 
-    download_dry_run=True  # do not actually download anything and merely print a summary  
-)
-# Note that `wp_raster` will return `None` in this case
-```
-
-
-### Selecting data with a GeoDataFrame
-
-... is straightforward, as shown in [this example](https://github.com/lungoruscello/WorldPopPy/blob/master/examples/example3.py). 
-
-### The WorldPop data manifest
-
-While `show_supported_data_products` (described above) lists unique **data products** (e.g., `ppp` for population counts), 
-the [`wp_manifest`](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/manifest.py#L48) function is the underlying tool that gives you the complete list of each individual **raster file** that can be downloaded 
-using this library (e.g., the 2020 population raster for Afghanistan, stored remotely as `afg_ppp_2020.tif`).
-
-`wp_manifest` returns a pandas.DataFrame where each row represents a single raster file. The function accepts some 
-of the same filtering arguments as `show_supported_data_products`. 
-
-    
 ```python
 from worldpoppy import wp_manifest
 
-full_manifest = wp_manifest()  # returns a `pandas.DataFrame`
-full_manifest.head(2)
+mdf = wp_manifest()
+mdf.head()
 ```
+## Documentation
 
-The local manifest file is auto-updated by [comparing it](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/manifest.py#L261) against a remote version hosted on WorldPop servers. 
-If needed, the remote manifest is downloaded and cleaned for local use. Note that the remote WorldPop manifest sometimes 
-lists datasets that are not actually available for download. Requesting such datasets will trigger a [`DownloadError`](https://github.com/lungoruscello/WorldPopPy/blob/master/worldpoppy/download.py#L222). 
+* **API Reference:** https://worldpoppy.readthedocs.io/
 
+* **Examples:** See the [`examples/`](./examples/) folder in this repository.
 
-### Downloads only? 
+## Example Gallery
 
-If you are only interested in asynchronous country-data downloads from WorldPop, without any other functionality, 
-use the `WorldPopDownloader` class:
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3 align="center">1. Visualising Night Lights</h3>
+      <div align="center">
+        <a href="./examples/quickstart/03_korea_lights.py">
+          <img src="worldpoppy/assets/gallery/quick03_korea.png" alt="Korea Night Lights" width="95%"/>
+        </a>
+      </div>
+      <p align="center">
+        <b>The Korean Peninsula.</b><br>
+        Quickly fetching, merging, and reprojecting night-light data for the two Koreas.
+        <br/>
+        <a href="./examples/quickstart/03_korea_lights.py">View Script &rarr;</a>
+      </p>
+    </td>
+    <td width="50%" valign="top">
+      <h3 align="center">2. Analysing Population Growth</h3>
+      <div align="center">
+        <a href="./examples/quickstart/04_west_africa_growth.py">
+          <img src="./worldpoppy/assets/gallery/quick04_west_africa.png" alt="West Africa Growth" width="95%"/>
+        </a>
+      </div>
+      <p align="center">
+        <b>The Abidjan-Lagos Corridor.</b><br>
+        Calculating 10-year population change along the West African coast.
+        <br/>
+        <a href="./examples/quickstart/04_west_africa_growth.py">View Script &rarr;</a>
+      </p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3 align="center">3. Automatic Memory Optimisation</h3>
+      <div align="center">
+        <a href="./examples/large_rasters/01_kamchatka_topo_eager.py">
+          <img src="./worldpoppy/assets/gallery/large01_kamchatka.png" alt="Kamchatka Topo" width="95%"/>
+        </a>
+      </div>
+      <p align="center">
+        <b>Southern Kamchatka.</b><br>
+        Handling massive source rasters (2GB+) efficiently via automatic spatial subsetting.
+        <br/>
+        <a href="./examples/large_rasters/01_kamchatka_topo_eager.py">View Script &rarr;</a>
+      </p>
+    </td>
+    <td width="50%" valign="top">
+      <h3 align="center">4. Manual Memory Optimisation</h3>
+      <div align="center">
+        <a href="./examples/large_rasters/02-chile_weather_dask.py">
+          <img src="./worldpoppy/assets/gallery/large02_chile_dask.png" alt="Chile Weather" width="95%"/>
+        </a>
+      </div>
+      <p align="center">
+        <b>Climatic Zones of Chile.</b><br>
+        Easy clipping of irregular country geometries and lazy-loading with Dask.
+        <br/>
+        <a href="./examples/large_rasters/02-chile_weather_dask.py">View Script &rarr;</a>
+      </p>
+    </td>
+  </tr>
+</table>
 
-```python
-from worldpoppy import WorldPopDownloader
-
-raster_fpaths = WorldPopDownloader().download(
-    product_name='srtm_slope_100m',  # topographic slope
-    iso3_codes=['LIE'],  # Liechtenstein
-)
-```
 
 ## Acknowledgements
 
-The implementation of **WorldPopPy** draws on the World Bank's [BlackMarblePy](https://github.com/worldbank/blackmarblepy/tree/main) 
-package, which gives users easy access to night-light data from NASA's Black Marble project.
-
-## Feedback
-
-If you would like to give feedback, encounter issues, or want to suggest improvements, please [open an issue](https://github.com/lungoruscello/WorldPopPy/issues).
-Since this package is developed and tested on Linux, issues encountered on other platforms may take longer to address.
+**WorldPopPy** is inspired by the World Bank's [BlackMarblePy](https://github.com/worldbank/blackmarblepy/tree/main) package, which provided the blueprint for the  
+download module used in this library and informed the API design.
 
 ## Licence
 
-This projects is licensed under the [Mozilla Public License](https://www.mozilla.org/en-US/MPL/2.0/).
-See [LICENSE.txt](https://github.com/lungoruscello/WorldPopPy/blob/master/LICENSE.txt)  for details.
+This project is licensed under the [Mozilla Public License](https://www.mozilla.org/en-US/MPL/2.0/).
+See [LICENSE.txt](./LICENSE.txt) for details.
