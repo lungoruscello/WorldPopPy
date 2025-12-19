@@ -126,12 +126,13 @@ mdf.head()
           <img src="worldpoppy/assets/gallery/quick03_korea.png" alt="Korea Night Lights" width="95%"/>
         </a>
       </div>
-      <p align="center">
-        <b>The Korean Peninsula.</b><br>
-        Fetch, merge, and reproject night-light data for the two Koreas.
-        <br/>
-        <a href="./examples/quickstart/03_korea_lights.py">View Script &rarr;</a>
-      </p>
+      <br>
+      <div align="center">
+        <b><a href="./examples/quickstart/03_korea_lights.py">The Korean Peninsula</a></b>
+      </div>
+      <div align="left">
+        Quickly fetch, merge, and reproject night-light data for the two Koreas.
+      </div>
     </td>
     <td width="50%" valign="top">
       <h3 align="center">2. Analysing Population Growth</h3>
@@ -140,12 +141,13 @@ mdf.head()
           <img src="./worldpoppy/assets/gallery/quick04_west_africa.png" alt="West Africa Growth" width="95%"/>
         </a>
       </div>
-      <p align="center">
-        <b>The Abidjan-Lagos Corridor.</b><br>
-        Calculate 10-year population change along the West African coast.
-        <br/>
-        <a href="./examples/quickstart/04_west_africa_growth.py">View Script &rarr;</a>
-      </p>
+      <br>
+      <div align="center">
+        <b><a href="./examples/quickstart/04_west_africa_growth.py">The Abidjan-Lagos Corridor</a></b>
+      </div>
+      <div align="left">
+        Visualise 10-year population change along the West African coast.
+      </div>
     </td>
   </tr>
 </table>
@@ -159,12 +161,13 @@ mdf.head()
           <img src="./worldpoppy/assets/gallery/large01_kamchatka.png" alt="Kamchatka Topo" width="95%"/>
         </a>
       </div>
-      <p align="center">
-        <b>Southern Kamchatka.</b><br>
-        Handle massive source rasters (2GB+) efficiently via automatic spatial subsetting.
-        <br/>
-        <a href="./examples/large_rasters/01_kamchatka_topo_eager.py">View Script &rarr;</a>
-      </p>
+      <br>
+      <div align="center">
+        <b><a href="./examples/large_rasters/01_kamchatka_topo_eager.py">Southern Kamchatka</a></b>
+      </div>
+      <div align="left">
+        Handle massive source rasters (2GB+) efficiently via automatic spatial subsetting to the specified Area of Interest.
+      </div>
     </td>
     <td width="50%" valign="top">
       <h3 align="center">4. Manual Memory Optimisation</h3>
@@ -173,12 +176,13 @@ mdf.head()
           <img src="./worldpoppy/assets/gallery/large02_chile_dask.png" alt="Chile Weather" width="95%"/>
         </a>
       </div>
-      <p align="center">
-        <b>Climatic Zones of Chile.</b><br>
+      <br>
+      <div align="center">
+        <b><a href="./examples/large_rasters/02-chile_weather_dask.py">Climatic Zones of Mainland Chile</a></b>
+      </div>
+      <div align="left">
         Clip irregular country geometries and lazy-load data with Dask.
-        <br/>
-        <a href="./examples/large_rasters/02-chile_weather_dask.py">View Script &rarr;</a>
-      </p>
+      </div>
     </td>
   </tr>
 </table>
