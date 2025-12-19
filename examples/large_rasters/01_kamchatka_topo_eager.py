@@ -18,7 +18,7 @@ import geopandas
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 
-from worldpoppy import wp_raster, wp_warp, clean_axis, plot_location_markers, ASSET_DIR
+from worldpoppy import wp_raster, wp_warp, clean_axes, plot_location_markers, ASSET_DIR
 
 # --- WARNING ---
 print("WARNING: This example requires the elevation raster for Russia (~2 GB).")
@@ -88,7 +88,7 @@ plot_location_markers(
 )
 
 # Clean plot
-clean_axis(title='The Topography of Southern Kamchatka', fontweight='bold')
+clean_axes(title='The Topography of Southern Kamchatka', fontweight='bold')
 
 if __name__ == "__main__":
     plt.show()

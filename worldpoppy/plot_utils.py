@@ -2,6 +2,8 @@
 Collection of various plotting utility functions.
 """
 import logging
+
+import numpy as np
 from matplotlib import pyplot as plt
 from pyproj import Transformer
 
@@ -12,7 +14,7 @@ from worldpoppy.manifest_loader import get_all_isos
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "clean_axis",
+    "clean_axes",
     "plot_country_borders",
     "plot_location_markers",
 ]
@@ -217,23 +219,46 @@ def plot_location_markers(
             )
 
 
-def clean_axis(ax=None, title=None, remove_xy_ticks=True, **title_kwargs):
+def clean_axes(ax=None, title=None, remove_xy_ticks=True, **title_kwargs):
     """
-    Clean up a matplotlib axis by setting equal aspect and removing labels.
+    Clean up matplotlib axes by setting equal aspect and removing labels.
+
+    This function is polymorphic: it accepts a single Axes object, a list
+    of Axes, a numpy array of Axes, or an xarray FacetGrid.
 
     Parameters
     ----------
-    ax : matplotlib.axes.Axes, optional
-        Axis to clean. Defaults to current axis.
+    ax : matplotlib.axes.Axes, array-like, or FacetGrid, optional
+        The axis or collection of axes to clean. If None, uses current axis.
     title : str, optional
-        Title to set on the axis.
+        Title to set. If 'ax' is a collection, this sets the title for the
+        first axis only (often effectively titling the figure), to avoid
+        repeating the title on every subplot.
     remove_xy_ticks : bool, optional, default=True
-        If True, remove both x and y ticks on the axis.
+        If True, remove both x and y ticks.
     **title_kwargs :
-        Additional keyword arguments passed to ax.set_title() (e.g., fontsize, loc, color).
+        Additional keyword arguments passed to set_title.
     """
-    ax = plt.gca() if ax is None else ax
+    # Handle None (default to current axis)
+    if ax is None:
+        ax = plt.gca()
 
+    # Handle xarray FacetGrids (extract the underlying array of axes)
+    if hasattr(ax, "axes"):
+        ax = ax.axes
+
+    # Handle Collections (Lists, Numpy Arrays of Axes)
+    # We check if it is iterable but NOT a single Axes object
+    if hasattr(ax, '__iter__') and not isinstance(ax, plt.Axes):
+        # Flatten if it's a numpy array to handle 2D grids easily
+        axes_list = ax.flatten() if isinstance(ax, np.ndarray) else ax
+
+        for sub_ax in axes_list:
+            # Recursive call with title=None to avoid repeating the title
+            clean_axes(sub_ax, title=None, remove_xy_ticks=remove_xy_ticks)
+        return
+
+    # Handle Single Axis (The actual logic)
     if title is not None:
         ax.set_title(title, **title_kwargs)
 

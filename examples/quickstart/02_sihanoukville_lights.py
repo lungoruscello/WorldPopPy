@@ -7,7 +7,7 @@ Illustrates the time-series support of `worldpoppy` and Xarray's strong plotting
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
-from worldpoppy import wp_raster, bbox_from_location, clean_axis
+from worldpoppy import wp_raster, bbox_from_location, clean_axes
 
 # 1. Fetch Time-Series: Get night-light data for Sihanoukville (Cambodia)
 # Different years will be stacked along the 'year' dimension of the DataArray.
@@ -31,17 +31,7 @@ p = (ntl_data + 1).plot(
 
 # Make space for a "super" title
 p.fig.subplots_adjust(top=0.875)
-
-# Add the title in the resulting gap
-p.fig.suptitle(
-    'Night-light Growth in Sihanoukville',
-    fontsize=12,
-    fontweight='bold',
-)
-
-
-for ax in p.axs.flat:
-    clean_axis(ax)
+clean_axes(p)
 
 if __name__ == "__main__":
     plt.show()

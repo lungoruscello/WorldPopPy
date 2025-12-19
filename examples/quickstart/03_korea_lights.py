@@ -7,7 +7,7 @@ Simply an iconic example.
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
-from worldpoppy import wp_raster, wp_warp, clean_axis, plot_country_borders
+from worldpoppy import wp_raster, wp_warp, clean_axes
 
 # 1. Fetch & Merge Data: Night lights on the Korean Peninsula
 ntl_data = wp_raster(
@@ -38,7 +38,7 @@ fig, ax = plt.subplots(figsize=(6, 6), layout='compressed')
     cmap="inferno", ax=ax,
     norm=LogNorm(), add_colorbar=False
 )
-clean_axis(title="Korean Peninsula:\nNight Lights (2023)", fontweight='bold')
+clean_axes(title="Korean Peninsula:\nNight Lights (2023)", fontweight='bold')
 
 if __name__ == "__main__":
     plt.show()

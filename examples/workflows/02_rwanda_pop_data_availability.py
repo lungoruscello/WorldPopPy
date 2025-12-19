@@ -91,7 +91,7 @@ for i, (name, year) in enumerate(tqdm(products_to_plot, leave=False)):
         cbar_kwargs={'label': 'Population count'}
     )
 
-    clean_axis(ax, title=f"{name}\n({year})")
+    clean_axes(ax, title=f"{name}\n({year})")
     plot_country_borders(aoi, ax=ax, linewidth=0.75)
 
 # Hide any unused subplots (if products don't fill the last row)

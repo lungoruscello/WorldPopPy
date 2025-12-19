@@ -31,7 +31,7 @@ from worldpoppy import (
     wp_warp,
     get_max_concurrency,
     plot_country_borders,
-    clean_axis
+    clean_axes
 )
 
 # --- Constants ---
@@ -142,7 +142,7 @@ def make_plot():
 
         # B. Add country borders & clean up
         plot_country_borders('CHL', ax, UTM_19S, linewidth=0.3, edgecolor='black', alpha=0.6)
-        clean_axis(title=title, ax=ax, fontsize=10)
+        clean_axes(title=title, ax=ax, fontsize=10)
 
     return fig
 

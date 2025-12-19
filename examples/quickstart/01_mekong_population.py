@@ -7,7 +7,7 @@ Illustrates the ease of data fetching and merging with `worldpoppy`.
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
-from worldpoppy import wp_raster, clean_axis, plot_country_borders
+from worldpoppy import wp_raster, clean_axes, plot_country_borders
 
 # 1. Fetch & Merge Population Data
 # `wp_raster` returns an xarray.DataArray ready for plotting.
@@ -23,9 +23,7 @@ pop_data = wp_raster(
 
 # Add borders & clean up
 plot_country_borders(countries, edgecolor='white', linewidth=0.5)
-clean_axis(
-    title=f"Lower Mekong Region (2024):\n {pop_data.sum() / 1e6:.1f} Million People",
-)
+clean_axes(title=f"Lower Mekong Region (2024):\n{pop_data.sum() / 1e6:.1f}M People")
 
 if __name__ == "__main__":
     plt.show()

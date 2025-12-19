@@ -39,7 +39,7 @@ pop_change.plot(
     cmap='coolwarm', ax=ax,
     vmax=2_000, add_colorbar=False,
 )
-clean_axis(
+clean_axes(
     title="The Abidjan-Lagos Corridor:\nPopulation Boom (2015-2024)",
     fontweight='bold'
 )
