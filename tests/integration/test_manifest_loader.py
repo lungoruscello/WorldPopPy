@@ -146,3 +146,41 @@ def test_wp_manifest_constrained_raises():
     # Case 4: Valid Multi-Year product requested for an unavailable year
     with pytest.raises(ValueError, match="not available for all requested years"):
         wp_manifest_constrained('pop_g1', iso3_codes='CHE', years=1800)
+
+
+@pytest.mark.integration
+@needs_raw_manifest
+def test_manifest_years_keywords_integration():
+    """
+    Verify that 'first', 'last', and 'all' keywords work as expected.
+    """
+    from worldpoppy.manifest_loader import wp_manifest_constrained, get_product_info
+
+    # --- 1. Test on a Multi-Year Product ---
+    product = 'pop_g1'
+
+    # Get ground truth
+    available_years = get_product_info(product)['years']
+    min_year = min(available_years)
+    max_year = max(available_years)
+
+    # Query with 'all'
+    df_all = wp_manifest_constrained(product, iso3_codes='VNM', years='all')
+    assert len(df_all) == len(available_years)
+    assert set(df_all['year']) == available_years
+
+    # Query with 'first'
+    df_first = wp_manifest_constrained(product, iso3_codes='VNM', years='first')
+    assert len(df_first) == 1
+    assert df_first.iloc[0]['year'] == min_year
+
+    # Query with 'last'
+    df_last = wp_manifest_constrained(product, iso3_codes='VNM', years='last')
+    assert len(df_last) == 1
+    assert df_last.iloc[0]['year'] == max_year
+
+    # --- 2. Test Error on Static, "Yearless" Product ---
+    static_product = 'admin0'
+
+    with pytest.raises(ValueError, match="not linked to any year"):
+        wp_manifest_constrained(static_product, iso3_codes='VNM', years='first')
