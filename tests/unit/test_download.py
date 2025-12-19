@@ -60,7 +60,7 @@ def test_download_smart_filtering(isolated_raster_cache, mock_wp_manifest_constr
 
 def test_download_skips_pqdm_if_all_cached(isolated_raster_cache, mock_wp_manifest_constrained, monkeypatch):
     """
-    Verifies that if ALL files exist, `pqdm` is not called at all.
+    Verify that if ALL files exist, `pqdm` is not called at all.
     """
     mock_pqdm = MagicMock()
     monkeypatch.setattr("worldpoppy.download.pqdm", mock_pqdm)
@@ -78,7 +78,7 @@ def test_download_skips_pqdm_if_all_cached(isolated_raster_cache, mock_wp_manife
 
 def test_download_dry_run_logic(isolated_raster_cache, mock_wp_manifest_constrained, monkeypatch):
     """
-    Verifies that dry_run=True switches the worker function to
+    Verify that dry_run=True switches the worker function to
     `_get_required_file_download_size` and passes correct args.
     """
     mock_pqdm = MagicMock(return_value=[MagicMock(success=True, value=100)])
@@ -98,7 +98,7 @@ def test_download_dry_run_logic(isolated_raster_cache, mock_wp_manifest_constrai
 
 def test_download_raises_on_worker_failure(isolated_raster_cache, mock_wp_manifest_constrained, monkeypatch):
     """
-    Verifies that if pqdm returns a failure result, the main function
+    Verify that if pqdm returns a failure result, the main function
     raises a specific DownloadError.
     """
     # Mock pqdm returning a failed result object

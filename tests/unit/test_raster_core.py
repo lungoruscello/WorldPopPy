@@ -9,7 +9,7 @@ import xarray as xr
 
 def test_merge_preserves_count(mock_raster_factory):
     """
-    Verifies that merging two spatially adjacent rasters preserves the
+    Verify that merging two spatially adjacent rasters preserves the
     total sum of their values.
     """
     from worldpoppy import merge_rasters
@@ -43,7 +43,7 @@ def test_merge_preserves_count(mock_raster_factory):
 
 def test_warp_preserves_count(mock_raster_factory):
     """
-    Verifies that reprojecting (warping) a raster using 'sum' resampling
+    Verify that reprojecting (warping) a raster using 'sum' resampling
     preserves the total mass.
     """
     from worldpoppy import wp_warp
@@ -83,7 +83,7 @@ def test_warp_preserves_count(mock_raster_factory):
 
 def test_pre_clipping_optimisation(mock_raster_factory, mock_downloader):
     """
-    Verifies that providing `pre_clip_bbox` restricts the resulting array shape
+    Verify that providing `pre_clip_bbox` restricts the resulting array shape
     *immediately* (lazy shape inspection).
 
     Proof of Pre-Clipping:

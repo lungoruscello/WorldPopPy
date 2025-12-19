@@ -73,7 +73,7 @@ def augmented_raw_manifest(tmp_path, monkeypatch):
 @needs_raw_manifest
 def test_warns_on_new_unmapped_dataset(augmented_raw_manifest, caplog):
     """
-    Verifies that warnings are raised when encountering new datasets in
+    Verify that warnings are raised when encountering new datasets in
     the raw manifest file for which config entries are not yet present
     in the product_definitions.toml file.
     """
@@ -118,7 +118,7 @@ def test_warns_on_new_unmapped_dataset(augmented_raw_manifest, caplog):
 @needs_raw_manifest
 def test_wp_manifest_constrained_raises():
     """
-    Verifies that `wp_manifest_constrained` correctly enforces data constraints
+    Verify that `wp_manifest_constrained` correctly enforces data constraints
     and raises descriptive errors for invalid inputs.
     """
     from worldpoppy import  manifest_loader
