@@ -37,11 +37,7 @@ aoi_gdf = geopandas.read_feather(ASSET_DIR / 'southern_kamchatka.feather')
 #   2) Discard all raster pixels located outside a slightly buffered bounding
 #      box surrounding your AoI.
 #  ->  Result: RAM usage stays low, although the source file is huge.
-kam_topo = wp_raster(
-    product_name='srtm_elevation_g1',
-    aoi=aoi_gdf,
-    masked=True,
-)
+kam_topo = wp_raster('srtm_elevation_g1', aoi_gdf)
 print(f"Original shape: {kam_topo.shape}")
 
 # --- Warp ---
@@ -52,8 +48,8 @@ utm_57n = "EPSG:32657"
 kam_topo_warped = wp_warp(
     kam_topo,
     to_crs=utm_57n,
-    res=500,  # Target resolution in units of 'to_crs' (here: metres)
-    resampling='mean'
+    res=500,           # Target resolution in units of 'to_crs' (here: metres)
+    resampling='mean'  # Average the elevation
 )
 print(f"Warped shape: {kam_topo_warped.shape}")
 

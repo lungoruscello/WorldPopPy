@@ -93,15 +93,15 @@ def make_plot():
     product_names = ["temp_mean_g2", "precip_mean_g2"]
     ax_titles = ['Mean Temperature', 'Annual Precipitation']
 
-    # Generate custom colorbars
-    cbar_args = (get_temp_cbar(), get_rain_cbar())
+    # Generate custom colormaps and norms
+    cmap_args = (get_temp_cmap(), get_rain_cmap())
 
     # --- Dask Client Setup ---
     # We explicitly start a Dask Client so we can *manually* control the
     # number of workers. Fewer workers -> lower memory footprint.
     n_workers = min(4, get_max_concurrency())
 
-    # We use a context manager to ensure the client closes cleanly
+    # Using a context manager ensures the client closes cleanly.
     with Client(n_workers=n_workers, threads_per_worker=1) as client:
         print(f"Dask Dashboard active at: {client.dashboard_link}")
 
@@ -117,7 +117,7 @@ def make_plot():
 
             weather_rasters.append(raster)
 
-    # --- Plot Side-by-Side ---
+    # --- Plot Side-by-Side: Temperature & Precipitation ---
     # Make a standard canvas for the "repo gallery".
     fig, axarr = plt.subplots(1, 2, figsize=(6, 6), layout='compressed')
 
@@ -129,7 +129,7 @@ def make_plot():
     # 2. Set the "super" title
     fig.suptitle('Mainland Chile:\nWeather Patterns (2025)', fontsize=12, fontweight='bold')
 
-    zipped = zip(axarr, weather_rasters, ax_titles, cbar_args)
+    zipped = zip(axarr, weather_rasters, ax_titles, cmap_args)
     for ax, raster, title, (cmap, cnorm) in zipped:
         # A. Plot the Weather Raster
         # We disable the colorbar only to save space in the repo gallery
@@ -149,7 +149,7 @@ def make_plot():
 
 # --- Colormap Utilities ---
 
-def get_rain_cbar():
+def get_rain_cmap():
     # Discrete intervals suitable for Chile's extreme range
     levels = [0, 5, 10, 25, 50, 100, 250, 500, 750, 1000, 2000, 4000, 6000]
 
@@ -160,7 +160,7 @@ def get_rain_cbar():
     return cmap, norm
 
 
-def get_temp_cbar():
+def get_temp_cmap():
     # 5-degree intervals covering the full climatic range
     levels = [-10, -5, 0, 5, 10, 15, 20, 25, 30]
 
