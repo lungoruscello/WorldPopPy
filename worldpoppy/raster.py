@@ -88,8 +88,8 @@ def wp_raster(
     pre_clip_bbox=None,
     cache_downloads=True,
     skip_download_if_exists=True,
-    masked=False,
-    mask_and_scale=False,
+    masked=True,
+    mask_and_scale=True,
     other_read_kwargs=None,
     suppress_pre_clip=False,
     download_chunk_size=1024*1024*4,
@@ -164,17 +164,19 @@ def wp_raster(
         Whether to cache downloaded source rasters.
     skip_download_if_exists : bool, optional, default=True
         Whether to skip downloading source rasters that already exist in the local cache.
-    masked: bool, optional, default=False
+    masked: bool, optional, default=True
         If True, read the mask of all input rasters and set masked
         values to NaN. This argument is passed to
         `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
         when reading input rasters.
-    mask_and_scale: bool, default=False
+        Note: The default here is True, unlike in `rioxarray.open_rasterio`.
+    mask_and_scale: bool, default=True
         Lazily scale (using the `scales` and `offsets` from rasterio) all
         input rasters and mask them. If the _Unsigned attribute is present
         treat integer arrays as unsigned. This argument is passed to
         `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
         when reading input rasters.
+        Note: The default here is True, unlike in `rioxarray.open_rasterio`.
     other_read_kwargs : dict, optional
         Dictionary with additional keyword arguments that are passed to
         `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
@@ -507,8 +509,8 @@ def merge_rasters(
     *,
     name=None,
     chunks=None,
-    masked=False,
-    mask_and_scale=False,
+    masked=True,
+    mask_and_scale=True,
     other_read_kwargs=None,
     pre_clip_bbox=None,
     clipping_gdf=None,
@@ -537,17 +539,19 @@ def merge_rasters(
           Equivalent to passing {'x': K, 'y': K}.
         - If dict (e.g., {'x': 1024, 'y': 1024}), that specific chunking is used.
         - If None, data loading with Dask is *disabled*.
-    masked: bool, optional, default=False
+    masked: bool, optional, default=True
         If True, read the mask of all input rasters and set masked
         values to NaN. This argument is passed to
         `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
         when reading input rasters.
-    mask_and_scale: bool, default=False
+        Note: The default here is True, unlike in `rioxarray.open_rasterio`.
+    mask_and_scale: bool, default=True
         Lazily scale (using the `scales` and `offsets` from rasterio) all
         input rasters and mask them. If the _Unsigned attribute is present
         treat integer arrays as unsigned. This argument is passed to
         `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
         when reading input rasters.
+        Note: The default here is True, unlike in `rioxarray.open_rasterio`.
     other_read_kwargs : dict, optional
         Dictionary with additional keyword arguments that are passed to
         `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
