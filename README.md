@@ -57,7 +57,7 @@ plot_country_borders(countries, edgecolor='white', linewidth=0.5)
 clean_axes(title=f"Lower Mekong Region (2024):\n{pop_data.sum() / 1e6:.1f}M People")
 plt.show()
 ```
-<img src="worldpoppy/assets/gallery/quick01_mekong_pop.png" alt="Population in the Lower Mekong Region, 2024" width="250"/> 
+<img src="worldpoppy/assets/gallery/quick01_mekong_pop.png" alt="Population in the Lower Mekong Region, 2024" width="230"/> 
 
 ### Example 2: Built-in Support for Time-series
 
@@ -109,6 +109,16 @@ from worldpoppy import wp_manifest
 mdf = wp_manifest()
 mdf.head()
 ```
+## Documentation
+
+* **API Reference:** https://worldpoppy.readthedocs.io/
+
+* **Examples:** See the [`examples/`](./examples/) folder in this repository.
+
+## Acknowledgements
+
+**WorldPopPy** is inspired by the World Bank's [BlackMarblePy](https://github.com/worldbank/blackmarblepy/tree/main) package, which provided the blueprint for the  
+download module used in this library and informed the API design.
 
 ## Example Gallery
 
@@ -174,17 +184,6 @@ mdf.head()
     </td>
   </tr>
 </table>
-
-## Documentation
-
-* **API Reference:** https://worldpoppy.readthedocs.io/
-
-* **Examples:** See the [`examples/`](./examples/) folder in this repository.
-
-## Acknowledgements
-
-**WorldPopPy** is inspired by the World Bank's [BlackMarblePy](https://github.com/worldbank/blackmarblepy/tree/main) package, which provided the blueprint for the  
-download module used in this library and informed the API design.
 
 ## Licence
 
