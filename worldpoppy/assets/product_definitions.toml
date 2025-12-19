@@ -4,9 +4,9 @@
     # ********************
     # --- Population ---
     "wpgp" = "pop_g1" # main global 1 series
-    "wpgpunadj" = "pop_g1_unadj" # global 1 series with country totals adjusted to match UNDP estimates
+    "wpgpunadj" = "pop_g1_unadj" # global 1 series with country totals adjusted to match UN estimates
     "cic2020_100m" = "pop_g1_alt"  # alternative data for 2020 only
-    "cic2020_UNadj_100m" = "pop_g1_alt_unadj"  # variant of the above with UNDP-adjusted country totals
+    "cic2020_UNadj_100m" = "pop_g1_alt_unadj"  # variant of the above with UN-adjusted country totals
     # --- Infrastructure & Built Environment ---
     "cdistosmroads" = "dist_roads_g1"
     "cdistosmroadinter" = "dist_road_intersections_g1"
@@ -139,12 +139,12 @@
     # --- Population data ---
     "wpgp" = "Estimated total number of people per grid-cell (unconstrained)"
     "wpgpunadj" = """Estimated total number of people per grid-cell (unconstrained), with
-                     country totals adjusted to match the corresponding UNDP estimate."""
+                     country totals adjusted to match the corresponding UN estimate."""
     "cic2020_100m" = """Estimated total number of people per grid-cell in 2000. 'NoData' values
                      represent areas that were mapped as unsettled based on building footprints
                      provided by the Digitize Africa project of Ecopia.AI and Maxar Technologies (2020)."""
     "cic2020_UNadj_100m" = """Estimated total number of people per grid-cell in 2000, with country
-                           totals adjusted to match the corresponding UNDP estimate. 'NoData' values
+                           totals adjusted to match the corresponding UN estimate. 'NoData' values
                            represent areas that were mapped as unsettled based on building footprints
                            provided by the Digitize Africa project of Ecopia.AI and Maxar Technologies (2020)"""
     "G2_CN_POP_R24B_100m" = "Estimated total number of people per grid-cell. 2024 beta release (R2024B)."
