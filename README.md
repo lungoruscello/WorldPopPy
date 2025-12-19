@@ -22,9 +22,9 @@ identifies the necessary country rasters, downloads them, and merges them into a
 
 * Fetch data for any region by passing GeoDataFrames, country codes, or geographic bounding boxes.
 * Easy handling of raster time-series through integration with [`xarray`](https://docs.xarray.dev/en/stable/).
-* Parallel data downloads with automatic retries, local caching, and dry-run logic.
-* Optimisations to handle large country rasters, including automatic spatial subsetting and optional lazy loading with Dask.
+* Parallel data downloads with automatic retry logic, local caching, and dry-run support.
 * Searchable data manifest, allowing you to quickly find WorldPop products of interest.
+* Optimisations to handle large country rasters, including automatic spatial subsetting and optional lazy loading with Dask.
 
 ## Installation
 
@@ -33,7 +33,7 @@ pip install worldpoppy
 ```
 
 ## Quickstart
-### Example 1: Merging raster data for several countries 
+### Example 1: Merging Raster Data for Several Countries 
 
 ```python
 import matplotlib.pyplot as plt
@@ -57,7 +57,7 @@ plot_country_borders(countries, edgecolor='white', linewidth=0.5)
 clean_axes(title=f"Lower Mekong Region (2024):\n{pop_data.sum() / 1e6:.1f}M People")
 plt.show()
 ```
-<img src="worldpoppy/assets/gallery/quick01_mekong_pop.png" alt="Population in the Lower Mekong Region, 2024" width="225"/> 
+<img src="worldpoppy/assets/gallery/quick01_mekong_pop.png" alt="Population in the Lower Mekong Region, 2024" width="250"/> 
 
 ### Example 2: Built-in Support for Time-series
 
@@ -85,7 +85,7 @@ p.fig.suptitle('Night-light Growth in Sihanoukville', fontsize=12, fontweight='b
 p.fig.subplots_adjust(top=0.875)
 clean_axes(p)
 ```
-<img src="worldpoppy/assets/gallery/quick02_sihanoukville.png" alt="Night lights in Sihanoukville, 2015-2023" width="500"/>
+<img src="worldpoppy/assets/gallery/quick02_sihanoukville.png" alt="Night lights in Sihanoukville, 2015-2023" width="550"/>
 
 ## Finding Data
 
@@ -109,11 +109,6 @@ from worldpoppy import wp_manifest
 mdf = wp_manifest()
 mdf.head()
 ```
-## Documentation
-
-* **API Reference:** https://worldpoppy.readthedocs.io/
-
-* **Examples:** See the [`examples/`](./examples/) folder in this repository.
 
 ## Example Gallery
 
@@ -128,7 +123,7 @@ mdf.head()
       </div>
       <p align="center">
         <b>The Korean Peninsula.</b><br>
-        Quickly fetching, merging, and reprojecting night-light data for the two Koreas.
+        Fetch, merge, and reproject night-light data for the two Koreas.
         <br/>
         <a href="./examples/quickstart/03_korea_lights.py">View Script &rarr;</a>
       </p>
@@ -142,7 +137,7 @@ mdf.head()
       </div>
       <p align="center">
         <b>The Abidjan-Lagos Corridor.</b><br>
-        Calculating 10-year population change along the West African coast.
+        Calculate 10-year population change along the West African coast.
         <br/>
         <a href="./examples/quickstart/04_west_africa_growth.py">View Script &rarr;</a>
       </p>
@@ -158,7 +153,7 @@ mdf.head()
       </div>
       <p align="center">
         <b>Southern Kamchatka.</b><br>
-        Handling massive source rasters (2GB+) efficiently via automatic spatial subsetting.
+        Handle massive source rasters (2GB+) efficiently via automatic spatial subsetting.
         <br/>
         <a href="./examples/large_rasters/01_kamchatka_topo_eager.py">View Script &rarr;</a>
       </p>
@@ -172,7 +167,7 @@ mdf.head()
       </div>
       <p align="center">
         <b>Climatic Zones of Chile.</b><br>
-        Easy clipping of irregular country geometries and lazy-loading with Dask.
+        Clip irregular country geometries and lazy-load data with Dask.
         <br/>
         <a href="./examples/large_rasters/02-chile_weather_dask.py">View Script &rarr;</a>
       </p>
@@ -180,6 +175,11 @@ mdf.head()
   </tr>
 </table>
 
+## Documentation
+
+* **API Reference:** https://worldpoppy.readthedocs.io/
+
+* **Examples:** See the [`examples/`](./examples/) folder in this repository.
 
 ## Acknowledgements
 
