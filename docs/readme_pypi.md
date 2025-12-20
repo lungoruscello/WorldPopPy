@@ -1,4 +1,4 @@
-# WorldPopPy <img src="https://raw.githubusercontent.com/lungoruscello/WorldPopPy/master/worldpoppy/assets/icon.png" alt="WorldPopPy icon" width="60" height="60"/>
+# WorldPopPy
 
 *A Python client for downloading, merging, and processing WorldPop raster data.*
 

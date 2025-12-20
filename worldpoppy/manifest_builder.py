@@ -2,7 +2,7 @@
 Core "engine" for building a raw data manifest for the `worldpoppy` library.
 
 This module contains all the logic for traversing the WorldPop metadata API,
-parsing the results, and saving them to a new cache file (RAW_MANIFEST_CACHE_PATH).
+parsing the results, and saving them to a new local cache file.
 
 Main methods
 ------------------------
