@@ -84,6 +84,7 @@ p = (ntl_data + 1).plot(
 p.fig.suptitle('Night-light Growth in Sihanoukville', fontsize=12, fontweight='bold')
 p.fig.subplots_adjust(top=0.875)
 clean_axes(p)
+plt.show()
 ```
 <img src="worldpoppy/assets/gallery/quick02_sihanoukville.png" alt="Night lights in Sihanoukville, 2015-2023" width="550"/>
 
