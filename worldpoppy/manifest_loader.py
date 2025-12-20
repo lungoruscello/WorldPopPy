@@ -178,9 +178,10 @@ def wp_manifest(
     iso3_codes : str or List[str], optional
         One or more three-letter ISO codes indicating the countries
         of interest.
-    years : int, List[int], or str, optional
-        One or more years of interest, or a keyword string.
-        - If years are provided, filters the manifest to those specific years.
+    years : int, List[Union[int, str]], or str, optional
+        One or more years of interest or a keyword string.
+        - If years are provided (as ints or keywords), filters the manifest
+          to those specific years.
         - If 'all': Returns entries for all available years.
         - If 'first': Returns the earliest available year (requires `product_name`).
         - If 'last': Returns the most recent available year (requires `product_name`).
@@ -285,9 +286,11 @@ def wp_manifest_constrained(product_name, iso3_codes, years=None):
     iso3_codes : str or List[str]
          One or more three-letter ISO codes indicating the countries
          of interest.
-    years : int, List[int], or str, optional
+    years : int, List[Union[int, str]], or str, optional
+        The specific year(s) of interest.
         The specific year(s) of interest.
         - If years are provided, validates availability for those specific years.
+          (Supports lists mixed with keywords, e.g. ``[2015, 'last']``).
         - If 'all': Checks availability for *every* year recorded in the manifest.
         - If 'first': Checks availability for the earliest year.
         - If 'last': Checks availability for the most recent year.
@@ -865,22 +868,23 @@ def resolve_product_years(product_name, years):
     of years or None, consistent with the worldpoppy manifest.
 
     Logic:
-    - If years is a list/int: Return as list (standard behavior).
+    - If years is None: Return None.
     - If years is 'all':
         - Multi-year product: Return all available years (List[int]).
-        - Static product w/ year: Return the single year (List[int]).
-        - Static product no year: Return None.
-    - If years is 'first' or 'last':
-        - Return the earliest or latest available year as a single-item list.
-        - Raises ValueError if the product has no year dimension.
-    - If years is None: Return None.
+        - Static product (no year): Return None.
+    - If years is a list/tuple (e.g. [2010, 'last']):
+        - Resolves integers as-is.
+        - Resolves 'first'/'last' to concrete years.
+        - Returns a sorted, unique list of integers.
+    - If years is a single int or 'first'/'last': Treated as a list of length 1.
 
     Parameters
     ----------
     product_name : str
         The exact name of the WorldPop product.
-    years : int, List[int], str or None
-        The years argument to resolve. Supports 'all', 'first', 'last'.
+    years : int, List[Union[int, str]], str or None
+        The years argument to resolve. Supports integers and keywords
+        ('all', 'first', 'last').
 
     Returns
     -------
@@ -891,45 +895,57 @@ def resolve_product_years(product_name, years):
     if years is None:
         return None
 
-    # Handle explicit lists/ints immediately
-    if isinstance(years, (int, list, tuple)):
-        if isinstance(years, int):
-            return [years]
-        return list(years)
+    # 1. Normalise input to a list
+    if isinstance(years, (int, str)):
+        input_list = [years]
+    else:
+        input_list = list(years)
 
-    # Handle string keywords ('all', 'first', 'last')
-    if isinstance(years, str):
-        # Re-use existing internal helper to get truth from manifest
+    # 2. Check for 'all' (Special Case)
+    # If 'all' is present anywhere, it overrides specific requests.
+    if 'all' in input_list:
+        # We need manifest info to resolve 'all'
         info = get_product_info(product_name)
         available_years = info['years']
 
-        # Case: Static, No Year (available_years is empty set)
-        # e.g., 'pxl_area'. 'all' resolves to None (the static dataset itself).
         if not available_years:
-            if years == 'all':
-                return None
-            else:
-                # 'first'/'last' is invalid for yearless products
-                raise ValueError(
-                    f"Product '{product_name}' is not linked to any year. "
-                    f"Cannot resolve keyword '{years}'."
-                )
+            # Static product -> None
+            return None
+        return sorted(list(available_years))
 
-        # Sort years for deterministic selection
-        sorted_years = sorted(list(available_years))
+    # 3. Check if we have any keywords that require manifest lookup
+    has_keywords = any(isinstance(y, str) for y in input_list)
 
-        # Case: Multi-year OR Static-with-Year (e.g., 'pop_g1' or 'srtm_topo')
-        if years == 'all':
-            return sorted_years
-        elif years == 'first':
-            return [sorted_years[0]]
-        elif years == 'last':
-            return [sorted_years[-1]]
+    if not has_keywords:
+        # Optimisation: If list is all ints, return sorted/unique immediately
+        # without querying the manifest (validation happens downstream).
+        return sorted(list(set(input_list)))
+
+    # 4. Resolve Keywords
+    info = get_product_info(product_name)
+    available_years = info['years']
+
+    # Handle Yearless/Static products requested with specific keywords
+    if not available_years:
+        raise ValueError(
+            f"Product '{product_name}' is not linked to any year. "
+            f"Cannot resolve keywords in {input_list}."
+        )
+
+    sorted_avail = sorted(list(available_years))
+    resolved_set = set()
+
+    for y in input_list:
+        if isinstance(y, int):
+            resolved_set.add(y)
+        elif y == 'first':
+            resolved_set.add(sorted_avail[0])
+        elif y == 'last':
+            resolved_set.add(sorted_avail[-1])
         else:
-            raise ValueError(f"years='{years}' is not a valid option.")
+            raise ValueError(f"Invalid year argument: '{y}'")
 
-    # Fallback for unexpected input types, pass through for downstream validation
-    return years
+    return sorted(list(resolved_set))
 
 
 def _build_final_notes_map(mdf):

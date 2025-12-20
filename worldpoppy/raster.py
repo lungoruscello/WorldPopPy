@@ -140,29 +140,20 @@ def wp_raster(
         - If int K, the data is loaded in chunks of size (K, K).
           Equivalent to passing {'x': K, 'y': K}.
         - If dict (e.g., {'x': 1024, 'y': 1024}), that specific chunking is used.
-    years : int or List[int] or str or None, optional
-        One or more years of interest or a keyword string. For static data
-        products, this argument is usually None (default).
+    years : int or List[Union[int, str]] or str or None, optional
+        One or more years of interest or a keyword string.
+        For static data products, this argument is usually None (default).
 
-        * **'all'**: Retrieve all available data for the specified product.
+        * 'all' Retrieve all available data for the specified product.
             * For **multi-year** products, this returns a 3D array stacked
               along the `year` dimension (unless only one year exists,
               in which case it returns a 2D array).
             * For **static** products, returns the single available raster.
-        * **'first'**: Retrieve data for the earliest available year.
-        * **'last'**: Retrieve data for the most recent available year.
-        * **None**: (Default) for static data products.
-
-    years : int or List[int] or str or None, optional
-        One or more years of interest or the 'all' keyword (str). For static data
-        products, this argument is usually None (default) or the 'all' keyword.
-
-        * **'all'**: Retrieve all available data for the specified product.
-            * For **multi-year** products, this returns a 3D array stacked
-              along the `year` dimension.
-            * For **static** products (with or without a recorded year), this
-              returns the single available raster layer (2D array),
-              equivalent to passing `years=None`.
+        * 'first': Retrieve data for the earliest available year.
+        * 'last': Retrieve data for the most recent available year.
+        * List: A list containing integers and/or keywords (e.g.,
+          ``[2010, 'last']``).
+        * None: (Default) for static data products.
     pre_clip_bbox : Tuple[float, float, float, float], optional
         A bounding box (min_lon, min_lat, max_lon, max_lat) to which
         input rasters will *immediately* be clipped after loading them

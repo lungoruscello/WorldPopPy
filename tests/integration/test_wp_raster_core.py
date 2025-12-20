@@ -128,3 +128,34 @@ def test_raster_multi_year_stacking():
 
     # 2. Check Sort Order (Time should inevitably increase)
     assert da.year.values.tolist() == [2010, 2015]
+
+
+@pytest.mark.integration
+@needs_internet_or_cache
+def test_mixed_year_keywords_resolution():
+    """
+    Verify that passing a list of keywords (e.g., ['first', 'last']) works.
+    """
+    from worldpoppy import wp_raster
+    from worldpoppy.manifest_loader import get_product_info
+
+    product = "pop_g1"
+
+    # Ground Truth
+    info = get_product_info(product)
+    min_year = min(info['years'])
+    max_year = max(info['years'])
+
+    # 1. Request ['first', 'last']
+    da = wp_raster(product, aoi=TEST_ISO, years=['first', 'last'])
+
+    assert da.ndim == 3
+    assert da.sizes['year'] == 2
+    assert da.year.values.tolist() == [min_year, max_year]
+
+    # 2. Request Mixed [2010, 'last'] (assuming max_year != 2010)
+    # We use a set in case max_year happens to be 2010
+    expected_years = sorted(list({2010, max_year}))
+
+    da_mixed = wp_raster(product, aoi=TEST_ISO, years=[2010, 'last'])
+    assert da_mixed.year.values.tolist() == expected_years
