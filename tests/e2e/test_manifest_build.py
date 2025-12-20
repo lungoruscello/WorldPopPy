@@ -13,7 +13,7 @@ from worldpoppy.config import ENABLE_HEAVY_E2E_TESTS
 @needs_internet
 @pytest.mark.skipif(
     not ENABLE_HEAVY_E2E_TESTS,
-    reason="Heavy E2E tests are disabled in config.py"
+    reason="Heavy E2E tests are disabled (WPY_RUN_HEAVY_TESTS != 1)"
 )
 def test_e2e_manifest_builder_lifecycle(isolated_manifest_assets, caplog, monkeypatch):
     """

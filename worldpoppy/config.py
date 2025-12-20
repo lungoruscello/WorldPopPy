@@ -66,9 +66,9 @@ RED = 'xkcd:brick red'
 BLUE = 'xkcd:sea blue'
 GOLDEN = 'xkcd:goldenrod'
 
-ENABLE_HEAVY_E2E_TESTS = False
-# > Set the above to True only when you explicitly want to run heavy
-#   E2E tests that perform full API traversals.
+ENABLE_HEAVY_E2E_TESTS = os.getenv("WPY_RUN_HEAVY_TESTS") == "1"
+# > Set the above environment variable only of you explicitly want
+#   to run heavy E2E tests that perform full API traversals.
 DEBUG = False
 
 
