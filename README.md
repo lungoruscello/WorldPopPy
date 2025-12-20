@@ -187,6 +187,44 @@ mdf.head()
   </tr>
 </table>
 
+## Utilities
+
+**WorldPopPy** includes helper functions to manage the local cache and download bandwidth.
+
+### 1. Managing the Cache
+
+Downloaded rasters are cached locally by default. You can change the location by setting the `WORLDPOPPY_CACHE_DIR` 
+environment variable.
+
+```python
+from worldpoppy import purge_cache, get_cache_dir
+
+# Print the cache directory
+print(get_cache_dir())
+
+# Check local cache size
+purge_cache(dry_run=True)
+
+# Delete all cached files
+purge_cache(dry_run=False)
+```
+
+### 2. Download Dry Run
+
+To estimate the size of a request before downloading, use the `download_dry_run` flag:
+
+```python
+from worldpoppy import wp_raster
+
+# Prints a summary of files to be downloaded without fetching them
+wp_raster(
+    product_name='pop_g1', 
+    aoi=['CAN', 'USA'], 
+    years='all', 
+    download_dry_run=True
+)
+```
+
 ## Data Usage & Attribution
 
 **WorldPopPy** is a client for accessing data; it does not host or own the data. Please note the following points
