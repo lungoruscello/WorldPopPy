@@ -123,7 +123,7 @@ mdf.head()
       <h3 align="center">1. Visualising Night Lights</h3>
       <div align="center">
         <a href="./examples/quickstart/03_korea_lights.py">
-          <img src="worldpoppy/assets/gallery/quick03_korea.png" alt="Korea Night Lights" width="95%"/>
+          <img src="./worldpoppy/assets/gallery/quick03_korea.png" alt="Korea Night Lights" width="95%"/>
         </a>
       </div>
       <br>
@@ -172,13 +172,13 @@ mdf.head()
     <td width="50%" valign="top">
       <h3 align="center">4. Manual Memory Optimisation</h3>
       <div align="center">
-        <a href="examples/large_rasters/02_chile_climate_dask.py">
+        <a href="./examples/large_rasters/02_chile_climate_dask.py">
           <img src="./worldpoppy/assets/gallery/large02_chile_dask.png" alt="Chile Weather" width="95%"/>
         </a>
       </div>
       <br>
       <div align="center">
-        <b><a href="examples/large_rasters/02_chile_climate_dask.py">Mainland Chile</a></b>
+        <b><a href="./examples/large_rasters/02_chile_climate_dask.py">Mainland Chile</a></b>
       </div>
       <div align="left">
         Easily clip country geometries and lazy-load rasters with Dask.
