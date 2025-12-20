@@ -6,13 +6,13 @@ import pytest
 
 import worldpoppy.manifest_builder  # Import target for patching
 from tests.test_utils import needs_internet
-from worldpoppy.config import ENABLE_HEAVY_E2E_TESTS
+from worldpoppy.config import ENABLE_HEAVY_TESTS
 
 
 @pytest.mark.e2e
 @needs_internet
 @pytest.mark.skipif(
-    not ENABLE_HEAVY_E2E_TESTS,
+    not ENABLE_HEAVY_TESTS,
     reason="Heavy E2E tests are disabled (WPY_RUN_HEAVY_TESTS != 1)"
 )
 def test_e2e_manifest_builder_lifecycle(isolated_manifest_assets, caplog, monkeypatch):

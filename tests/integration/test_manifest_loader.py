@@ -51,7 +51,7 @@ def augmented_raw_manifest(tmp_path, monkeypatch):
                     "api_series_category": "Extraterrestrial",
                     "api_source": "NASA",
                     "api_project": "X-Files",
-                    "sample_summary_url": None,
+                    "summary_url": None,
                 }
             )
 

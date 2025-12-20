@@ -36,6 +36,7 @@ __all__ = [
     "RED",
     "BLUE",
     "GOLDEN",
+    "ENABLE_HEAVY_TESTS",
     "get_cache_dir",
     "get_max_concurrency",
 ]
@@ -66,9 +67,10 @@ RED = 'xkcd:brick red'
 BLUE = 'xkcd:sea blue'
 GOLDEN = 'xkcd:goldenrod'
 
-ENABLE_HEAVY_E2E_TESTS = os.getenv("WPY_RUN_HEAVY_TESTS") == "1"
-# > Set the above environment variable only of you explicitly want
-#   to run heavy E2E tests that perform full API traversals.
+ENABLE_HEAVY_TESTS = os.getenv("WPY_RUN_HEAVY_TESTS") == "1"
+# > Set the above environment variable only if you explicitly want
+#   to run API-heavy integration / E2E tests (e.g., performing full
+#   API traversals and testing raster URL availability)
 DEBUG = False
 
 

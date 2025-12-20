@@ -293,8 +293,8 @@ def _discover_leaf_nodes():
             name = node["name"]  # noqa
 
             if alias.lower() == 'age_structures':
-                # currently not supported due to a limitation in
-                # `_extract_unique_bands`
+                # Data along this API branch is currently not supported
+                # due to a limitation in `_extract_unique_bands`
                 continue
 
             if DEBUG and alias.lower() != 'covariates':
@@ -959,7 +959,7 @@ def _build_dataset_record(
             "api_series_category": series_metadata.get("category"),
             "api_source": series_metadata.get("source"),
             # --- Dataset-Level Metadata ---
-            "sample_summary_url": summary_url,
+            "summary_url": summary_url,
         }
 
     except (KeyError, TypeError, ValueError) as e:

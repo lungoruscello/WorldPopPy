@@ -75,7 +75,7 @@ columns:
     The full URL to download the .tif file.
 - remote_name (str):
     The filename of the remote .tif file.
-- sample_summary_url (str):
+- summary_url (str):
     A sample URL to the WorldPop summary page associated with this dataset.
 
 **Raw API Columns (for advanced use):**
@@ -489,8 +489,7 @@ def show_supported_data_products(
     mdf['resolution'] = mdf['product_name'].map(res_map)
 
     # --- Select and clean-up columns for display ---
-    # Added 'resolution' to the selection list
-    cols = 'product_name product_notes resolution multi_year api_project data_series sample_summary_url'.split()
+    cols = 'product_name product_notes resolution multi_year api_project data_series summary_url'.split()
 
     products = mdf[cols].drop_duplicates(subset='product_name')
     products.rename(
@@ -501,7 +500,7 @@ def show_supported_data_products(
             'multi_year': 'Multi-year?',
             'api_project': 'Project',
             'data_series': 'Data series',
-            'sample_summary_url': 'Example',
+            'summary_url': 'Example',
         },
         inplace=True,
     )
@@ -639,7 +638,7 @@ def _get_cleaned_manifest():
         "dataset_name",
         "remote_path",
         "remote_name",
-        "sample_summary_url",
+        "summary_url",
         "api_path",
         "api_slug",
         "api_entry_title",
