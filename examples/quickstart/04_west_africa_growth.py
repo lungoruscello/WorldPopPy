@@ -2,6 +2,10 @@
 Quickstart 4: Visualise Population Growth in West Africa
 
 Illustrates raster reprojection (warping) and additional plotting options.
+
+Download Requirements:
+    This example requires low-resolution population rasters for several African
+    countries (~18 MB). If cached files do not exist, they will be downloaded.
 """
 
 import matplotlib.pyplot as plt

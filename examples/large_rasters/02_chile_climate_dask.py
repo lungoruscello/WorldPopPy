@@ -32,8 +32,12 @@ from worldpoppy import (
     clean_axes
 )
 
-# --- Constants ---
+# --- WARNING ---
+print("WARNING: This example requires temperature & precipitation data for CHL (~600MB).")
+print("If cached files do not exist, they will be downloaded.\n")
+# ---------------
 
+# --- Constants ---
 ISO_CODE = 'CHL'
 CHL_MAINLAND_BOX = (-76, -57, -66, -16)
 # > Chile includes Rapa Nui (Easter Island), which extends the country's raster
@@ -165,10 +169,5 @@ def get_temp_cmap():
 
 
 if __name__ == "__main__":
-    # --- WARNING ---
-    print("WARNING: This example requires temperature & precipitation data for CHL (~600MB).")
-    print("If cached files do not exist, they will be downloaded.\n")
-    # ---------------
-
     fig = make_plot()
     plt.show()

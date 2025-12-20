@@ -2,6 +2,10 @@
 Quickstart 1: Visualise Population Data for the Lower Mekong Region
 
 Illustrates the ease of data fetching and merging with `worldpoppy`.
+
+Download Requirements:
+    This example requires low-resolution population rasters for four SE Asian
+    countries (~6 MB). If cached files do not exist, they will be downloaded.
 """
 
 import matplotlib.pyplot as plt
@@ -13,7 +17,7 @@ from worldpoppy import wp_raster, clean_axes, plot_country_borders
 # `wp_raster` returns an xarray.DataArray ready for plotting.
 countries = ['THA', 'KHM', 'LAO', 'VNM']
 pop_data = wp_raster(
-    product_name='pop_g2_1km_r25a',  # Low-res. population estimates (Global 2 series)
+    product_name='pop_g2_1km_r25a',
     aoi=countries,
     years=2024
 )

@@ -2,6 +2,10 @@
 Quickstart 3: Visualise Night-Light Data for the Korean Peninsula
 
 Simply an iconic example.
+
+Download Requirements:
+    This example requires night-light rasters totalling ~60 MB in size.
+    If cached files do not exist, they will be downloaded.
 """
 
 import matplotlib.pyplot as plt

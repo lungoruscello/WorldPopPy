@@ -7,6 +7,10 @@ files are lightweight enough for a quick demo while still offering a rich,
 country-wide spatial distribution.
 
 We plot the raster data for whatever available year is closest to 2020.
+
+Download Requirements:
+    This example requires population rasters totalling ~80 MB in size.
+    If cached files do not exist, they will be downloaded.
 """
 
 import matplotlib.pyplot as plt
@@ -14,10 +18,6 @@ import numpy as np
 from matplotlib.colors import LogNorm
 from tqdm.autonotebook import tqdm
 from worldpoppy import *
-
-# --- WARNING ---
-print("WARNING: This example requires downloading approx. 60 MB of data.")
-# ---------------
 
 aoi = 'RWA'
 TARGET_YEAR = 2020  # the specific year we want to approximate

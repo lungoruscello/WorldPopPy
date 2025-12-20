@@ -1,7 +1,11 @@
 """
 Quickstart 2: Visualise Growth of Night-Light Emissions Around Sihanoukville (Cambodia)
 
-Illustrates the time-series support of `worldpoppy` and Xarray's strong plotting functions.
+Illustrates `worldpoppy`'s time-series support and Xarray's powerful built-in plotting functions.
+
+Download Requirements:
+    This example requires night-light rasters for KHM and VNM (~100 MB).
+    If cached files do not exist, they will be downloaded.
 """
 
 import matplotlib.pyplot as plt
