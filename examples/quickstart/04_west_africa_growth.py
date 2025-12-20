@@ -11,7 +11,7 @@ from worldpoppy import *
 # We grab a large 1,000km slice of the West African coast.
 pop_data = wp_raster(
     product_name='pop_g2_1km_r25a',  # Low-res. population from "Global 2" series
-    aoi=bbox_from_location('Lomé', width_km=1_000),
+    aoi=bbox_from_location('Accra', width_km=950),
     years=[2015, 2024],
     masked=True,
 )
@@ -48,8 +48,8 @@ clean_axes(
 # We plot the three central countries only to avoid double-drawing shared borders.
 plot_country_borders(['GHA', 'TOG', 'BEN'], to_crs=aeqa_africa)
 plot_location_markers(
-    ['Abidjan', 'Accra', 'Lomé', 'Lagos'],
-    to_crs=aeqa_africa, s=10,
+    ['Abidjan', 'Accra', 'Lomé', 'Cotonou', 'Lagos'],
+    to_crs=aeqa_africa, s=15, fontsize=11,
 )
 
 if __name__ == "__main__":
