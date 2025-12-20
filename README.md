@@ -181,7 +181,7 @@ mdf.head()
         <b><a href="examples/large_rasters/02-chile_climate_dask.py">Mainland Chile</a></b>
       </div>
       <div align="left">
-        Easily clip country geometries to reduce the memory footprint (e.g., by excluding remote islands).
+        Easily clip country geometries and lazy-load rasters with Dask.
       </div>
     </td>
   </tr>
@@ -209,13 +209,16 @@ mdf = wp_manifest(product_name='pop_g2_alt', iso3_codes='AFG')
 # Inspect the raw metadata for one raster file (sourced from the WorldPop API)
 row = mdf.iloc[0]
 
-print(f"Source File Name:       {row.dataset_name}")        # Source filename on WorldPop.org
-print(f"Official Dataset Title: {row.api_entry_title}")     # Official dataset title
-print(f"Official Data Category: {row.api_series_category}") # Official data category
-print(f"Dataset Summary:        {row.summary_url}")         # Read this before using data!
+print(f"Source File Name:       {row.dataset_name}")
+print(f"Official Dataset Title: {row.api_entry_title}")
+print(f"Official Data Category: {row.api_series_category}")
+print(f"Dataset Summary:        {row.summary_url}")  # Read this before using data!
 print("-----")
-print(f"Library Product Name:   {row.product_name}")  # Internal: used for data discovery in WorldPopPy
-print(f"Library Product Notes:  {row.product_notes}") # Internal: used for data discovery in WorldPopPy
+
+# > The internal fields below are for data discovery in WorldPopPy
+print(f"Library Product Name:   {row.product_name}")
+print(f"Multi-year Product?     {row.multi_year}")
+print(f"Library Product Notes:  {row.product_notes}")
 ```
 
 3. **Cite the Source:** If you use this data, you must cite the original authors ([WorldPop](https://www.worldpop.org/)). 
