@@ -11,7 +11,7 @@ Keywords: WorldPop Python package, download and combine WorldPop datasets, globa
 
 **WorldPopPy** provides a programmatic interface to the [WorldPop](https://www.worldpop.org/) open data archive.
 
-WorldPop provides global, gridded datasets on population dynamics, night-light emissions, land cover, and much more. 
+WorldPop offers global, gridded datasets on population dynamics, night-light emissions, land-cover features, and much more. 
 These datasets are typically distributed as individual files per country. **WorldPopPy** abstracts the process of
 data discovery, retrieval, and preprocessing. Users query data by Area of Interest (AOI). The library automatically 
 identifies the necessary country rasters, downloads them, and merges them into a unified dataset.
@@ -20,11 +20,11 @@ identifies the necessary country rasters, downloads them, and merges them into a
 
 ## Key Features
 
-* Fetch data for any region by passing GeoDataFrames, country codes, or geographic bounding boxes.
-* Easy handling of raster time-series through integration with [`xarray`](https://docs.xarray.dev/en/stable/).
+* Fetch data for any region by passing GeoDataFrames, country codes, or bounding boxes.
+* Easy handling of time-series through integration with [`xarray`](https://docs.xarray.dev/en/stable/).
+* Built-in optimisations to help you handle massive country rasters.
 * Parallel data downloads with automatic retry logic, local caching, and dry-run support.
 * Searchable data manifest, allowing you to quickly find WorldPop products of interest.
-* Optimisations to handle large country rasters, including automatic spatial subsetting and optional lazy loading with Dask.
 
 ## Installation
 
@@ -57,7 +57,7 @@ plot_country_borders(countries, edgecolor='white', linewidth=0.5)
 clean_axes(title=f"Lower Mekong Region (2024):\n{pop_data.sum() / 1e6:.1f}M People")
 plt.show()
 ```
-<img src="worldpoppy/assets/gallery/quick01_mekong_pop.png" alt="Population in the Lower Mekong Region, 2024" width="230"/> 
+<img src="worldpoppy/assets/gallery/quick01_mekong_pop.png" alt="Population in the Lower Mekong Region, 2024" width="250"/> 
 
 ### Example 2: Built-in Support for Time-series
 
@@ -71,7 +71,7 @@ from worldpoppy import wp_raster, bbox_from_location, clean_axes
 ntl_data = wp_raster(
     product_name="ntl_viirs_g2",
     aoi=bbox_from_location("Preah Sihanouk", width_km=100),
-    years=[2015, 2023],  # Stacked along "year" dimension of DataArray 
+    years=['first', 'last']  # Request first & last available year 
 )
 
 # Plot: Xarray can create a facet grid by year
@@ -89,7 +89,7 @@ clean_axes(p)
 
 ## Finding Data
 
-Use `show_supported_data_products` to get a quick overview of what is supported by **WorldPopPy**:
+Use `show_supported_data_products` for a quick overview of what is supported by **WorldPopPy**:
 
 ```python
 from worldpoppy import show_supported_data_products
@@ -131,7 +131,7 @@ mdf.head()
         <b><a href="./examples/quickstart/03_korea_lights.py">The Korean Peninsula</a></b>
       </div>
       <div align="left">
-        Quickly fetch, merge, and reproject night-light data for the two Koreas.
+        Quickly fetch, merge, and reproject night-light data for North and South Korea.
       </div>
     </td>
     <td width="50%" valign="top">
@@ -166,22 +166,22 @@ mdf.head()
         <b><a href="./examples/large_rasters/01_kamchatka_topo_eager.py">Southern Kamchatka</a></b>
       </div>
       <div align="left">
-        Handle massive source rasters (2GB+) efficiently via automatic spatial subsetting to the specified Area of Interest.
+        Handle large source rasters (2GB+) efficiently via automatic spatial subsetting to the Area of Interest.
       </div>
     </td>
     <td width="50%" valign="top">
       <h3 align="center">4. Manual Memory Optimisation</h3>
       <div align="center">
-        <a href="./examples/large_rasters/02-chile_weather_dask.py">
+        <a href="examples/large_rasters/02-chile_climate_dask.py">
           <img src="./worldpoppy/assets/gallery/large02_chile_dask.png" alt="Chile Weather" width="95%"/>
         </a>
       </div>
       <br>
       <div align="center">
-        <b><a href="./examples/large_rasters/02-chile_weather_dask.py">Climatic Zones of Mainland Chile</a></b>
+        <b><a href="examples/large_rasters/02-chile_climate_dask.py">Climatic Zones of Mainland Chile</a></b>
       </div>
       <div align="left">
-        Clip irregular country geometries and lazy-load data with Dask.
+        Easily clip irregular country geometries, lazy-load with Dask, and downsample large datasets.
       </div>
     </td>
   </tr>
