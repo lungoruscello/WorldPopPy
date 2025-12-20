@@ -166,7 +166,7 @@ mdf.head()
         <b><a href="./examples/large_rasters/01_kamchatka_topo_eager.py">Southern Kamchatka</a></b>
       </div>
       <div align="left">
-        Handle large source rasters (2GB+) efficiently via automatic spatial subsetting to the Area of Interest.
+        Handle large source rasters (2GB+) efficiently via automatic spatial subsetting.
       </div>
     </td>
     <td width="50%" valign="top">
@@ -178,14 +178,49 @@ mdf.head()
       </div>
       <br>
       <div align="center">
-        <b><a href="examples/large_rasters/02-chile_climate_dask.py">Climatic Zones of Mainland Chile</a></b>
+        <b><a href="examples/large_rasters/02-chile_climate_dask.py">Mainland Chile</a></b>
       </div>
       <div align="left">
-        Easily clip irregular country geometries and lazy-load large rasters with Dask.
+        Easily clip country geometries (e.g., to exclude remote islands).
       </div>
     </td>
   </tr>
 </table>
+
+## Data Usage & Attribution
+
+**WorldPopPy** is a client for accessing data; it does not host or own the data. Please note the following points
+regarding data provenance and citation:
+
+1. **Curated "Product Names"**: To simplify data discovery, this library organises WorldPop's thousands of 
+raw raster files into curated "Data Products" with a consistent naming scheme (e.g., `pop_g1_alt` or `pop_g2_alt`). 
+These names are specific to **WorldPopPy**.
+
+2. **Know Your Data:** While this library makes downloading and pre-processing easy, we strongly encourage you 
+to understand what you are downloading. WorldPop datasets are often the result of complex modelling. Always check 
+the `summary_url` provided in the manifest for details and further notes.
+
+```python
+from worldpoppy import wp_manifest
+
+# Select country entries for one "product" using its curated WorldPopPy alias
+mdf = wp_manifest(product_name='pop_g2_alt', iso3_codes='AFG')
+
+# Inspect the raw metadata for one raster file (sourced from the WorldPop API)
+row = mdf.iloc[0]
+
+print(f"Source File Name:       {row.dataset_name}")        # Source filename on WorldPop.org
+print(f"Official Dataset Title: {row.api_entry_title}")     # Official dataset title
+print(f"Official Data Category: {row.api_series_category}") # Official data category
+print(f"Dataset Summary:        {row.summary_url}")         # Read this before using data!
+print("-----")
+print(f"Library Product Name:   {row.product_name}")        # Internal: used for data discovery in WorldPopPy
+print(f"Library Product Notes:  {row.product_notes}")       # Internal: used for data discovery in WorldPopPy
+```
+
+3. **Cite the Source:** If you use this data, you must cite the original authors ([WorldPop](https://www.worldpop.org/)). 
+The scientific credit belongs to them. Note that the recommended citation style can differ between datasets, so be sure 
+to check the `summary_url` for details.
 
 ## Acknowledgements
 
