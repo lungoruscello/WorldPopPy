@@ -15,7 +15,7 @@ worldpoppy.download module
    :show-inheritance:
 
 worldpoppy.manifest_builder
-==========================
+===========================
 
 .. automodule:: worldpoppy.manifest_builder
    :members:

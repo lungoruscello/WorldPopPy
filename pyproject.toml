@@ -4,13 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "WorldPopPy"
-version = "0.4.0"  # beware: not auto-synced with "worldpoppy/__init__.py"
-description = "Library to help you work with WorldPop data for any region on earth"
+dynamic = ["version"]
+description = "Python client to help you work with WorldPop data for any region on earth"
 readme = "readme_pypi.md"
 requires-python = ">=3.10"
-license = {text = "Mozilla Public License 2.0 (MPL-2.0)"}
+license = "MPL-2.0"
 authors = [
   { name="S. Langenbach", email="lungoruscello@gmail.com" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
 ]
 dependencies = [
     "numpy",
@@ -38,13 +42,15 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
-    "gdal>=3,<=3.4.1",
     "black"
 ]
 build = [
     "twine>=4.0.2",
     "build",
     "wheel"
+]
+gdal = [
+    "gdal>=3"
 ]
 docs = [
     "sphinx",
@@ -57,18 +63,23 @@ docs = [
 [project.urls]
 Source = "https://github.com/lungoruscello/worldpoppy"
 Documentation = "https://worldpoppy.readthedocs.io/en/stable/"
+Examples = "https://github.com/lungoruscello/worldpoppy/tree/master/examples"
 
-[tool.setuptools]
-packages = ["worldpoppy"]
+# Automatic package discovery
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["worldpoppy*"]
 
 [tool.setuptools.package-data]
 worldpoppy = [
   "assets/raw_api_manifest.feather",
   "assets/raw_api_manifest_timestamp.txt",
   "assets/level0_500m_2000_2020_simplified_world.feather",
-  "assets/italian_regions_simplified.feather",
-  "assets/kamchatka_petropavlosk_area.feather"
+  "assets/southern_kamchatka.feather"
 ]
+
+[tool.setuptools.dynamic]
+version = {attr = "worldpoppy.__version__"}
 
 [tool.black]
 target-version = ['py310']
