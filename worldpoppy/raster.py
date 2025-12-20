@@ -25,6 +25,7 @@ from functools import lru_cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import List, Tuple
+from contextlib import nullcontext
 
 import geopandas as gpd
 import numpy as np
@@ -296,7 +297,7 @@ def wp_raster(
         name=name,
     )
 
-    with TemporaryDirectory() if not cache_downloads else get_cache_dir() as d:
+    with TemporaryDirectory() if not cache_downloads else nullcontext(get_cache_dir()) as d:
         # --- Trigger raster download where needed ---
         all_raster_paths, filtered_mdf = WorldPopDownloader(directory=d).download(
             product_name,
