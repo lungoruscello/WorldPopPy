@@ -74,6 +74,7 @@ include = ["worldpoppy*"]
 worldpoppy = [
   "assets/raw_api_manifest.feather",
   "assets/raw_api_manifest_timestamp.txt",
+  "assets/product_definitions.toml",
   "assets/level0_500m_2000_2020_simplified_world.feather",
   "assets/global_nb_db.json",
   "assets/southern_kamchatka.feather"
