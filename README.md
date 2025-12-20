@@ -181,7 +181,7 @@ mdf.head()
         <b><a href="examples/large_rasters/02-chile_climate_dask.py">Mainland Chile</a></b>
       </div>
       <div align="left">
-        Easily clip country geometries (e.g., to exclude remote islands).
+        Easily clip country geometries to reduce the memory footprint (e.g., by excluding remote islands).
       </div>
     </td>
   </tr>
@@ -214,8 +214,8 @@ print(f"Official Dataset Title: {row.api_entry_title}")     # Official dataset t
 print(f"Official Data Category: {row.api_series_category}") # Official data category
 print(f"Dataset Summary:        {row.summary_url}")         # Read this before using data!
 print("-----")
-print(f"Library Product Name:   {row.product_name}")        # Internal: used for data discovery in WorldPopPy
-print(f"Library Product Notes:  {row.product_notes}")       # Internal: used for data discovery in WorldPopPy
+print(f"Library Product Name:   {row.product_name}")  # Internal: used for data discovery in WorldPopPy
+print(f"Library Product Notes:  {row.product_notes}") # Internal: used for data discovery in WorldPopPy
 ```
 
 3. **Cite the Source:** If you use this data, you must cite the original authors ([WorldPop](https://www.worldpop.org/)). 
