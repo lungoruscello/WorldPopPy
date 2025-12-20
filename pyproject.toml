@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "WorldPopPy"
-version = "0.3.0"  # beware: not auto-synced with "worldpoppy/__init__.py"
+version = "0.4.0"  # beware: not auto-synced with "worldpoppy/__init__.py"
 description = "Library to help you work with WorldPop data for any region on earth"
 readme = "readme_pypi.md"
 requires-python = ">=3.10"
@@ -27,6 +27,8 @@ dependencies = [
     "pyarrow",
     "rioxarray",
     "xarray",
+    "dask",
+    "bottleneck",
     "geopandas<2",
     "geopy",
     "pyproj",
@@ -36,7 +38,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
-    "bottleneck",
     "gdal>=3,<=3.4.1",
     "black"
 ]
@@ -62,10 +63,11 @@ packages = ["worldpoppy"]
 
 [tool.setuptools.package-data]
 worldpoppy = [
-  "assets/manifest.feather",
-  "assets/raw_manifest_hash.txt",
+  "assets/raw_api_manifest.feather",
+  "assets/raw_api_manifest_timestamp.txt",
   "assets/level0_500m_2000_2020_simplified_world.feather",
-  "assets/italian_regions_simplified.feather"
+  "assets/italian_regions_simplified.feather",
+  "assets/kamchatka_petropavlosk_area.feather"
 ]
 
 [tool.black]

@@ -31,20 +31,22 @@ import backoff
 import httpx
 import nest_asyncio
 import pandas as pd
-from httpx import HTTPError
 from pqdm.threads import pqdm
 from tqdm.auto import tqdm
 
-from worldpoppy.config import *
-from worldpoppy.manifest import wp_manifest_constrained
+from worldpoppy.config import (
+    DATA_DOWNLOAD_TIMEOUT,
+    get_cache_dir,
+    get_max_concurrency,
+)
 from worldpoppy.func_utils import log_info_context
-
+from worldpoppy.manifest_loader import wp_manifest_constrained
 
 __all__ = [
     "DownloadSizeCheckError",
     "DownloadError",
     "WorldPopDownloader",
-    "purge_cache",
+    "purge_cache"
 ]
 
 logger = logging.getLogger(__name__)
@@ -60,6 +62,18 @@ class DownloadSizeCheckError(DownloadError):
     """Raised when one or more HEAD requests fail during dry-run size checking."""
 
     pass
+
+
+def _is_fatal_code(e):
+    """
+    Return True if the httpx exception is a 4xx Client Error
+    (which should not be retried), unless it is a 429 (Too Many Requests).
+    """
+    if isinstance(e, httpx.HTTPStatusError):
+        # Do not retry 404 (Not Found) or 400 (Bad Request)
+        # DO retry 429 (Too Many Requests) or 500+ (Server Errors)
+        return 400 <= e.response.status_code < 500 and e.response.status_code != 429
+    return False
 
 
 @dataclass
@@ -119,7 +133,7 @@ class WorldPopDownloader:
         years=None,
         skip_download_if_exists=True,
         dry_run=False,
-        chunk_size=1024**2,
+        chunk_size=1024*1024*4,
     ):
         """
         Asynchronously download a collection of country-specific WorldPop rasters.
@@ -141,7 +155,7 @@ class WorldPopDownloader:
             If True, only check how many files would need to be downloaded if `dry_run`
             was False. Report the number and size of required file downloads, but do not
             actually fetch or return any data.
-        chunk_size : int, optional, default=1MB
+        chunk_size : int, optional, default=4MB
             The size (in bytes) of chunks to read/write during download. Larger chunks
             may improve performance, especially on systems with real-time file scanning
             (e.g., antivirus).
@@ -157,32 +171,52 @@ class WorldPopDownloader:
             If not all requested files were successfully downloaded
         """
 
-        # delete artefacts from previously interrupted downloads
+        # --- Prepare ---
+        # Delete artefacts from previously interrupted downloads
         _repair_cache()
 
-        # fetch download manifest (will validate user query)
+        # Fetch download manifest (will validate user query)
         filtered_mdf = wp_manifest_constrained(product_name, iso3_codes, years)
 
-        # assemble URLs and local paths
+        # Assemble URLs and local paths
         data = filtered_mdf[['product_name', 'iso3', 'year']].values
         local_paths = [self._build_local_fpath(*tup) for tup in data]
         remote_paths = filtered_mdf['remote_path'].tolist()
 
-        if dry_run:
-            with log_info_context(logger):
-                # prepare arguments for parallel processing
-                # (no chunk size needed)
-                args = [
-                    (r, l, skip_download_if_exists)
-                    for r, l in zip(remote_paths, local_paths)
-                ]
+        # --- Filter Phase: Identify Actual Work ---
+        # We separate the requested files into those we actually need to
+        # download (network tasks) and those we can "take" from the cache.
+        tasks = []
 
+        for remote, local in zip(remote_paths, local_paths):
+            if skip_download_if_exists and local.is_file():
+                continue
+            # If we are here, we either do not have the file, or we are
+            # forcing a re-download.
+            tasks.append((remote, local))
+
+        num_cached = len(local_paths) - len(tasks)
+
+        # --- Execution Phase ---
+        if dry_run:
+            # Case A: Dry Run
+            if not tasks:
+                print(f"Dry run: All {len(local_paths)} files already exist locally.")
+                return local_paths, filtered_mdf
+
+            with log_info_context(logger):
                 print("Dry run: calculating number and size of files to download...\n")
+                if num_cached > 0:
+                    print(f"(Skipping {num_cached} files already in cache)")
+
+                # Prepare arguments for parallel processing
+                # We only process the files in the 'tasks' list
+                args = [(r, l, skip_download_if_exists) for r, l in tasks]
 
                 res = pqdm(
                     args,
                     self._get_required_file_download_size,  # noqa
-                    n_jobs=get_max_concurrency() * 4,  # these jobs are cheap
+                    n_jobs=get_max_concurrency(),
                     argument_type="args",
                     desc="Checking download sizes...",
                     leave=False,
@@ -194,19 +228,26 @@ class WorldPopDownloader:
                         f"{len(errors)} HEAD request(s) failed. Details:\n{formatted}"
                     )
 
+                # Sum only the tasks we actually checked
                 total_size = sum(r.value for r in res if r.success and r.value > 0)
-                total_files = sum(1 for r in res if r.success and r.value > 0)
 
-                print(f"No. of files to download: {total_files}")
+                print(f"No. of files to download: {len(tasks)}")
                 print(f"Total est. download size: {round(total_size / 1e6, 2):,} MB")
 
         else:
-            # prepare arguments for parallel processing
-            # (chunk size now needed)
-            args = [
-                (r, l, skip_download_if_exists, chunk_size)
-                for r, l in zip(remote_paths, local_paths)
-            ]
+            # Case A: Real Download Mode
+            if not tasks:
+                # No network tasks -> No progress bar (just a clean log message).
+                logger.info(f"All {len(local_paths)} requested files found in cache.")
+                return local_paths, filtered_mdf
+
+            if num_cached > 0:
+                logger.info(
+                    f"Found {num_cached} files in cache; downloading {len(tasks)} new files."
+                )
+
+            # Prepare arguments for parallel processing
+            args = [(r, l, skip_download_if_exists, chunk_size) for r, l in tasks]
 
             res = pqdm(
                 args,
@@ -223,32 +264,34 @@ class WorldPopDownloader:
                     f"{len(errors)} download(s) failed. Details:\n{formatted}"
                 )
 
-            assert len(res) == len(local_paths)
-
-        return sorted(local_paths)
+        return local_paths, filtered_mdf
 
     @backoff.on_exception(
-        backoff.expo, HTTPError, max_tries=5, jitter=backoff.full_jitter
+        backoff.expo,
+        httpx.HTTPError,  # catch EVERYTHING (Network, Timeout, Status codes)
+        max_tries=5,
+        jitter=backoff.full_jitter,
+        giveup=_is_fatal_code,  # stop retrying if it's a 404
     )
     def _download_file(
         self,
-        remote_path,
+        remote_url,
         local_path,
         skip_if_exists=True,
-        chunk_size=1024*2
+        chunk_size=1024*1024*4
     ):
         """
         Download a WorldPop raster with automatic retries.
 
         Parameters
         ----------
-        remote_path : str
-            The remote path to the WorldPop raster file to be downloaded.
+        remote_url : str
+            The URL to the WorldPop raster file to be downloaded.
         local_path : Path
             The local file path where the raster will be saved.
         skip_if_exists : bool, optional, default=True
             Whether to skip the download if the file already exists locally.
-        chunk_size : int, optional, default=1MB
+        chunk_size : int, optional, default=4MB
             The size (in bytes) of chunks to read/write during download.
             Larger chunks may improve performance, especially on systems
             with real-time file scanning (e.g., antivirus).
@@ -261,8 +304,7 @@ class WorldPopDownloader:
             # nothing to do
             return DownloadResult(success=True)
 
-        remote_url = f"{self.URL}/{remote_path}"
-        remote_fname = remote_path.split("/")[-1]
+        remote_fname = remote_url.split("/")[-1]
         local_path.parent.mkdir(parents=True, exist_ok=True)
 
         # download the raster to a temporary path in the same directory
@@ -270,27 +312,36 @@ class WorldPopDownloader:
 
         try:
             with open(tmp_path, "wb+") as f:
-                with httpx.stream("GET", remote_url) as response:
-                    total = int(response.headers["Content-Length"])
+                with httpx.stream("GET", remote_url, timeout=DATA_DOWNLOAD_TIMEOUT) as response:
+                    response.raise_for_status()
+
+                    total = int(response.headers.get("Content-Length", 0))
                     pbar = tqdm(total=total, unit="B", unit_scale=True, leave=False)
                     with pbar:
                         pbar.set_description(f"Downloading {remote_fname}...")
                         for chunk in response.iter_raw(chunk_size=chunk_size):
                             f.write(chunk)
                             pbar.update(len(chunk))
-                    response.raise_for_status()
-        except Exception as e:
-            return DownloadResult(success=False, error=e)
-        else:
-            # Only after the download has finished do we rename the temporary file to
-            # its proper name. In this way, crashing downloads will not corrupt the
-            # local cache.
+
+            # Only after the download has finished do we rename the temporary
+            # file to its proper name. In this way, crashing downloads will
+            # not corrupt the local cache.
             tmp_path.rename(local_path)
             return DownloadResult(success=True)
 
+        except Exception as e:
+            return DownloadResult(success=False, error=e)
+
+    @backoff.on_exception(
+        backoff.expo,
+        httpx.HTTPError,  # catch EVERYTHING (Network, Timeout, Status codes)
+        max_tries=5,
+        jitter=backoff.full_jitter,
+        giveup=_is_fatal_code,  # stop retrying if it's a 404
+    )
     def _get_required_file_download_size(
             self,
-            remote_path,
+            remote_url,
             local_path,
             skip_download_if_exists=True,
     ):
@@ -302,8 +353,8 @@ class WorldPopDownloader:
 
         Parameters
         ----------
-        remote_path : str
-            Relative path to the remote WorldPop file.
+        remote_url : str
+            The URL to the WorldPop raster file.
         local_path : Path
             The local file path where a cached version of the file may exist.
         skip_download_if_exists : bool, optional, default=True
@@ -320,8 +371,7 @@ class WorldPopDownloader:
             return DownloadResult(success=True, value=0)
 
         try:
-            remote_url = f"{self.URL}/{remote_path}"
-            response = httpx.head(remote_url, follow_redirects=True)
+            response = httpx.head(remote_url, follow_redirects=True, timeout=DATA_DOWNLOAD_TIMEOUT)
             response.raise_for_status()
             size = int(response.headers.get("Content-Length", 0))
         except Exception as e:
@@ -364,6 +414,12 @@ def purge_cache(dry_run=True, keep_country_borders=False):
 
     total_size = num_matched = num_deleted = 0
     for path in fpaths:
+        if not path.is_file():
+            # Currently, we have no sub-dirs in the cache dir, but this
+            # can change in future. For directories, .unlink() would raise
+            # an error.
+            continue
+
         if keep_country_borders and 'level0' in path.name:
             continue
 

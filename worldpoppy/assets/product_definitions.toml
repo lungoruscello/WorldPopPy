@@ -1,0 +1,185 @@
+[product_base_name]
+    # ********************
+    # Global 1
+    # ********************
+    # --- Population ---
+    "wpgp" = "pop_g1" # main global 1 series
+    "wpgpunadj" = "pop_g1_unadj" # global 1 series with country totals adjusted to match UN estimates
+    "cic2020_100m" = "pop_g1_alt"  # alternative data for 2020 only
+    "cic2020_UNadj_100m" = "pop_g1_alt_unadj"  # variant of the above with UN-adjusted country totals
+    # --- Infrastructure & Built Environment ---
+    "cdistosmroads" = "dist_roads_g1"
+    "cdistosmroadinter" = "dist_road_intersections_g1"
+    # --- Water & Coastline ---
+    "cdistosmwaterways" = "dist_waterways_g1"
+    "gpdstcoastline" = "dist_coast_g1"
+    "gpdstesaccilcinlandw" = "dist_inland_water_g1"
+    # --- Protected Areas (WDPA/IUCN) ---
+    "cdistwdpa" = "dist_protected_areas_g1"
+    # --- Nighttime Lights --
+    "cviirs" = "ntl_viirs_g1"
+    "cdmsp" = "ntl_dmsp_g1"
+    # --- Topography & Climate ---
+    "wpgpsrtmslope" = "srtm_slope_g1"
+    "wpgpsrtmtopo" = "srtm_elevation_g1"
+    # --- ESA Land Cover (multi-band "containers") ---
+    # Note: We distinguith *bands*, not years, using the `band_alias` entries below
+    "esaccilc2000" = "dist_esalc_g1"
+    "esaccilc2001" = "dist_esalc_g1"
+    "esaccilc2002" = "dist_esalc_g1"
+    "esaccilc2003" = "dist_esalc_g1"
+    "esaccilc2004" = "dist_esalc_g1"
+    "esaccilc2005" = "dist_esalc_g1"
+    "esaccilc2006" = "dist_esalc_g1"
+    "esaccilc2007" = "dist_esalc_g1"
+    "esaccilc2008" = "dist_esalc_g1"
+    "esaccilc2009" = "dist_esalc_g1"
+    "esaccilc2010" = "dist_esalc_g1"
+    "esaccilc2011" = "dist_esalc_g1"
+    "esaccilc2012" = "dist_esalc_g1"
+    "esaccilc2013" = "dist_esalc_g1"
+    "esaccilc2014" = "dist_esalc_g1"
+    "esaccilc2015" = "dist_esalc_g1"
+
+    # ********************
+    # Global 2
+    # ********************
+    # --- Population ---
+    "G2_CN_POP_R24B_100m" = "pop_g2_r24b"  # 2024 beta release, constrained
+    "G2_UC_POP_R24B_100m" = "pop_uc_g2_r24b"  # 2024 beta release, unconstrained
+    "G2_CN_POP_R25A_100m" = "pop_g2_r25a"  # 2025 alpha release, constrained
+    "G2_CN_POP_R25A_1km" = "pop_g2_1km_r25a"  # 2025 alpha release, constrained (lower res.)
+    "G2_CN_POP_2024_100m" = "pop_g2_alt"  # alternate data for 2024 only, constrained
+    "G2_UC_POP_2024_100m" = "pop_uc_g2_alt"  # alternate data for 2024 only, unconstrained
+    # --- Infrastructure & Built Environment ---
+    "G2_DST_ROADS" = "dist_roads_g2"
+    "G2_DST_RINT" = "dist_road_intersections_g2"
+    "G2_BUILT_S" = "built_surface_g2"
+    "G2_BUILT_V" = "built_volume_g2"
+    "G2_DST_BUILT_S" = "dist_built_surface_g2"
+    # --- Water & Coastline ---
+    "G2_DST_Coastline" = "dist_coast_g2"
+    "G2_DST_inwater" = "dist_inland_water_g2"
+    "G2_DST_WBODIES" = "dist_waterbodies_g2"
+    # --- Protected Areas (WDPA/IUCN) ---
+    "DST_IUCN_C1" = "dist_protected_areas_cat1_g2"
+    "DST_IUCN_C0" = "dist_protected_areas_cat0_g2"
+    # --- Nighttime Lights ---
+    "G2_NT_lights" = "ntl_viirs_g2"
+    "G2_NT_Lights_F" = "ntl_viirs_filtered_g2"
+    # --- Topography & Climate ---
+    "MERIT_Slope_2007" = "merit_slope_g2"
+    "G2_Temperature" = "temp_mean_g2"
+    "G2_Precipitation" = "precip_mean_g2"
+    # --- ESA Land Cover (multi-band "containers") ---
+    # > We distinguith *bands*, not years, using the `band_alias` entries below
+    "G2_DST_ESA_2015" = "dist_esalc_g2"
+    "G2_DST_ESA_2016" = "dist_esalc_g2"
+    "G2_DST_ESA_2017" = "dist_esalc_g2"
+    "G2_DST_ESA_2018" = "dist_esalc_g2"
+    "G2_DST_ESA_2019" = "dist_esalc_g2"
+    "G2_DST_ESA_2020" = "dist_esalc_g2"
+    "G2_DST_ESA_2021" = "dist_esalc_g2"
+    "G2_DST_ESA_2022" = "dist_esalc_g2"
+
+    # ********************
+    # Utilities
+    # ********************
+    "gppixelarea" = "pxl_area"
+    "wpgpnationalboundari" = "admin0"
+    "wpgpsubnationalbound" = "admin1"
+
+
+[band_description]
+    # --- 'esaccilc...' aliases ---
+    'dst011' = 'Cultivated area distance (based on ESA-CCI land-cover classes)'
+    'dst040' = 'Woody/tree area distance (based on ESA-CCI land-cover classes)'
+    'dst130' = 'Shrub area distance (based on ESA-CCI land-cover classes)'
+    'dst140' = 'Herbaceous area distance (based on ESA-CCI land-cover classes)'
+    'dst150' = 'Sparse vegetation distance (based on ESA-CCI land-cover classes)'
+    'dst160' = 'Aquatic vegetation distance (based on ESA-CCI land-cover classes)'
+    'dst190' = 'Artificial surface distance (based on ESA-CCI land-cover classes)'
+    'dst200' = 'Bare area distance'
+    # ---  'G2_DST_ESA...' aliases ---
+    '11' = 'Cultivated area distance (based on ESA-CCI land-cover classes)'
+    '40' = 'Woody/tree area distance (based on ESA-CCI land-cover classes)'
+    '130' = 'Shrub area distance (based on ESA-CCI land-cover classes)'
+    '140' = 'Herbaceous area distance (based on ESA-CCI land-cover classes)'
+    '150' = 'Sparse vegetation distance (based on ESA-CCI land-cover classes)'
+    '160' = 'Aquatic vegetation distance (based on ESA-CCI land-cover classes)'
+    '190' = 'Artificial surface distance (based on ESA-CCI land-cover classes)'
+    '200' = 'Bare area distance (based on ESA-CCI land-cover classes)'
+    '210' = 'Water, snow, and ice distance (based on ESA-CCI land-cover classes)'
+
+
+[band_alias]
+    # --- 'esaccilc...' aliases ---
+    'dst011' = 'cultivated'
+    'dst040' = 'woody'
+    'dst130' = 'shrub'
+    'dst140' = 'herbaceous'
+    'dst150' = 'sparse_veg'
+    'dst160' = 'aquatic_veg'
+    'dst190' = 'artificial'
+    'dst200' = 'bare_area'
+
+    # ---  'G2_DST_ESA...' aliases ---
+    '11' = 'cultivated'
+    '40' = 'woody'
+    '130' = 'shrub'
+    '140' = 'herbaceous'
+    '150' = 'sparse_veg'
+    '160' = 'aquatic_veg'
+    '190' = 'artificial'
+    '200' = 'bare_area'
+    '210' = 'water_snow_ice'
+
+
+[product_notes]
+    # --- Population data ---
+    "wpgp" = "Estimated total number of people per grid-cell (unconstrained)"
+    "wpgpunadj" = """Estimated total number of people per grid-cell (unconstrained), with
+                     country totals adjusted to match the corresponding UN estimate."""
+    "cic2020_100m" = """Estimated total number of people per grid-cell in 2000. 'NoData' values
+                     represent areas that were mapped as unsettled based on building footprints
+                     provided by the Digitize Africa project of Ecopia.AI and Maxar Technologies (2020)."""
+    "cic2020_UNadj_100m" = """Estimated total number of people per grid-cell in 2000, with country
+                           totals adjusted to match the corresponding UN estimate. 'NoData' values
+                           represent areas that were mapped as unsettled based on building footprints
+                           provided by the Digitize Africa project of Ecopia.AI and Maxar Technologies (2020)"""
+    "G2_CN_POP_R24B_100m" = "Estimated total number of people per grid-cell. 2024 beta release (R2024B)."
+    "G2_UC_POP_R24B_100m" = "Estimated total number of people per grid-cell (unconstrained). 2024 beta release (R2024B)."
+    "G2_CN_POP_R25A_100m" = "Estimated total number of people per grid-cell. 2025 alpha release (R2025A)."
+    "G2_CN_POP_R25A_1km" = "Estimated total number of people per grid-cell. 2025 alpha release (R2025A)."
+    "G2_CN_POP_2024_100m" = "Estimated total number of people per grid-cell in 2024."
+    "G2_UC_POP_2024_100m" = "Estimated total number of people per grid-cell in 2024 (unconstrained)."
+    # --- Covariates ---
+    "cdistosmroads" = "Distance to OSM major roads in 2016"
+    "cdistosmroadinter" = "Distance to OSM major road intersections in 2016"
+    "cdistosmwaterways" = "Distance to OSM major waterways in 2016"
+    "gpdstcoastline" = "Distance to open-water coastline (for the whole 2000-2020 period)"
+    "gpdstesaccilcinlandw" = "Distance to ESA-CCI-LC inland water (for the whole 2000-2012)"
+    "cdistwdpa" = "Distance to IUCN strict nature reserve and wilderness area edges"
+    "cviirs" = "VIIRS Nighttime Lights"
+    "cdmsp" = "DMSP-OLS night-time lights"
+    "wpgpsrtmslope" = "SRTM-based slope"
+    "wpgpsrtmtopo" = "SRTM-based elevation"
+    "G2_DST_ROADS" = "Distance to OSM major roads in 2023"
+    "G2_DST_RINT" = "Distance to OSM major road intersections in 2023"
+    "G2_BUILT_S" = "Built-up Area"
+    "G2_BUILT_V" = "Built-up Volume"
+    "G2_DST_BUILT_S" = "Distance to Built-up Surface"
+    "G2_DST_Coastline" = "Distance to open-water coastline in 2021"
+    "G2_DST_inwater" = "Distance to inland water 2021"
+    "G2_DST_WBODIES" = "Distance to OSM major waterways 2023"
+    "DST_IUCN_C1" = "Distance to IUCN strict nature reserve and wilderness area edges"
+    "DST_IUCN_C0" = "Distance to IUCN national park, national monument, etc.."
+    "G2_NT_lights" = "VIIRS Nighttime Lights"
+    "G2_NT_Lights_F" = "VIIRS Nighttime Lights (flares/volcanos filtered)"
+    "MERIT_Slope_2007" = "MERIT-based slope"
+    "G2_Temperature" = "Annual Mean Surface Temperature"
+    "G2_Precipitation" = "Annual Mean Precipitation"
+    # --- Utilities ---
+    "gppixelarea" = "Grid-cell surface areas"
+    "wpgpnationalboundari" = "National boundaries"
+    "wpgpsubnationalbound" = "Sub-National unit boundaries"
