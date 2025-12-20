@@ -67,18 +67,17 @@ kam_topo_warped.plot(
 # Annotate
 locations = [
     (160.642, 56.057, 'Klyuchevskoy Volcano'),
-    (158.633, 53.042, 'Petropavlovsk-Kamch.'),
+    (158.633, 53.042, 'Petropavlovsk-K.'),
     ]
 plot_location_markers(
     locations,
-    xytext=(-90, 15),
+    xytext=(-90, 10),
     to_crs=utm_57n,
     color='white',      # Fill colour for the scatter point (also: the default text colour)
     s=10,               # Size of scatter point
     edgecolors='black', # Border colour for scatter point
+    fontweight="bold",
     other_annotate_kwargs=dict(  # Additional text options for "pro" look
-        weight="bold",
-        fontsize=9,
         path_effects=[pe.withStroke(linewidth=1.5, foreground='black')]
     ),
 )
