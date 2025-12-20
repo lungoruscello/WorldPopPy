@@ -1,5 +1,5 @@
 __about__ = "Python client to help you work with WorldPop data for any region on earth"
-__version__ = '0.4.0'
+__version__ = '0.4.1'
 __url__ = "https://github.com/lungoruscello/worldpoppy"
 __license__ = "MPL-2.0"
 __author__ = "S. Langenbach"
