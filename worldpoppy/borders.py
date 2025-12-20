@@ -63,8 +63,8 @@ def load_country_borders():
     if not _border_buffered_fpath.is_file():
         logger.warning('Buffered country borders not found in cache. Rebuilding...')
 
-        # fetch un-buffered simplified country polygons
-        build_country_borders()  # only triggers if cached is not available
+        # Fetch un-buffered simplified country polygons
+        build_country_borders()  # only triggers if cache is cold
         gdf = gpd.read_feather(_border_raw_fpath)
 
         # Apply a small buffer to country borders equivalent to approx. 1 km
@@ -78,9 +78,13 @@ def load_country_borders():
 
         if not np.all(gdf.is_valid):
             raise ValueError('Adding buffer yielded invalid geometries.')
-            # workaround: reduce buffer size
+            # > Workaround: reduce buffer size
 
-        # save the buffered data for re-use
+        # Make sure the cache directory exists
+        # (dir creation may be necessary after fresh library install)
+        _border_buffered_fpath.parent.mkdir(parents=True, exist_ok=True)
+
+        # Save the buffered data for re-use
         gdf.to_feather(_border_buffered_fpath)
         logger.warning('Done.')
 
@@ -110,9 +114,9 @@ def build_country_borders(overwrite=False):
     ------
     ModuleNotFoundError
         If an installation of the optional `ogeo.gdal` library is not available.
-
-    TODO Document the standard users will not need to call this function.
     """
+    # TODO Document the standard users will not need to call this function.
+
     from worldpoppy.download import WorldPopDownloader  # avoid circularity
 
     if _border_raw_fpath.is_file() and not overwrite:
