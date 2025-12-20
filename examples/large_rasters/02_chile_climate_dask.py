@@ -6,8 +6,6 @@ Illustrates:
    is specified using **country codes**.
 2. Using Dask (`chunks='auto'`) to lazy-load raster data.
 3. Pre-coarsening raster data before further processing.
-4. Managing the degree of parallelism, and thus the peak memory load,
-   by explicitly setting the number of Dask workers.
 
 Note:
     Specifying the Area of Interest (AoI) using a country code can lead to
@@ -22,20 +20,13 @@ Note:
 
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
-from dask.distributed import Client
 
 from worldpoppy import (
     wp_raster,
     wp_warp,
-    get_max_concurrency,
     plot_country_borders,
     clean_axes
 )
-
-# --- WARNING ---
-print("WARNING: This example requires temperature & precipitation data for CHL (~600MB).")
-print("If cached files do not exist, they will be downloaded.\n")
-# ---------------
 
 # --- Constants ---
 ISO_CODE = 'CHL'
@@ -70,16 +61,15 @@ def get_processed_chile_data(product_name):
         da = da - ZERO_C_IN_KELVIN
 
     # --- Define Coarsened Data (Lazy) ---
-    # We "pre-coarsen" the raster data before warping it
+    # We "pre-coarsen" the raster data by 10x before warping it
     # to further reduce the memory footprint.
     da_coarse = da.coarsen(x=10, y=10, boundary='trim').mean()
 
     # --- Graph Execution ---
-    # Trigger the computation, thus loading the processed raster into RAM
+    # Trigger the computation, thus loading the coarsened raster into RAM
     da_coarse = da_coarse.load()
 
     # --- Warping ---
-    # Now that downsampled data is in memory, warping is fast.
     da_warped = wp_warp(
         da_coarse,
         to_crs=CHILE_CRS,
@@ -104,21 +94,12 @@ def make_plot():
         ("precip_mean_g2", f"Annual Precipitation", get_rain_cmap),
     ]
 
-    # --- Dask Client Setup ---
-    # We explicitly start a Dask Client so we can *manually* control the
-    # number of workers. Fewer workers -> lower memory footprint.
-    n_workers = min(4, get_max_concurrency())
-
-    # Using a context manager ensures the client closes cleanly.
-    with Client(n_workers=n_workers, threads_per_worker=1) as client:
-        print(f"Dask Dashboard active at: {client.dashboard_link}")
-
-        # --- Get Processed Data ---
-        rasters = []
-        for pname, title, _ in plot_configs:
-            print(f"Fetching and processing '{pname}' ...")
-            raster = get_processed_chile_data(pname)
-            rasters.append(raster)
+    # --- Get Processed Data ---
+    rasters = []
+    for pname, title, _ in plot_configs:
+        print(f"Fetching and processing '{pname}' ...")
+        raster = get_processed_chile_data(pname)
+        rasters.append(raster)
 
     # --- Plot Side-by-Side: Temperature & Precipitation ---
     # Make a standard canvas for the "repo gallery".
@@ -169,5 +150,10 @@ def get_temp_cmap():
 
 
 if __name__ == "__main__":
+    # --- WARNING ---
+    print("WARNING: This example requires temperature & precipitation data for CHL (~600MB).")
+    print("If cached files do not exist, they will be downloaded.\n")
+    # ---------------
+
     fig = make_plot()
     plt.show()
