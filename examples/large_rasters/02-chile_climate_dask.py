@@ -54,7 +54,7 @@ def get_processed_chile_data(product_name):
     da = wp_raster(
         product_name=product_name,
         aoi=ISO_CODE,
-        pre_clip_bbox=CHL_MAINLAND_BOX,
+        pre_clip_bbox=CHL_MAINLAND_BOX,  # Remove Rapa Nui and empty ocean space
         masked=True,
         years=YEAR,
         chunks='auto',  # Enable Dask -> Lazy load the pre-clipped data
@@ -126,7 +126,7 @@ def make_plot():
     fig.get_layout_engine().set(wspace=0.1)
 
     # 2. Set the "super" title
-    fig.suptitle(f'Mainland Chile: Climatic Zones', fontsize=12, fontweight='bold')
+    fig.suptitle(f'Climatic Zones of Mainland Chile', fontsize=12, fontweight='bold')
 
     zipped = zip(axarr, rasters, plot_configs)
     for ax, raster, (pname, title, cmap_gen) in zipped:
