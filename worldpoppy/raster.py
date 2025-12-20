@@ -1,6 +1,6 @@
 """
 This is the main module of `WorldPopPy`. It provides logic to fetch raster
-data from `WorldPop <https://www.worldpop.org/>`_ through several alternative
+data from `WorldPop <https://www.worldpop.org/>`__ through several alternative
 specifications for the geographic area of interest.
 
 Main methods
@@ -110,7 +110,7 @@ def wp_raster(
 
     This function implements several optimisation techniques to minimise
     the memory footprint involved when working with raster data from large
-    countries # TODO provide a few more details.
+    countries.
 
     Parameters
     ----------
@@ -140,6 +140,7 @@ def wp_raster(
         - If int K, the data is loaded in chunks of size (K, K).
           Equivalent to passing {'x': K, 'y': K}.
         - If dict (e.g., {'x': 1024, 'y': 1024}), that specific chunking is used.
+
     years : int or List[Union[int, str]] or str or None, optional
         One or more years of interest or a keyword string.
         For static data products, this argument is usually None (default).
@@ -154,6 +155,7 @@ def wp_raster(
         * List: A list containing integers and/or keywords (e.g.,
           ``[2010, 'last']``).
         * None: (Default) for static data products.
+
     pre_clip_bbox : Tuple[float, float, float, float], optional
         A bounding box (min_lon, min_lat, max_lon, max_lat) to which
         input rasters will *immediately* be clipped after loading them
@@ -171,19 +173,19 @@ def wp_raster(
     masked: bool, optional, default=True
         If True, read the mask of all input rasters and set masked
         values to NaN. This argument is passed to
-        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
+        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
         when reading input rasters.
         Note: The default here is True, unlike in `rioxarray.open_rasterio`.
     mask_and_scale: bool, default=True
         Lazily scale (using the `scales` and `offsets` from rasterio) all
         input rasters and mask them. If the _Unsigned attribute is present
         treat integer arrays as unsigned. This argument is passed to
-        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
+        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
         when reading input rasters.
         Note: The default here is True, unlike in `rioxarray.open_rasterio`.
     other_read_kwargs : dict, optional
         Dictionary with additional keyword arguments that are passed to
-        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
+        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
         when reading input rasters (e.g., `lock` or `band_as_variable`).
         Note that `chunks` passed here will be ignored in favour of the
         explicit `chunks` argument.
@@ -204,10 +206,12 @@ def wp_raster(
     -------
     xarray.DataArray or None
         The combined raster data.
+
         - For static products, dimensions are ``(y, x)``.
         - For multi-years products, dimensions are likewise ``(y, x)`` IF
           users only request a single year.
         - If multiple years are requested, dimensions are ``(year, y, x)``.
+
         Returns None if `download_dry_run` is True.
 
     Raises
@@ -217,6 +221,7 @@ def wp_raster(
 
     IncompatibleRasterError
         This function validates input-raster attributes before merging.
+
         - `crs` is *always* validated.
         - `_FillValue` is validated *only if* `masked=False` and
           `mask_and_scale=False`.
@@ -245,7 +250,7 @@ def wp_raster(
             "Cannot provide `pre_clip_bbox` when `suppress_pre_clip` is True."
         )
 
-    # --- Standardize Chunks ---
+    # --- Standardise Chunks ---
     if isinstance(chunks, int):
         chunks = {'x': chunks, 'y': chunks}
 
@@ -422,7 +427,7 @@ def wp_warp(
         If None, defaults to 'nearest'.
     **kwargs : dict
         Additional keyword arguments passed directly to
-        `rioxarray.reproject <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray.raster_array.RasterArray.reproject>`_.
+        `rioxarray.reproject <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray.raster_array.RasterArray.reproject>`__.
         Useful for passing specific GDAL warp options.
 
     Returns
@@ -540,27 +545,28 @@ def merge_rasters(
         If chunks is provided, the raster data is loaded into a *Dask* array
         for better memory management.
 
-        - If 'auto' (default), Dask chooses the chunk size.
-        - If int K, the data is loaded in chunks of size (K, K).
+        * If 'auto' (default), Dask chooses the chunk size.
+        * If int K, the data is loaded in chunks of size (K, K).
           Equivalent to passing {'x': K, 'y': K}.
-        - If dict (e.g., {'x': 1024, 'y': 1024}), that specific chunking is used.
-        - If None, data loading with Dask is *disabled*.
+        * If dict (e.g., {'x': 1024, 'y': 1024}), that specific chunking is used.
+        * If None, data loading with Dask is *disabled*.
+
     masked: bool, optional, default=True
         If True, read the mask of all input rasters and set masked
         values to NaN. This argument is passed to
-        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
+        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
         when reading input rasters.
         Note: The default here is True, unlike in `rioxarray.open_rasterio`.
     mask_and_scale: bool, default=True
         Lazily scale (using the `scales` and `offsets` from rasterio) all
         input rasters and mask them. If the _Unsigned attribute is present
         treat integer arrays as unsigned. This argument is passed to
-        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
+        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
         when reading input rasters.
         Note: The default here is True, unlike in `rioxarray.open_rasterio`.
     other_read_kwargs : dict, optional
         Dictionary with additional keyword arguments that are passed to
-        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`_
+        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
         when reading input rasters (e.g., `lock`
         or `band_as_variable`).
     pre_clip_bbox : Tuple[float, float, float, float], optional

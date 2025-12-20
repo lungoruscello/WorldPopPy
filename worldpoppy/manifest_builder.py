@@ -4,17 +4,24 @@ Core "engine" for building a raw data manifest for the `worldpoppy` library.
 This module contains all the logic for traversing the WorldPop metadata API,
 parsing the results, and saving them to a new cache file (RAW_MANIFEST_CACHE_PATH).
 
-Its main and only public function is `build_raw_manifest_from_api()`. However,
-users will rarely need to import that function directly. Instead, it is called
-by the separate `manifest_loader` module whenever a cached version of the raw
-manifest does not exist.
+Main methods
+------------------------
+
+    - :func:`build_raw_manifest_from_api`
+        Query WorldPop's meta-data API and analyse the results to build a new,
+        raw manifest of raster datasets for `worldpoppy`. Note: Users will rarely
+        need to import this function directly. Instead, it is called by the separate
+        `manifest_loader` module whenever a cached version of the raw manifest does
+        not exist.
 
 For a detailed, high-level explanation of this module's API traversal strategy,
 related terminology (e.g., "Leaf Node", "Sample Payload"), and data-parsing
 logic, please see the `manifest_build_strategy.md` document in the project root.
 
----
-A note on the complexity of this module:
+----
+
+**A note on the complexity of this module:**
+
 The module's size is a result of two challenges:
 
 1.  To minimise API calls, this module implements a "sample and infer"

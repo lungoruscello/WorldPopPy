@@ -1,5 +1,19 @@
 """
-Collection of various plotting utility functions.
+Collection of various plotting utility functions for `worldpoppy`.
+
+This module provides helpers to visualise geospatial data, including
+plotting country borders, marking locations, and cleaning up map axes.
+
+Main methods
+------------------------
+
+    - :func:`plot_country_borders`
+        Plot country borders on a matplotlib axis.
+    - :func:`plot_location_markers`
+        Plot markers for geolocated place names or raw coordinates.
+    - :func:`clean_axes`
+        Clean up matplotlib axes by setting equal aspect and removing labels.
+
 """
 import logging
 
@@ -76,12 +90,14 @@ def plot_location_markers(
     ----------
     locations : str, tuple, or list of (str or tuple)
         The locations to plot. Can be:
+
         - A location name string (e.g., "Nairobi").
         - A tuple of (location_name, display_label) to search for "location_name"
           but annotate with "display_label".
         - A coordinate tuple (longitude, latitude) in WGS84.
         - A coordinate tuple with a label (longitude, latitude, label).
         - A mixed list of strings and tuples.
+
     ax : matplotlib.axes.Axes, optional
         Axis on which to plot. If None, uses current axis.
     annotate : bool, default=True

@@ -83,10 +83,11 @@ def extract_unique_bands(filenames):
     of "_" parts) and that *exactly one* part of the filename is different.
     It treats that part as the band name.
 
-    TODO: For AgeSex_structures data, the assumption of *exactly one*
-     differing does not hold. Generalise?
     """
-    
+
+    # TODO: For AgeSex_structures data, the assumption of *exactly one*
+    #  differing does not hold. Generalise?
+
     if not filenames or len(filenames) < 2:
         return None
 

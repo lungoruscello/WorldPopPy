@@ -6,7 +6,7 @@ sizes (dry run).
 Note
 ----
     The implementation of this module draws on the "download.py" module from the
-    `blackmarblepy <https://github.com/worldbank/blackmarblepy>`_ package by
+    `blackmarblepy <https://github.com/worldbank/blackmarblepy>`__ package by
     Gabriel Stefanini Vicente and Robert Marty. `blackmarblepy` is licensed
     under the Mozilla Public License (MPL-2.0), as is `WorldPopPy`.
 
@@ -101,7 +101,7 @@ class DownloadResult:
 class WorldPopDownloader:
     """
     An HTTP downloader to retrieve country-specific raster data from the
-    `WorldPop <https://hub.worldpop.org/>`_ project.
+    `WorldPop <https://hub.worldpop.org/>`__ project.
 
     Attributes
     ----------
