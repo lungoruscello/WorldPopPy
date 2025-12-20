@@ -1,0 +1,1259 @@
+{
+    "AFG": [
+        "CHN",
+        "IRN",
+        "PAK",
+        "TJK",
+        "TKM",
+        "UZB"
+    ],
+    "ALB": [
+        "GRC",
+        "MNE",
+        "MKD",
+        "XKX"
+    ],
+    "DZA": [
+        "LBY",
+        "MLI",
+        "MRT",
+        "MAR",
+        "NER",
+        "TUN"
+    ],
+    "ASM": [
+
+    ],
+    "AND": [
+        "FRA",
+        "ESP"
+    ],
+    "AGO": [
+        "COG",
+        "COD",
+        "NAM",
+        "ZMB"
+    ],
+    "ATG": [
+
+    ],
+    "AZE": [
+        "ARM",
+        "GEO",
+        "IRN",
+        "RUS",
+        "TUR"
+    ],
+    "ARG": [
+        "BOL",
+        "BRA",
+        "CHL",
+        "PRY",
+        "URY",
+        "XIB"
+    ],
+    "AUS": [
+
+    ],
+    "AUT": [
+        "CZE",
+        "DEU",
+        "HUN",
+        "ITA",
+        "LIE",
+        "SVK",
+        "SVN",
+        "CHE"
+    ],
+    "BHS": [
+
+    ],
+    "BHR": [
+
+    ],
+    "BGD": [
+        "MMR",
+        "IND"
+    ],
+    "ARM": [
+        "AZE",
+        "GEO",
+        "IRN",
+        "TUR"
+    ],
+    "BRB": [
+
+    ],
+    "BEL": [
+        "FRA",
+        "DEU",
+        "LUX",
+        "NLD"
+    ],
+    "BMU": [
+
+    ],
+    "BTN": [
+        "CHN",
+        "IND"
+    ],
+    "BOL": [
+        "ARG",
+        "BRA",
+        "CHL",
+        "PRY",
+        "PER"
+    ],
+    "BIH": [
+        "HRV",
+        "MNE",
+        "SRB"
+    ],
+    "BWA": [
+        "NAM",
+        "ZAF",
+        "ZWE",
+        "ZMB"
+    ],
+    "BVT": [
+
+    ],
+    "BRA": [
+        "ARG",
+        "BOL",
+        "COL",
+        "GUF",
+        "GUY",
+        "PRY",
+        "PER",
+        "SUR",
+        "URY",
+        "VEN",
+        "XIB"
+    ],
+    "BLZ": [
+        "GTM",
+        "MEX"
+    ],
+    "IOT": [
+
+    ],
+    "SLB": [
+
+    ],
+    "VGB": [
+
+    ],
+    "BRN": [
+        "MYS"
+    ],
+    "BGR": [
+        "GRC",
+        "ROU",
+        "SRB",
+        "TUR",
+        "MKD"
+    ],
+    "MMR": [
+        "BGD",
+        "CHN",
+        "IND",
+        "LAO",
+        "THA"
+    ],
+    "BDI": [
+        "COD",
+        "RWA",
+        "TZA"
+    ],
+    "BLR": [
+        "LVA",
+        "LTU",
+        "POL",
+        "RUS",
+        "UKR"
+    ],
+    "KHM": [
+        "LAO",
+        "VNM",
+        "THA"
+    ],
+    "CMR": [
+        "CAF",
+        "TCD",
+        "COG",
+        "GNQ",
+        "GAB",
+        "NGA"
+    ],
+    "CAN": [
+        "GRL",
+        "USA"
+    ],
+    "CPV": [
+
+    ],
+    "CYM": [
+
+    ],
+    "CAF": [
+        "CMR",
+        "TCD",
+        "COG",
+        "COD",
+        "SSD",
+        "SDN"
+    ],
+    "LKA": [
+
+    ],
+    "TCD": [
+        "CMR",
+        "CAF",
+        "LBY",
+        "NER",
+        "NGA",
+        "SDN"
+    ],
+    "CHL": [
+        "ARG",
+        "BOL",
+        "PER"
+    ],
+    "CHN": [
+        "AFG",
+        "BTN",
+        "MMR",
+        "HKG",
+        "IND",
+        "KAZ",
+        "PRK",
+        "KGZ",
+        "LAO",
+        "MAC",
+        "MNG",
+        "NPL",
+        "PAK",
+        "RUS",
+        "VNM",
+        "TJK"
+    ],
+    "TWN": [
+
+    ],
+    "CXR": [
+
+    ],
+    "CCK": [
+
+    ],
+    "COL": [
+        "BRA",
+        "ECU",
+        "PAN",
+        "PER",
+        "VEN"
+    ],
+    "COM": [
+
+    ],
+    "MYT": [
+
+    ],
+    "COG": [
+        "AGO",
+        "CMR",
+        "CAF",
+        "COD",
+        "GAB"
+    ],
+    "COD": [
+        "AGO",
+        "BDI",
+        "CAF",
+        "COG",
+        "RWA",
+        "SSD",
+        "UGA",
+        "TZA",
+        "ZMB"
+    ],
+    "COK": [
+
+    ],
+    "CRI": [
+        "NIC",
+        "PAN"
+    ],
+    "HRV": [
+        "BIH",
+        "HUN",
+        "MNE",
+        "SRB",
+        "SVN"
+    ],
+    "CUB": [
+
+    ],
+    "CYP": [
+
+    ],
+    "CZE": [
+        "AUT",
+        "DEU",
+        "POL",
+        "SVK"
+    ],
+    "BEN": [
+        "NER",
+        "NGA",
+        "TGO",
+        "BFA"
+    ],
+    "DNK": [
+        "DEU"
+    ],
+    "DMA": [
+
+    ],
+    "DOM": [
+        "HTI"
+    ],
+    "ECU": [
+        "COL",
+        "PER"
+    ],
+    "SLV": [
+        "GTM",
+        "HND"
+    ],
+    "GNQ": [
+        "CMR",
+        "GAB"
+    ],
+    "ETH": [
+        "ERI",
+        "DJI",
+        "KEN",
+        "SOM",
+        "SSD",
+        "SDN"
+    ],
+    "ERI": [
+        "ETH",
+        "DJI",
+        "SDN"
+    ],
+    "EST": [
+        "LVA",
+        "RUS"
+    ],
+    "FRO": [
+
+    ],
+    "FLK": [
+
+    ],
+    "SGS": [
+
+    ],
+    "FJI": [
+
+    ],
+    "FIN": [
+        "ALA",
+        "NOR",
+        "RUS",
+        "SWE"
+    ],
+    "ALA": [
+        "FIN",
+        "SWE"
+    ],
+    "FRA": [
+        "AND",
+        "BEL",
+        "DEU",
+        "ITA",
+        "LUX",
+        "MCO",
+        "ESP",
+        "CHE"
+    ],
+    "GUF": [
+        "BRA",
+        "SUR"
+    ],
+    "PYF": [
+
+    ],
+    "ATF": [
+
+    ],
+    "DJI": [
+        "ETH",
+        "ERI",
+        "SOM"
+    ],
+    "GAB": [
+        "CMR",
+        "COG",
+        "GNQ"
+    ],
+    "GEO": [
+        "AZE",
+        "ARM",
+        "RUS",
+        "TUR"
+    ],
+    "GMB": [
+        "SEN"
+    ],
+    "PSE": [
+        "ISR",
+        "JOR",
+        "EGY"
+    ],
+    "DEU": [
+        "AUT",
+        "BEL",
+        "CZE",
+        "DNK",
+        "FRA",
+        "LUX",
+        "NLD",
+        "POL",
+        "CHE"
+    ],
+    "GHA": [
+        "CIV",
+        "TGO",
+        "BFA"
+    ],
+    "GIB": [
+        "ESP"
+    ],
+    "KIR": [
+
+    ],
+    "GRC": [
+        "ALB",
+        "BGR",
+        "TUR",
+        "MKD"
+    ],
+    "GRL": [
+        "CAN"
+    ],
+    "GRD": [
+
+    ],
+    "GLP": [
+
+    ],
+    "GUM": [
+
+    ],
+    "GTM": [
+        "BLZ",
+        "SLV",
+        "HND",
+        "MEX"
+    ],
+    "GIN": [
+        "CIV",
+        "LBR",
+        "MLI",
+        "GNB",
+        "SEN",
+        "SLE"
+    ],
+    "GUY": [
+        "BRA",
+        "SUR",
+        "VEN"
+    ],
+    "HTI": [
+        "DOM"
+    ],
+    "HMD": [
+
+    ],
+    "VAT": [
+        "ITA"
+    ],
+    "HND": [
+        "SLV",
+        "GTM",
+        "NIC"
+    ],
+    "HKG": [
+        "CHN"
+    ],
+    "HUN": [
+        "AUT",
+        "HRV",
+        "ROU",
+        "SRB",
+        "SVK",
+        "SVN",
+        "UKR"
+    ],
+    "ISL": [
+
+    ],
+    "IND": [
+        "BGD",
+        "BTN",
+        "MMR",
+        "CHN",
+        "NPL",
+        "PAK"
+    ],
+    "IDN": [
+        "MYS",
+        "PNG",
+        "TLS"
+    ],
+    "IRN": [
+        "AFG",
+        "AZE",
+        "ARM",
+        "IRQ",
+        "PAK",
+        "TUR",
+        "TKM"
+    ],
+    "IRQ": [
+        "IRN",
+        "JOR",
+        "KWT",
+        "SAU",
+        "SYR",
+        "TUR"
+    ],
+    "IRL": [
+        "GBR"
+    ],
+    "ISR": [
+        "PSE",
+        "JOR",
+        "LBN",
+        "SYR",
+        "EGY"
+    ],
+    "ITA": [
+        "AUT",
+        "FRA",
+        "VAT",
+        "SMR",
+        "SVN",
+        "CHE"
+    ],
+    "CIV": [
+        "GHA",
+        "GIN",
+        "LBR",
+        "MLI",
+        "BFA"
+    ],
+    "JAM": [
+
+    ],
+    "JPN": [
+
+    ],
+    "KAZ": [
+        "CHN",
+        "KGZ",
+        "RUS",
+        "TKM",
+        "UZB"
+    ],
+    "JOR": [
+        "PSE",
+        "IRQ",
+        "ISR",
+        "SAU",
+        "SYR"
+    ],
+    "KEN": [
+        "ETH",
+        "SOM",
+        "SSD",
+        "UGA",
+        "TZA"
+    ],
+    "PRK": [
+        "CHN",
+        "KOR",
+        "RUS"
+    ],
+    "KOR": [
+        "PRK"
+    ],
+    "KWT": [
+        "IRQ",
+        "SAU"
+    ],
+    "KGZ": [
+        "CHN",
+        "KAZ",
+        "TJK",
+        "UZB"
+    ],
+    "LAO": [
+        "MMR",
+        "KHM",
+        "CHN",
+        "VNM",
+        "THA"
+    ],
+    "LBN": [
+        "ISR",
+        "SYR"
+    ],
+    "LSO": [
+        "ZAF"
+    ],
+    "LVA": [
+        "BLR",
+        "EST",
+        "LTU",
+        "RUS"
+    ],
+    "LBR": [
+        "GIN",
+        "CIV",
+        "SLE"
+    ],
+    "LBY": [
+        "DZA",
+        "TCD",
+        "NER",
+        "SDN",
+        "TUN",
+        "EGY"
+    ],
+    "LIE": [
+        "AUT",
+        "CHE"
+    ],
+    "LTU": [
+        "BLR",
+        "LVA",
+        "POL",
+        "RUS"
+    ],
+    "LUX": [
+        "BEL",
+        "FRA",
+        "DEU"
+    ],
+    "MAC": [
+        "CHN"
+    ],
+    "MDG": [
+
+    ],
+    "MWI": [
+        "MOZ",
+        "TZA",
+        "ZMB"
+    ],
+    "MYS": [
+        "BRN",
+        "IDN",
+        "THA"
+    ],
+    "MDV": [
+
+    ],
+    "MLI": [
+        "DZA",
+        "GIN",
+        "CIV",
+        "MRT",
+        "NER",
+        "SEN",
+        "BFA"
+    ],
+    "MLT": [
+
+    ],
+    "MTQ": [
+
+    ],
+    "MRT": [
+        "DZA",
+        "MLI",
+        "SEN",
+        "ESH"
+    ],
+    "MUS": [
+
+    ],
+    "MEX": [
+        "BLZ",
+        "GTM",
+        "USA"
+    ],
+    "MCO": [
+        "FRA"
+    ],
+    "MNG": [
+        "CHN",
+        "RUS"
+    ],
+    "MDA": [
+        "ROU",
+        "UKR"
+    ],
+    "MNE": [
+        "ALB",
+        "BIH",
+        "HRV",
+        "SRB",
+        "XKX"
+    ],
+    "MSR": [
+
+    ],
+    "MAR": [
+        "DZA",
+        "ESP",
+        "ESH"
+    ],
+    "MOZ": [
+        "MWI",
+        "ZAF",
+        "ZWE",
+        "SWZ",
+        "TZA",
+        "ZMB"
+    ],
+    "OMN": [
+        "SAU",
+        "ARE",
+        "YEM"
+    ],
+    "NAM": [
+        "AGO",
+        "BWA",
+        "ZAF",
+        "ZMB"
+    ],
+    "NRU": [
+
+    ],
+    "NPL": [
+        "CHN",
+        "IND"
+    ],
+    "NLD": [
+        "BEL",
+        "DEU"
+    ],
+    "CUW": [
+
+    ],
+    "ABW": [
+
+    ],
+    "SXM": [
+        "MAF"
+    ],
+    "BES": [
+
+    ],
+    "NCL": [
+
+    ],
+    "VUT": [
+
+    ],
+    "NZL": [
+
+    ],
+    "NIC": [
+        "CRI",
+        "HND"
+    ],
+    "NER": [
+        "DZA",
+        "TCD",
+        "BEN",
+        "LBY",
+        "MLI",
+        "NGA",
+        "BFA"
+    ],
+    "NGA": [
+        "CMR",
+        "TCD",
+        "BEN",
+        "NER"
+    ],
+    "NIU": [
+
+    ],
+    "NFK": [
+
+    ],
+    "NOR": [
+        "FIN",
+        "RUS",
+        "SWE"
+    ],
+    "MNP": [
+
+    ],
+    "UMI": [
+
+    ],
+    "FSM": [
+
+    ],
+    "MHL": [
+
+    ],
+    "PLW": [
+
+    ],
+    "PAK": [
+        "AFG",
+        "CHN",
+        "IND",
+        "IRN"
+    ],
+    "PAN": [
+        "COL",
+        "CRI"
+    ],
+    "PNG": [
+        "IDN"
+    ],
+    "PRY": [
+        "ARG",
+        "BOL",
+        "BRA"
+    ],
+    "PER": [
+        "BOL",
+        "BRA",
+        "CHL",
+        "COL",
+        "ECU"
+    ],
+    "PHL": [
+
+    ],
+    "PCN": [
+
+    ],
+    "POL": [
+        "BLR",
+        "CZE",
+        "DEU",
+        "LTU",
+        "RUS",
+        "SVK",
+        "UKR"
+    ],
+    "PRT": [
+        "ESP"
+    ],
+    "GNB": [
+        "GIN",
+        "SEN"
+    ],
+    "TLS": [
+        "IDN"
+    ],
+    "PRI": [
+
+    ],
+    "QAT": [
+        "SAU"
+    ],
+    "REU": [
+
+    ],
+    "ROU": [
+        "BGR",
+        "HUN",
+        "MDA",
+        "SRB",
+        "UKR"
+    ],
+    "RUS": [
+        "AZE",
+        "BLR",
+        "CHN",
+        "EST",
+        "FIN",
+        "GEO",
+        "KAZ",
+        "PRK",
+        "LVA",
+        "LTU",
+        "MNG",
+        "NOR",
+        "POL",
+        "UKR"
+    ],
+    "RWA": [
+        "BDI",
+        "COD",
+        "UGA",
+        "TZA"
+    ],
+    "BLM": [
+
+    ],
+    "SHN": [
+
+    ],
+    "KNA": [
+
+    ],
+    "AIA": [
+
+    ],
+    "LCA": [
+
+    ],
+    "MAF": [
+        "SXM"
+    ],
+    "SPM": [
+
+    ],
+    "VCT": [
+
+    ],
+    "SMR": [
+        "ITA"
+    ],
+    "STP": [
+
+    ],
+    "SAU": [
+        "IRQ",
+        "JOR",
+        "KWT",
+        "OMN",
+        "QAT",
+        "ARE",
+        "YEM"
+    ],
+    "SEN": [
+        "GMB",
+        "GIN",
+        "MLI",
+        "MRT",
+        "GNB"
+    ],
+    "SRB": [
+        "BIH",
+        "BGR",
+        "HRV",
+        "HUN",
+        "MNE",
+        "ROU",
+        "MKD",
+        "XKX"
+    ],
+    "SYC": [
+
+    ],
+    "SLE": [
+        "GIN",
+        "LBR"
+    ],
+    "SGP": [
+
+    ],
+    "SVK": [
+        "AUT",
+        "CZE",
+        "HUN",
+        "POL",
+        "UKR"
+    ],
+    "VNM": [
+        "KHM",
+        "CHN",
+        "LAO"
+    ],
+    "SVN": [
+        "AUT",
+        "HRV",
+        "HUN",
+        "ITA"
+    ],
+    "SOM": [
+        "ETH",
+        "DJI",
+        "KEN"
+    ],
+    "ZAF": [
+        "BWA",
+        "LSO",
+        "MOZ",
+        "NAM",
+        "ZWE",
+        "SWZ"
+    ],
+    "ZWE": [
+        "BWA",
+        "MOZ",
+        "ZAF",
+        "ZMB"
+    ],
+    "ESP": [
+        "AND",
+        "FRA",
+        "GIB",
+        "MAR",
+        "PRT"
+    ],
+    "SSD": [
+        "CAF",
+        "COD",
+        "ETH",
+        "KEN",
+        "SDN",
+        "UGA"
+    ],
+    "SDN": [
+        "CAF",
+        "TCD",
+        "ETH",
+        "ERI",
+        "LBY",
+        "SSD",
+        "EGY"
+    ],
+    "ESH": [
+        "MRT",
+        "MAR"
+    ],
+    "SUR": [
+        "BRA",
+        "GUF",
+        "GUY"
+    ],
+    "SJM": [
+
+    ],
+    "SWZ": [
+        "MOZ",
+        "ZAF"
+    ],
+    "SWE": [
+        "FIN",
+        "ALA",
+        "NOR"
+    ],
+    "CHE": [
+        "AUT",
+        "FRA",
+        "DEU",
+        "ITA",
+        "LIE"
+    ],
+    "SYR": [
+        "IRQ",
+        "ISR",
+        "JOR",
+        "LBN",
+        "TUR"
+    ],
+    "TJK": [
+        "AFG",
+        "CHN",
+        "KGZ",
+        "UZB"
+    ],
+    "THA": [
+        "MMR",
+        "KHM",
+        "LAO",
+        "MYS"
+    ],
+    "TGO": [
+        "BEN",
+        "GHA",
+        "BFA"
+    ],
+    "TKL": [
+
+    ],
+    "TON": [
+
+    ],
+    "TTO": [
+
+    ],
+    "ARE": [
+        "OMN",
+        "SAU"
+    ],
+    "TUN": [
+        "DZA",
+        "LBY"
+    ],
+    "TUR": [
+        "AZE",
+        "ARM",
+        "BGR",
+        "GEO",
+        "GRC",
+        "IRN",
+        "IRQ",
+        "SYR"
+    ],
+    "TKM": [
+        "AFG",
+        "IRN",
+        "KAZ",
+        "UZB"
+    ],
+    "TCA": [
+
+    ],
+    "TUV": [
+
+    ],
+    "UGA": [
+        "COD",
+        "KEN",
+        "RWA",
+        "SSD",
+        "TZA"
+    ],
+    "UKR": [
+        "BLR",
+        "HUN",
+        "MDA",
+        "POL",
+        "ROU",
+        "RUS",
+        "SVK"
+    ],
+    "MKD": [
+        "ALB",
+        "BGR",
+        "GRC",
+        "SRB",
+        "XKX"
+    ],
+    "EGY": [
+        "PSE",
+        "ISR",
+        "LBY",
+        "SDN"
+    ],
+    "GBR": [
+        "IRL"
+    ],
+    "GGY": [
+
+    ],
+    "JEY": [
+
+    ],
+    "IMN": [
+
+    ],
+    "TZA": [
+        "BDI",
+        "COD",
+        "KEN",
+        "MWI",
+        "MOZ",
+        "RWA",
+        "UGA",
+        "ZMB"
+    ],
+    "USA": [
+        "CAN",
+        "MEX"
+    ],
+    "VIR": [
+
+    ],
+    "BFA": [
+        "BEN",
+        "GHA",
+        "CIV",
+        "MLI",
+        "NER",
+        "TGO"
+    ],
+    "URY": [
+        "ARG",
+        "BRA",
+        "XIB"
+    ],
+    "UZB": [
+        "AFG",
+        "KAZ",
+        "KGZ",
+        "TJK",
+        "TKM"
+    ],
+    "VEN": [
+        "BRA",
+        "COL",
+        "GUY"
+    ],
+    "WLF": [
+
+    ],
+    "WSM": [
+
+    ],
+    "YEM": [
+        "OMN",
+        "SAU"
+    ],
+    "ZMB": [
+        "AGO",
+        "BWA",
+        "COD",
+        "MWI",
+        "MOZ",
+        "NAM",
+        "ZWE",
+        "TZA"
+    ],
+    "CPT": [
+
+    ],
+    "XDI": [
+
+    ],
+    "XIB": [
+        "ARG",
+        "BRA",
+        "URY"
+    ],
+    "XIK": [
+
+    ],
+    "XKX": [
+        "ALB",
+        "MNE",
+        "SRB",
+        "MKD"
+    ],
+    "XMA": [
+
+    ],
+    "XSI": [
+
+    ]
+}
+
