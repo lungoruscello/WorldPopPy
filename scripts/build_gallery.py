@@ -13,7 +13,7 @@ GALLERY_MAP = {
     "examples/quickstart/03_korea_lights.py":             ("gallery/quick03_korea.png",         "regular"),
     "examples/quickstart/04_west_africa_growth.py":       ("gallery/quick04_west_africa.png",   "regular"),
     "examples/large_rasters/01_kamchatka_topo_eager.py":  ("gallery/large01_kamchatka.png",     "regular"),
-    "examples/large_rasters/02-chile_climate_dask.py":    ("gallery/large02_chile_dask.png",    "regular")
+    "examples/large_rasters/02_chile_climate_dask.py":    ("gallery/large02_chile_dask.png",    "regular")
 }
 
 
