@@ -1,5 +1,5 @@
 """
-Working with Large Rasters, Example 2: Chile (Weather Data).
+Working with Large Rasters, Example 2: Chile (Climatic Profile).
 
 Illustrates:
 1. Explicit, manual pre-clipping of large country rasters when the AoI
@@ -42,7 +42,7 @@ CHL_MAINLAND_BOX = (-76, -57, -66, -16)
 
 YEAR = 2023
 ZERO_C_IN_KELVIN = 273.15
-UTM_19S = "EPSG:32719"  # Chile is located in UTM Zone 19S
+CHILE_CRS = "EPSG:20049"  # SIRGAS-Chile 2021 / UTM zone 19S
 
 
 def get_processed_chile_data(product_name):
@@ -60,6 +60,11 @@ def get_processed_chile_data(product_name):
         chunks='auto',  # Enable Dask -> Lazy load the pre-clipped data
     )
 
+    # --- Clean Units ---
+    if 'temp' in product_name:
+        # Kelvin -> Celsius
+        da = da - ZERO_C_IN_KELVIN
+
     # --- Define Coarsened Data (Lazy) ---
     # We "pre-coarsen" the raster data before warping it
     # to further reduce the memory footprint.
@@ -73,9 +78,9 @@ def get_processed_chile_data(product_name):
     # Now that downsampled data is in memory, warping is fast.
     da_warped = wp_warp(
         da_coarse,
-        to_crs=UTM_19S,
+        to_crs=CHILE_CRS,
         res=2_000,          # 2km target resolution
-        resampling='mean',  # Average the weather data
+        resampling='mean',  # Average the weather/distance data
     )
     return da_warped
 
@@ -87,12 +92,13 @@ def make_plot():
     Returns a matplotlib Figure object.
     """
 
-    # --- Setup ---
-    product_names = ["temp_mean_g2", "precip_mean_g2"]
-    ax_titles = ['Mean Temperature', 'Annual Precipitation']
-
-    # Generate custom colormaps and norms
-    cmap_args = (get_temp_cmap(), get_rain_cmap())
+    # --- Configuration ---
+    # We create a list of configs to iterate over.
+    # Format: (Product Name, Plot Title, Year, Colormap_Func)
+    plot_configs = [
+        ("temp_mean_g2", f"Mean Temperature", get_temp_cmap),
+        ("precip_mean_g2", f"Annual Precipitation", get_rain_cmap),
+    ]
 
     # --- Dask Client Setup ---
     # We explicitly start a Dask Client so we can *manually* control the
@@ -103,21 +109,16 @@ def make_plot():
     with Client(n_workers=n_workers, threads_per_worker=1) as client:
         print(f"Dask Dashboard active at: {client.dashboard_link}")
 
-        # --- Get Weather Data ---
-        weather_rasters = []
-        for pname in product_names:
-            print(f"Fetching and processing data for '{pname}'...")
+        # --- Get Processed Data ---
+        rasters = []
+        for pname, title, _ in plot_configs:
+            print(f"Fetching and processing '{pname}' ...")
             raster = get_processed_chile_data(pname)
-
-            # Convert Kelvin to Celsius for the temperature raster
-            if 'temp' in pname:
-                raster -= ZERO_C_IN_KELVIN
-
-            weather_rasters.append(raster)
+            rasters.append(raster)
 
     # --- Plot Side-by-Side: Temperature & Precipitation ---
     # Make a standard canvas for the "repo gallery".
-    fig, axarr = plt.subplots(1, 2, figsize=(6, 6), layout='compressed')
+    fig, axarr = plt.subplots(1, len(rasters), figsize=(6, 6), layout='compressed')
 
     # 1. Adjust vertical padding
     # Since `subplots_adjust` does not work with the 'compressed'
@@ -125,21 +126,22 @@ def make_plot():
     fig.get_layout_engine().set(wspace=0.1)
 
     # 2. Set the "super" title
-    fig.suptitle('Mainland Chile:\nWeather Patterns (2025)', fontsize=12, fontweight='bold')
+    fig.suptitle(f'Mainland Chile: Climatic Zones', fontsize=12, fontweight='bold')
 
-    zipped = zip(axarr, weather_rasters, ax_titles, cmap_args)
-    for ax, raster, title, (cmap, cnorm) in zipped:
+    zipped = zip(axarr, rasters, plot_configs)
+    for ax, raster, (pname, title, cmap_gen) in zipped:
         # A. Plot the Weather Raster
         # We disable the colorbar only to save space in the repo gallery
+        cmap, norm = cmap_gen()
         raster.plot(
             ax=ax,
             cmap=cmap,
-            norm=cnorm,
-            add_colorbar=False
-        )
+            norm=norm,
+            add_colorbar=False)
+
 
         # B. Add country borders & clean up
-        plot_country_borders('CHL', ax, UTM_19S, linewidth=0.3, edgecolor='black', alpha=0.6)
+        plot_country_borders('CHL', ax, CHILE_CRS, linewidth=0.3, edgecolor='black', alpha=0.6)
         clean_axes(title=title, ax=ax, fontsize=10)
 
     return fig
@@ -148,23 +150,16 @@ def make_plot():
 # --- Colormap Utilities ---
 
 def get_rain_cmap():
-    # Discrete intervals suitable for Chile's extreme range
-    levels = [0, 5, 10, 25, 50, 100, 250, 500, 750, 1000, 2000, 4000, 6000]
-
-    # We need exactly len(levels) colours because extend='max' adds one extra bin
+    # Blue/Green for rain
+    levels = [0, 10, 50, 100, 500, 1000, 2000, 4000, 6000]
     cmap = plt.get_cmap('YlGnBu', len(levels))
-
     norm = mcolors.BoundaryNorm(levels, ncolors=cmap.N, extend='max')
     return cmap, norm
 
-
 def get_temp_cmap():
-    # 5-degree intervals covering the full climatic range
-    levels = [-10, -5, 0, 5, 10, 15, 20, 25, 30]
-
-    # We need (len(levels) + 1) colours because extend='both' adds TWO extra bins
+    # Red/Blue for temperature
+    levels = [-5, 0, 5, 10, 15, 20, 25, 30]
     cmap = plt.get_cmap('RdYlBu_r', len(levels) + 1)
-
     norm = mcolors.BoundaryNorm(levels, ncolors=cmap.N, extend='both')
     return cmap, norm
 

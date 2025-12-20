@@ -14,10 +14,10 @@ from worldpoppy import wp_raster, bbox_from_location, clean_axes
 ntl_data = wp_raster(
     product_name="ntl_viirs_g2",  # Night lights from "Global 2" series
     aoi=bbox_from_location("Preah Sihanouk", width_km=100),
-    years=[2015, 2023],
+    years=['first', 'last'],
 )
 
-# Plot 2015 vs 2023 (Log-scale)
+# Plot Both Years Side-by-Side (Log-scale)
 # We use Xarray's built-in plotting to create a facet grid by year.
 p = (ntl_data + 1).plot(
     col="year",
