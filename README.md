@@ -193,8 +193,8 @@ mdf.head()
 regarding data provenance and citation:
 
 1. **Curated "Product Names"**: To simplify data discovery, this library organises WorldPop's thousands of 
-raw raster files into curated "Data Products" with a consistent naming scheme (e.g., `pop_g1_alt` or `pop_g2_alt`). 
-These names are specific to **WorldPopPy**.
+raw files into curated "Data Products" with a consistent naming scheme (e.g., `pop_g1_alt` or `pop_g2_alt`). 
+These product names are specific to **WorldPopPy**.
 
 2. **Know Your Data:** While this library makes downloading and pre-processing easy, we strongly encourage you 
 to understand what you are downloading. WorldPop datasets are often the result of complex modelling. Always check 
@@ -221,7 +221,7 @@ print(f"Multi-year Product?     {row.multi_year}")
 print(f"Library Product Notes:  {row.product_notes}")
 ```
 
-3. **Cite the Source:** If you use this data, you must cite the original authors ([WorldPop](https://www.worldpop.org/)). 
+3. **Cite the Source:** If you use this data, please cite its original creators ([WorldPop](https://www.worldpop.org/)). 
 The scientific credit belongs to them. Note that the recommended citation style can differ between datasets, so be sure 
 to check the `summary_url` for details.
 
