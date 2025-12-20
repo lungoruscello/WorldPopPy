@@ -14,10 +14,18 @@ worldpoppy.download module
    :undoc-members:
    :show-inheritance:
 
-worldpoppy.manifest module
+worldpoppy.manifest_builder
 ==========================
 
-.. automodule:: worldpoppy.manifest
+.. automodule:: worldpoppy.manifest_builder
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+worldpoppy.manifest_loader
+==========================
+
+.. automodule:: worldpoppy.manifest_loader
    :members:
    :undoc-members:
    :show-inheritance:
