@@ -725,7 +725,7 @@ def _filter_manifest_by_keyword(mdf, keywords=None):
     SEARCH_COLUMNS = [
         'product_name',
         'product_notes',
-        'project',
+        'api_project',
         'data_series',
     ]
 
