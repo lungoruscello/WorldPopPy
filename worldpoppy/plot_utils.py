@@ -58,6 +58,8 @@ def plot_location_markers(
         ax=None,
         annotate=True,
         color='k',
+        fontsize=None,
+        fontweight=None,
         textcoords="offset points",
         xytext=(0, -10),
         ha='left',
@@ -86,6 +88,10 @@ def plot_location_markers(
         Whether to annotate points with their names (or coordinates).
     color : str, default='k'
         Colour to use for both the scatter marker and the annotation text.
+    fontsize : int or str, optional
+        Font size for the annotation text (e.g., 10, 'small', 'medium').
+    fontweight : int or str, optional
+        Font weight for the annotation text (e.g., 'bold', 'normal', 700).
     textcoords : str, default="offset points"
         Coordinate system for annotation positioning.
     xytext : tuple of int, default=(7, -7)
@@ -95,7 +101,7 @@ def plot_location_markers(
     va : str, default='center'
         Vertical alignment of the annotation text.
     other_annotate_kwargs : dict, optional
-        Additional keyword arguments passed to `annotate`.
+        Additional keyword arguments passed to `annotate` (e.g., rotation, bbox).
     to_crs : pyproj.CRS or str, optional
         If specified, projects the geo-coordinate from WGS84 to this CRS.
     **scatter_kwargs :
@@ -107,26 +113,23 @@ def plot_location_markers(
     When users pass a location name, this function tries to resolve
     it into a GPS coordinate via OpenStreetMap's Nominatim service.
     Nominatim may occasionally return coordinates for a different
-    location than intended (e.g., an administrative region instead
-    of a city centre, or a city with the same name in a different
-    country) due to search ambiguities.
+    location than intended.
 
     For precise control over the plotted location, it is strongly
     recommended to pass explicit GPS coordinates as tuples:
     ``(longitude, latitude, label)`` or ``(longitude, latitude)``.
-
     """
 
     ax = plt.gca() if ax is None else ax
 
-    # Prepare scatter kwargs
+    # --- Prepare scatter kwargs ---
     # Set the default size and the shared colour
     final_scatter_kwargs = dict(s=5, color=color)
     # If users passed extra scatter args (like s=100 or marker='x'), update them here
     if scatter_kwargs:
         final_scatter_kwargs.update(scatter_kwargs)
 
-    # Prepare annotation kwargs
+    # --- Prepare annotation kwargs ---
     # Copy to avoid modifying a dict passed by the user in the outer scope
     final_annotate_kwargs = (
         dict() if other_annotate_kwargs is None else other_annotate_kwargs.copy()
@@ -137,15 +140,22 @@ def plot_location_markers(
     if 'color' not in final_annotate_kwargs:
         final_annotate_kwargs['color'] = color
 
-    # Standardise input to a list
+    # Apply convenience arguments (these override other_annotate_kwargs if conflict)
+    if fontsize is not None:
+        final_annotate_kwargs['fontsize'] = fontsize
+    if fontweight is not None:
+        final_annotate_kwargs['fontweight'] = fontweight
+
+    # --- Standardise input to a list ---
     if isinstance(locations, (str, tuple)):
         locations = [locations]
 
-    # Initialise a re-usable transformer if needed
+    # --- Initialise a re-usable CRS transformer if needed ---
     transformer = None
     if to_crs is not None:
         transformer = Transformer.from_crs(WGS84_CRS, to_crs, always_xy=True)
 
+    # --- Iterate over locations ---
     for item in locations:
         try:
             if isinstance(item, str):
