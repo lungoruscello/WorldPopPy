@@ -11,7 +11,7 @@ Keywords: WorldPop Python package, download and combine WorldPop datasets, globa
 
 **WorldPopPy** provides a programmatic interface to the [WorldPop](https://www.worldpop.org/) open data archive.
 
-WorldPop offers global, gridded datasets on population dynamics, night-light emissions, land-cover features, and much more. 
+WorldPop offers global, gridded datasets on population dynamics, night-light emissions, topography, and much more. 
 These datasets are typically distributed as individual files per country. **WorldPopPy** abstracts the process of
 data discovery, retrieval, and preprocessing. Users query data by Area of Interest (AOI). The library automatically 
 identifies the necessary country rasters, downloads them, and merges them into a unified dataset.
@@ -33,7 +33,7 @@ pip install worldpoppy
 ```
 
 ## Quickstart
-### Example 1: Merging Raster Data for Several Countries 
+### Example 1: Merging Population Rasters for Several Countries 
 
 ```python
 import matplotlib.pyplot as plt
@@ -41,8 +41,8 @@ from matplotlib.colors import LogNorm
 
 from worldpoppy import wp_raster, clean_axes, plot_country_borders
 
-# Fetch & Merge Population Rasters
-# Data is returned as xarray.DataArray ready for analysis and plotting.
+# Fetch & Merge Data
+# `wp_raster` returns an xarray.DataArray ready for analysis and plotting.
 countries = ['THA', 'KHM', 'LAO', 'VNM']
 pop_data = wp_raster(
     product_name='pop_g2_1km_r25a',  # Low-res. pop. estimates (Global 2 series)
@@ -57,7 +57,7 @@ plot_country_borders(countries, edgecolor='white', linewidth=0.5)
 clean_axes(title=f"Lower Mekong Region (2024):\n{pop_data.sum() / 1e6:.1f}M People")
 plt.show()
 ```
-<img src="worldpoppy/assets/gallery/quick01_mekong_pop.png" alt="Population in the Lower Mekong Region, 2024" width="250"/> 
+<img src="worldpoppy/assets/gallery/quick01_mekong_pop.png" alt="Population in the Lower Mekong Region, 2024" width="260"/> 
 
 ### Example 2: Built-in Support for Time-series
 
@@ -67,7 +67,7 @@ from matplotlib.colors import LogNorm
 
 from worldpoppy import wp_raster, bbox_from_location, clean_axes
 
-# Fetch Two Years of Night-light Data for Sihanoukville
+# Fetch Two Years of Night-light Data for Sihanoukville (Cambodia)
 ntl_data = wp_raster(
     product_name="ntl_viirs_g2",
     aoi=bbox_from_location("Preah Sihanouk", width_km=100),
@@ -146,7 +146,7 @@ mdf.head()
         <b><a href="./examples/quickstart/04_west_africa_growth.py">The Abidjan-Lagos Corridor</a></b>
       </div>
       <div align="left">
-        Visualise 10-year population change along the West African coast.
+        Visualise 10-year population change along the coast of West Africa.
       </div>
     </td>
   </tr>
@@ -181,7 +181,7 @@ mdf.head()
         <b><a href="examples/large_rasters/02-chile_climate_dask.py">Climatic Zones of Mainland Chile</a></b>
       </div>
       <div align="left">
-        Easily clip irregular country geometries, lazy-load with Dask, and downsample large datasets.
+        Easily clip irregular country geometries and lazy-load large rasters with Dask.
       </div>
     </td>
   </tr>
@@ -189,8 +189,8 @@ mdf.head()
 
 ## Acknowledgements
 
-**WorldPopPy** is inspired by the World Bank's [BlackMarblePy](https://github.com/worldbank/blackmarblepy/tree/main) package, which provided the blueprint for the  
-download module used in this library and informed the API design.
+**WorldPopPy** is inspired by the World Bank's [BlackMarblePy](https://github.com/worldbank/blackmarblepy/tree/main) package, which provided the blueprint for 
+this library's download module and informed the API design.
 
 ## Licence
 
