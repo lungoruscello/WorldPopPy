@@ -1,4 +1,4 @@
-# WorldPopPy
+# WorldPopPy README
 
 *A Python client for downloading, merging, and processing WorldPop raster data.*
 

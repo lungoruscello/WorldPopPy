@@ -16,7 +16,7 @@ def clean_readme_for_pypi():
         content = f.read()
 
     # Simplify header (Remove the Icon)
-    content = re.sub(r'# WorldPopPy <img.*?>', '# WorldPopPy', content)
+    content = re.sub(r'# WorldPopPy <img.*?>', '# WorldPopPy README', content)
 
     # Remove Badges
     content = re.sub(r'\[!\[PyPI Latest Release\].*?\)\n', '', content)
