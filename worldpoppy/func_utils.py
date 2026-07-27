@@ -285,3 +285,75 @@ def get_buffered_bounds(clipping_gdf, raster_crs, buffer_deg):
     # This might be slightly larger than the original due to rotation/skew,
     # which is desirable for a safety buffer.
     return tuple(box_gdf_tgt.total_bounds)
+
+
+def calculate_pixel_areas(da):
+    """
+    Calculate the area (in square metres) of every pixel in a WGS84 raster.
+
+    This uses the 'Solid Angle' method on the WGS84 Authalic Sphere.
+    An authalic sphere is a hypothetical sphere that has exactly the same
+    surface area as a reference ellipsoid (here: WGS84), ensuring that
+    global area bias is minimised.
+
+    Parameters
+    ----------
+    da : xarray.DataArray
+        Input raster in EPSG:4326 (degrees).
+
+    Returns
+    -------
+    xarray.DataArray
+        A 2D array of the same shape as `da`, containing the area
+        of each pixel in square metres.
+    """
+    # --- Validation ---
+    # Ensure we are in lat/lon. If not, this math is wrong.
+    if da.rio.crs is None or not da.rio.crs.is_geographic:
+        raise ValueError("Input raster must be in geographic coordinates (e.g. EPSG:4326).")
+
+    # --- Extract Resolution (in degrees) ---
+    # We assume a regular grid (affine transform).
+    # transform[0] is pixel width (x), transform[4] is pixel height (y, usually negative)
+    transform = da.rio.transform()
+    res_x_deg = abs(transform[0])
+    res_y_deg = abs(transform[4])
+
+    # --- Define Earth Model ---
+    R_METRES = 6371007.2  # https://en.wikipedia.org/wiki/Earth_radius#Authalic_radius
+
+    # --- Calculate Latitude Bounds for every row ---
+    # Get the centre latitudes (Y coordinates)
+    lat_centres = da.y.values
+
+    # --- Calculate the top and bottom latitude of each pixel in RADIANS ---
+    # Note: We rely on the Y-vector, so this works regardless of X (Anti-Meridian safe)
+    lat_top_rad = np.radians(lat_centres + (res_y_deg / 2))
+    lat_bottom_rad = np.radians(lat_centres - (res_y_deg / 2))
+
+    # --- Calculate Area using Solid Angle formula ---
+    # Area = R^2 * (sin(lat_top) - sin(lat_bottom)) * (lon_width_rad)
+    # This formula is exact for a spherical segment.
+
+    # Compute the vertical component (vectorised by latitude)
+    vertical_term = np.abs(np.sin(lat_top_rad) - np.sin(lat_bottom_rad))
+
+    # Compute the horizontal component (scalar constant)
+    horizontal_term = np.radians(res_x_deg)
+
+    # Combine
+    # Result is a 1D array of areas corresponding to latitudes
+    row_areas_m2 = (R_METRES ** 2) * vertical_term * horizontal_term
+
+    # --- Broadcast to full shape ---
+    # Create a DataArray matching the input's Y coordinates
+    area_da = xr.DataArray(
+        row_areas_m2,
+        coords={"y": da.y},
+        dims="y",
+        name="pixel_area"
+    )
+
+    # Broadcast against X to create the full 2D grid
+    # This is virtually instant and memory efficient until materialised
+    return area_da.broadcast_like(da)

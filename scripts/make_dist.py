@@ -3,6 +3,9 @@ import shutil
 import subprocess
 from pathlib import Path
 
+# Repo root (this script lives in `scripts/`, one level below it)
+ROOT = Path(__file__).resolve().parent.parent
+
 # Base URL for raw files on GitHub (for images)
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/lungoruscello/WorldPopPy/master/"
 
@@ -12,7 +15,7 @@ GITHUB_BLOB_URL = "https://github.com/lungoruscello/WorldPopPy/blob/master/"
 
 def clean_readme_for_pypi():
     """Prepare a cleaned version of README.md for PyPI."""
-    with open("README.md", 'r', encoding='utf-8') as f:
+    with open(ROOT / "README.md", 'r', encoding='utf-8') as f:
         content = f.read()
 
     # Simplify header (Remove the Icon)
@@ -40,31 +43,30 @@ def clean_readme_for_pypi():
     content = content.replace('](./LICENSE.txt)', f']({GITHUB_BLOB_URL}LICENSE.txt)')
 
     # Save to disk
-    with open("readme_pypi.md", 'w', encoding='utf-8') as f:
+    with open(ROOT / "readme_pypi.md", 'w', encoding='utf-8') as f:
         f.write(content)
 
     print("✅ Generated readme_pypi.md with absolute URLs.")
 
 
 def copy_readme_to_doc():
-    root = Path(__file__).parent.resolve()
-    docs_dir = root / "docs"
+    docs_dir = ROOT / "docs"
     docs_dir.mkdir(exist_ok=True)
-    shutil.copy(root / "readme_pypi.md", docs_dir / "readme_pypi.md")
+    shutil.copy(ROOT / "readme_pypi.md", docs_dir / "readme_pypi.md")
     print("✅ Copied readme to /docs.")
 
 
 def build():
     # Clean previous builds
-    shutil.rmtree("dist", ignore_errors=True)
-    shutil.rmtree("build", ignore_errors=True)
-    shutil.rmtree("WorldPopPy.egg-info", ignore_errors=True)
+    shutil.rmtree(ROOT / "dist", ignore_errors=True)
+    shutil.rmtree(ROOT / "build", ignore_errors=True)
+    shutil.rmtree(ROOT / "WorldPopPy.egg-info", ignore_errors=True)
 
     clean_readme_for_pypi()
     copy_readme_to_doc()
 
     print("🚀 Starting Build...")
-    subprocess.run(["python", "-m", "build"], check=True)
+    subprocess.run(["python", "-m", "build"], check=True, cwd=ROOT)
 
     print("\n------------------------------------------------")
     print("Build Complete. Verification Step:")

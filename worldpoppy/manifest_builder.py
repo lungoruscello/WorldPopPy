@@ -16,7 +16,7 @@ Main methods
 
 For a detailed, high-level explanation of this module's API traversal strategy,
 related terminology (e.g., "Leaf Node", "Sample Payload"), and data-parsing
-logic, please see the `manifest_build_strategy.md` document in the project root.
+logic, please see the `manifest_build_strategy.md` document in the `docs/` folder.
 
 ----
 

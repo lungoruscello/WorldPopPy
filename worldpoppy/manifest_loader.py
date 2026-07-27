@@ -114,7 +114,7 @@ columns:
       https://hub.worldpop.org/rest/data/{api_path}?iso3=AFG
 
     (For a full explanation of these terms, see the 'manifest_build_strategy.md'
-    documentation file).
+    documentation file in the `docs/` folder).
 
 - api_slug (str):
     The final part of the `api_path` (e.g., "G2_NT_lights").

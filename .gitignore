@@ -4,6 +4,10 @@ worldpoppy/assets/wpgpDatasets.csv
 docs/_build
 ./README_PYPI.md
 *.xcf
+dev_main.py
+
+# Editor/tool backup files (e.g. JetBrains "Local History" leftovers)
+*~
 
 # *****************
 # GitHub default for Python projects
