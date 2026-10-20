@@ -170,6 +170,15 @@ def mock_downloader(monkeypatch):
     return mock_instance
 
 
+@pytest.fixture
+def no_backoff_sleep(monkeypatch):
+    """
+    Fixture that patches out `backoff`'s sleep between retries, so that
+    tests of retry behaviour run instantly.
+    """
+    monkeypatch.setattr("time.sleep", lambda seconds: None)
+
+
 # --- Network Helpers ---
 
 def is_online():

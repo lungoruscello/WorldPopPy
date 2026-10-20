@@ -39,7 +39,7 @@ from worldpoppy.config import (
     get_cache_dir,
     get_max_concurrency,
 )
-from worldpoppy.func_utils import log_info_context
+from worldpoppy.func_utils import is_fatal_http_error, log_info_context
 from worldpoppy.manifest_loader import wp_manifest_constrained
 
 __all__ = [
@@ -69,24 +69,6 @@ class DownloadSizeCheckError(DownloadError):
     """Raised when one or more HEAD requests fail during dry-run size checking."""
 
     pass
-
-
-def _is_fatal_error(e):
-    """
-    Return True if the httpx exception signals a failure that retrying cannot
-    fix, namely:
-
-    - a 4xx Client Error, unless it is a 429 (Too Many Requests);
-    - a redirect loop (`httpx.TooManyRedirects`); or
-    - a URL scheme httpx cannot handle (`httpx.UnsupportedProtocol`).
-    """
-    if isinstance(e, (httpx.TooManyRedirects, httpx.UnsupportedProtocol)):
-        return True
-    if isinstance(e, httpx.HTTPStatusError):
-        # Do not retry 404 (Not Found) or 400 (Bad Request)
-        # DO retry 429 (Too Many Requests) or 500+ (Server Errors)
-        return 400 <= e.response.status_code < 500 and e.response.status_code != 429
-    return False
 
 
 @dataclass
@@ -337,7 +319,7 @@ class WorldPopDownloader:
         httpx.HTTPError,  # catch EVERYTHING (Network, Timeout, Status codes)
         max_tries=5,
         jitter=backoff.full_jitter,
-        giveup=_is_fatal_error,  # stop retrying if it's a 404, loop, etc.
+        giveup=is_fatal_http_error,  # stop retrying if it's a 404, loop, etc.
     )
     def _stream_to_file(self, remote_url, tmp_path, chunk_size):
         """
@@ -405,7 +387,7 @@ class WorldPopDownloader:
         httpx.HTTPError,  # catch EVERYTHING (Network, Timeout, Status codes)
         max_tries=5,
         jitter=backoff.full_jitter,
-        giveup=_is_fatal_error,  # stop retrying if it's a 404, loop, etc.
+        giveup=is_fatal_http_error,  # stop retrying if it's a 404, loop, etc.
     )
     def _fetch_file_size(self, remote_url):
         """

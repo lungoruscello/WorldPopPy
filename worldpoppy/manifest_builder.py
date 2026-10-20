@@ -52,6 +52,7 @@ from worldpoppy.config import (
     RAW_MANIFEST_TIMESTAMP_PATH,
     DOWNLOADABLE_ISO3_CODES,
 )
+from worldpoppy.func_utils import is_fatal_http_error
 from worldpoppy.manifest_utils import *
 from worldpoppy.tracking import api_query_log
 
@@ -213,57 +214,58 @@ def build_raw_manifest_from_api(force_rebuild=False):
         )
 
 
-@backoff.on_exception(
-    backoff.expo,
-    httpx.HTTPError, # catch all httpx errors
-    max_tries=3,
-    jitter=backoff.full_jitter,
-    logger=logger,
-    # use giveup to *not* retry on 4xx Client Errors
-    giveup=lambda e: not _is_retryable_http_error(e)
-)
 def _query_metadata_api(url):
     """
-    Performs a single, robust GET request to the endpoint of WorldPop's
+    Perform a single, robust GET request to the endpoint of WorldPop's
     metadata API.
 
-    This function is the core HTTP utility for the entire crawler.
-    It is wrapped in a backoff/retry mechanism to handle intermittent
-    server (5xx) or network errors.
+    This function is the core HTTP utility for the entire crawler. Retries
+    for intermittent network or server errors happen inside
+    `_fetch_metadata_json`. This wrapper only converts the final outcome
+    into an `APIRequestError`, which callers use to skip failed API nodes.
 
-    It will only give up and raise an error on client (4xx) errors
-    (e.g., 404 Not Found) or after all retries have failed.
+    Raises
+    ------
+    APIRequestError
+        On a non-retryable error (e.g., 404 Not Found), after all retries
+        have failed, or if the response is not valid JSON.
     """
     try:
-        with httpx.Client(timeout=METADATA_API_TIMEOUT, follow_redirects=True) as client:
-            response = client.get(url)
-            api_query_log.log_request(url)
-            response.raise_for_status()
-            return response.json()
+        return _fetch_metadata_json(url)
 
     except httpx.HTTPStatusError as e:
-        logger.error(
-            f"Permanent HTTP Error for {url}: {e.response.status_code}"
-        )
-        raise APIRequestError(f"API request failed (client error): {e}") from e
-    except (httpx.NetworkError, httpx.TimeoutException) as e:
-        logger.error(f"Network/Timeout Error for {url} after all retries: {e}")
-        raise APIRequestError(f"API request failed (network error): {e}") from e
+        logger.error(f"HTTP Error for {url}: {e.response.status_code}")
+        raise APIRequestError(f"API request failed (HTTP error): {e}") from e
+    except httpx.HTTPError as e:
+        logger.error(f"Request Error for {url}: {e}")
+        raise APIRequestError(f"API request failed (request error): {e}") from e
     except Exception as e:
         logger.error(f"Failed to fetch or parse JSON from {url}: {e}")
         raise APIRequestError(f"Failed to process {url}: {e}") from e
 
 
-def _is_retryable_http_error(e):
+@backoff.on_exception(
+    backoff.expo,
+    httpx.HTTPError,  # catch all httpx errors
+    max_tries=3,
+    jitter=backoff.full_jitter,
+    logger=logger,
+    giveup=is_fatal_http_error,  # stop retrying if it's a 404, loop, etc.
+    giveup_log_level=logging.WARNING,  # callers log the final failure as an error
+)
+def _fetch_metadata_json(url):
     """
-    Check if an httpx error is retryable (network, timeout, or 5xx)
+    Return the parsed JSON response for a metadata API URL, retrying on
+    network errors and retryable HTTP status codes.
+
+    Exceptions must propagate out of this function, since the `backoff`
+    decorator can only retry calls that raise.
     """
-    if isinstance(e, (httpx.NetworkError, httpx.TimeoutException)):
-        return True
-    if isinstance(e, httpx.HTTPStatusError):
-        # Retry on Server Errors (5xx), not Client Errors (4xx)
-        return e.response.status_code >= 500
-    return False
+    with httpx.Client(timeout=METADATA_API_TIMEOUT, follow_redirects=True) as client:
+        response = client.get(url)
+        api_query_log.log_request(url)
+        response.raise_for_status()
+        return response.json()
 
 
 def _discover_leaf_nodes():
@@ -369,7 +371,7 @@ def _traverse_api_node(api_path, node_name):
 
     try:
         response = _query_metadata_api(url)
-        # Handle API failure (returns None)
+        # Guard against a JSON `null` body (`response.json()` returns None)
         if response is None:
             logger.error(f"Failed to crawl node {api_path}. Skipping this branch.")
             return []
@@ -620,7 +622,7 @@ def _get_sample_payload(
     Raises
     ------
     APIRequestError
-        If the API call fails (returns None) or returns empty/invalid data.
+        If the API call fails, or returns a JSON `null` body or empty/invalid data.
     """
 
     url = f"{METADATA_API_URL}/{api_path}?iso3={sample_iso3}"
@@ -629,11 +631,11 @@ def _get_sample_payload(
 
     # --- Robustness Check ---
     # If _query_metadata_api failed (e.g., 404, 500) it will raise an error
-    # after all retries. If it returns None (which it should not with backoff),
-    # or empty data, we raise an error here.
+    # after all retries. If it returns None (i.e., the API sent a JSON `null`
+    # body) or empty data, we raise an error here.
     if response is None:
         raise APIRequestError(
-            f"API query for sample payload failed (returned None) "
+            f"API query for sample payload returned a JSON `null` body "
             f"for {api_path} (iso={sample_iso3})."
         )
 

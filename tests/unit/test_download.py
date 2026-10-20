@@ -31,12 +31,6 @@ def mock_wp_manifest_constrained(monkeypatch):
     monkeypatch.setattr("worldpoppy.download.wp_manifest_constrained", _mock_return)
 
 
-@pytest.fixture
-def no_backoff_sleep(monkeypatch):
-    """Patch out backoff's sleep between retries to keep tests fast."""
-    monkeypatch.setattr("time.sleep", lambda seconds: None)
-
-
 # --- Fake HTTP Helpers ---
 # Most helpers below fake `httpx.stream` / `httpx.head` with a scripted
 # sequence of outcomes, one per request. Each outcome is either an exception

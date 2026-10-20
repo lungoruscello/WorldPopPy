@@ -11,6 +11,7 @@ from typing import Tuple
 
 import backoff
 import geopandas as gpd
+import httpx
 import numpy as np
 import xarray as xr
 from geopy.exc import GeocoderTimedOut
@@ -25,6 +26,7 @@ __all__ = [
     "NominatimSearchEmptyError",
     "geolocate_name",
     "cached_nominatim_query",
+    "is_fatal_http_error",
     "module_available",
     "log_info_context",
     "validate_bbox_wgs84",
@@ -124,6 +126,27 @@ def cached_nominatim_query(query):
 
     lon, lat = located.point.longitude, located.point.latitude
     return lon, lat
+
+
+def is_fatal_http_error(e):
+    """
+    Return True if the httpx exception signals a failure that retrying cannot
+    fix, namely:
+
+    - a 4xx Client Error, unless it is a 429 (Too Many Requests);
+    - a redirect loop (`httpx.TooManyRedirects`); or
+    - a URL scheme httpx cannot handle (`httpx.UnsupportedProtocol`).
+
+    This is the shared `giveup` rule for all retried requests to WorldPop's
+    servers (raster downloads and metadata API queries).
+    """
+    if isinstance(e, (httpx.TooManyRedirects, httpx.UnsupportedProtocol)):
+        return True
+    if isinstance(e, httpx.HTTPStatusError):
+        # Do not retry 404 (Not Found) or 400 (Bad Request)
+        # DO retry 429 (Too Many Requests) or 500+ (Server Errors)
+        return 400 <= e.response.status_code < 500 and e.response.status_code != 429
+    return False
 
 
 def module_available(module_name):
