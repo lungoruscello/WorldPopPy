@@ -5,6 +5,8 @@ Note: Plotting utilities are located in a separate module.
 """
 import io
 import logging
+import threading
+import time
 from contextlib import contextmanager, redirect_stdout
 from functools import lru_cache
 from typing import Tuple
@@ -19,6 +21,7 @@ from geopy.geocoders import Nominatim
 from pyproj import Transformer, CRS
 from shapely.geometry import box
 
+from worldpoppy import __url__, __version__
 from worldpoppy.config import WGS84_CRS
 
 __all__ = [
@@ -42,6 +45,12 @@ logger = logging.getLogger(__name__)
 # is also the base class of the final errors. Hence, 500/502 are not retried.
 _RETRYABLE_GEOCODER_ERRORS = (GeocoderTimedOut, GeocoderUnavailable, GeocoderRateLimited)
 
+# Nominatim's usage policy requires a user agent that identifies the application,
+# and allows at most one request per second.
+# (See https://operations.osmfoundation.org/policies/nominatim/)
+_NOMINATIM_USER_AGENT = f"worldpoppy/{__version__} (+{__url__})"
+_NOMINATIM_MIN_INTERVAL = 1.0  # seconds
+
 
 class BboxInvalidError(Exception):
     """
@@ -56,6 +65,42 @@ class NominatimSearchEmptyError(Exception):
     """Raised when a Nominatim search returns no result or fails."""
 
     pass
+
+
+class _RequestThrottle:
+    """
+    Enforce a minimum interval between requests to a web service (thread-safe).
+
+    The service can also push the next request further out, e.g., when it
+    answers with HTTP 429 and a `Retry-After` header (see `defer`).
+    """
+
+    def __init__(self, min_interval):
+        self.min_interval = min_interval
+        self._lock = threading.Lock()
+        self._not_before = 0.0  # earliest time (`time.monotonic`) for the next request
+
+    def wait(self):
+        """Block until the next request is allowed, then reserve its time slot."""
+        with self._lock:
+            delay = self._not_before - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
+            self._not_before = time.monotonic() + self.min_interval
+
+    def defer(self, seconds):
+        """Allow no further request for at least `seconds` from now."""
+        with self._lock:
+            self._not_before = max(self._not_before, time.monotonic() + seconds)
+
+    def reset(self):
+        """Allow the next request immediately."""
+        with self._lock:
+            self._not_before = 0.0
+
+
+# One throttle for all Nominatim requests made by this process
+_nominatim_throttle = _RequestThrottle(_NOMINATIM_MIN_INTERVAL)
 
 
 def geolocate_name(nominatim_query, to_crs=None):
@@ -148,11 +193,22 @@ def _geocode_with_retries(query):
     Geocode a location name with Nominatim, retrying on timeouts, connection
     problems and rate limiting.
 
+    Every request (including retries) first waits for `_nominatim_throttle`,
+    so that worldpoppy never sends more than one request per second. If
+    Nominatim rate-limits a request and says how long to wait, the next
+    request waits at least that long.
+
     Exceptions must propagate out of this function, since the `backoff`
     decorator can only retry calls that raise.
     """
-    geolocator = Nominatim(user_agent="MyLocationCacher", timeout=2)
-    return geolocator.geocode(query)
+    _nominatim_throttle.wait()
+    geolocator = Nominatim(user_agent=_NOMINATIM_USER_AGENT, timeout=2)
+    try:
+        return geolocator.geocode(query)
+    except GeocoderRateLimited as e:
+        if e.retry_after:
+            _nominatim_throttle.defer(e.retry_after)
+        raise
 
 
 def standardise_iso3_codes(iso3_codes):

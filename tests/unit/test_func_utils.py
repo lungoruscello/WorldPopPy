@@ -11,6 +11,7 @@ from geopy.location import Location
 from matplotlib.figure import Figure
 
 import worldpoppy.func_utils as func_utils
+from worldpoppy import __url__, __version__
 from worldpoppy.func_utils import (
     NominatimSearchEmptyError,
     geolocate_name,
@@ -27,14 +28,21 @@ FAKE_LON_LAT = (36.82, -1.29)
 # --- Fixtures ---
 
 @pytest.fixture
-def clear_geocoding_cache():
+def reset_geocoding_state():
     """
-    Clear the geocoding cache, so that every test actually reaches the
-    (fake) Nominatim service.
+    Clear the geocoding cache, so that every test actually reaches the (fake)
+    Nominatim service, and reset the request throttle, so that no test waits
+    for a request made by a previous test.
     """
+    # Keep a reference to the real throttle: some tests replace it with a stub
+    # via monkeypatch, which is only undone after this fixture's teardown
+    throttle = func_utils._nominatim_throttle
+
     func_utils._nominatim_query.cache_clear()
+    throttle.reset()
     yield
     func_utils._nominatim_query.cache_clear()
+    throttle.reset()
 
 
 # --- Helpers ---
@@ -46,15 +54,17 @@ def _status_error(status_code):
     return httpx.HTTPStatusError(f"HTTP {status_code}", request=request, response=response)
 
 
-def _scripted_nominatim(outcomes, calls):
+def _scripted_nominatim(outcomes, calls, init_kwargs=None):
     """
     Return a fake `Nominatim` class whose `geocode` serves a scripted sequence
     of outcomes, one per call. Each outcome is either an exception to raise,
-    None (no hit), or a (lon, lat) tuple for a successful hit.
+    None (no hit), or a (lon, lat) tuple for a successful hit. If given, the
+    `init_kwargs` list records the keyword arguments of every instantiation.
     """
     class FakeNominatim:
         def __init__(self, *args, **kwargs):
-            pass
+            if init_kwargs is not None:
+                init_kwargs.append(kwargs)
 
         def geocode(self, query):
             calls.append(query)
@@ -71,6 +81,38 @@ def _scripted_nominatim(outcomes, calls):
             return Location(query, (lat, lon), {})
 
     return FakeNominatim
+
+
+class _FakeClock:
+    """
+    Stand-in for the `time` module in `func_utils`: `sleep` advances a fake
+    clock instead of waiting, and every sleep is recorded.
+    """
+
+    def __init__(self):
+        self.now = 1000.0
+        self.sleeps = []
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+class _RecordingThrottle:
+    """Stand-in for `_nominatim_throttle` that records how it is used."""
+
+    def __init__(self):
+        self.num_waits = 0
+        self.deferrals = []
+
+    def wait(self):
+        self.num_waits += 1
+
+    def defer(self, seconds):
+        self.deferrals.append(seconds)
 
 
 # --- Tests: Retry Rule ---
@@ -117,7 +159,7 @@ def test_is_fatal_http_error_exception_types(error, is_fatal):
     GeocoderRateLimited("Too many requests"),
 ], ids=lambda e: type(e).__name__)
 def test_geocoding_retries_transient_errors(
-    monkeypatch, no_backoff_sleep, clear_geocoding_cache, transient_error
+    monkeypatch, no_backoff_sleep, reset_geocoding_state, transient_error
 ):
     """
     Timeouts, connection problems and rate limiting must be retried until the
@@ -134,7 +176,7 @@ def test_geocoding_retries_transient_errors(
 
 
 def test_geocoding_gives_up_after_persistent_errors(
-    monkeypatch, no_backoff_sleep, clear_geocoding_cache
+    monkeypatch, no_backoff_sleep, reset_geocoding_state
 ):
     """
     If Nominatim keeps timing out, the lookup gives up after the maximum
@@ -157,7 +199,7 @@ def test_geocoding_gives_up_after_persistent_errors(
     GeocoderQueryError("HTTP 400: malformed query"),
 ], ids=lambda e: type(e).__name__)
 def test_geocoding_does_not_retry_fatal_errors(
-    monkeypatch, no_backoff_sleep, clear_geocoding_cache, fatal_error
+    monkeypatch, no_backoff_sleep, reset_geocoding_state, fatal_error
 ):
     """
     Errors that a retry cannot fix fail after a single attempt.
@@ -173,7 +215,7 @@ def test_geocoding_does_not_retry_fatal_errors(
 
 
 def test_geocoding_does_not_retry_empty_result(
-    monkeypatch, no_backoff_sleep, clear_geocoding_cache
+    monkeypatch, no_backoff_sleep, reset_geocoding_state
 ):
     """
     "No hit" is a valid answer, not a failure: it is reported straight away.
@@ -189,7 +231,7 @@ def test_geocoding_does_not_retry_empty_result(
 
 # --- Tests: Geocoding Cache ---
 
-def test_geocoding_caches_successful_lookups(monkeypatch, clear_geocoding_cache):
+def test_geocoding_caches_successful_lookups(monkeypatch, reset_geocoding_state):
     """
     A successful lookup is cached, so repeating it sends no new query to
     Nominatim. (Its usage policy asks clients to avoid repeat queries.)
@@ -204,7 +246,7 @@ def test_geocoding_caches_successful_lookups(monkeypatch, clear_geocoding_cache)
     assert calls == [FAKE_PLACE]
 
 
-def test_geocoding_does_not_cache_failures(monkeypatch, no_backoff_sleep, clear_geocoding_cache):
+def test_geocoding_does_not_cache_failures(monkeypatch, no_backoff_sleep, reset_geocoding_state):
     """
     A failed lookup is not cached (`lru_cache` does not store exceptions), so
     the next call queries Nominatim again and can succeed.
@@ -221,10 +263,122 @@ def test_geocoding_does_not_cache_failures(monkeypatch, no_backoff_sleep, clear_
     assert calls == [FAKE_PLACE] * 2
 
 
+# --- Tests: Nominatim Politeness ---
+
+def test_geocoding_identifies_itself(monkeypatch, reset_geocoding_state):
+    """
+    Nominatim's usage policy requires a user agent that identifies the
+    application (stock library user agents are not accepted).
+    """
+    calls, init_kwargs = [], []
+    monkeypatch.setattr(
+        func_utils, "Nominatim", _scripted_nominatim([FAKE_LON_LAT], calls, init_kwargs)
+    )
+
+    geolocate_name(FAKE_PLACE)
+
+    [kwargs] = init_kwargs
+    assert kwargs["user_agent"] == f"worldpoppy/{__version__} (+{__url__})"
+    assert kwargs["timeout"] > 0
+
+
+def test_request_throttle_spaces_requests(monkeypatch):
+    """
+    The throttle lets the first request through immediately, and spaces all
+    further requests by at least the minimum interval.
+    """
+    clock = _FakeClock()
+    monkeypatch.setattr(func_utils, "time", clock)
+    throttle = func_utils._RequestThrottle(min_interval=1.0)
+
+    request_times = []
+    for _ in range(3):
+        throttle.wait()
+        request_times.append(clock.now)
+
+    assert request_times[1] - request_times[0] >= 1.0
+    assert request_times[2] - request_times[1] >= 1.0
+    assert clock.sleeps == [1.0, 1.0]
+
+
+@pytest.mark.parametrize("defer_seconds, min_elapsed", [
+    (7.0, 7.0),  # longer than the minimum interval: wait as requested
+    (0.2, 1.0),  # shorter: the minimum interval still applies
+])
+def test_request_throttle_honours_deferral(monkeypatch, defer_seconds, min_elapsed):
+    """
+    A deferral (e.g., from a `Retry-After` header) delays the next request by
+    at least the requested time, but never shortens the minimum interval.
+    """
+    clock = _FakeClock()
+    monkeypatch.setattr(func_utils, "time", clock)
+    throttle = func_utils._RequestThrottle(min_interval=1.0)
+
+    throttle.wait()
+    start = clock.now
+    throttle.defer(defer_seconds)
+    throttle.wait()
+
+    assert clock.now - start >= min_elapsed
+
+
+def test_request_throttle_reset_allows_immediate_request(monkeypatch):
+    """
+    After a reset, the next request goes through without waiting.
+    """
+    clock = _FakeClock()
+    monkeypatch.setattr(func_utils, "time", clock)
+    throttle = func_utils._RequestThrottle(min_interval=1.0)
+
+    throttle.wait()
+    throttle.reset()
+    throttle.wait()
+
+    assert clock.sleeps == []
+
+
+def test_geocoding_waits_for_throttle_before_every_request(
+    monkeypatch, no_backoff_sleep, reset_geocoding_state
+):
+    """
+    Every request to Nominatim, including retries, goes through the throttle.
+    """
+    calls = []
+    outcomes = [GeocoderTimedOut("Service timed out"), FAKE_LON_LAT]
+    monkeypatch.setattr(func_utils, "Nominatim", _scripted_nominatim(outcomes, calls))
+    throttle = _RecordingThrottle()
+    monkeypatch.setattr(func_utils, "_nominatim_throttle", throttle)
+
+    geolocate_name(FAKE_PLACE)
+
+    assert len(calls) == 2
+    assert throttle.num_waits == 2
+
+
+@pytest.mark.parametrize("retry_after, expected_deferrals", [(7, [7]), (None, [])])
+def test_geocoding_respects_retry_after(
+    monkeypatch, no_backoff_sleep, reset_geocoding_state, retry_after, expected_deferrals
+):
+    """
+    If Nominatim rate-limits a request and says how long to wait (HTTP 429
+    with `Retry-After`), the throttle defers the next request accordingly.
+    """
+    calls = []
+    outcomes = [GeocoderRateLimited("Too many requests", retry_after=retry_after), FAKE_LON_LAT]
+    monkeypatch.setattr(func_utils, "Nominatim", _scripted_nominatim(outcomes, calls))
+    throttle = _RecordingThrottle()
+    monkeypatch.setattr(func_utils, "_nominatim_throttle", throttle)
+
+    geolocate_name(FAKE_PLACE)
+
+    assert len(calls) == 2
+    assert throttle.deferrals == expected_deferrals
+
+
 # --- Tests: Location Markers ---
 
 def test_location_markers_skip_failed_lookups(
-    monkeypatch, caplog, no_backoff_sleep, clear_geocoding_cache
+    monkeypatch, caplog, no_backoff_sleep, reset_geocoding_state
 ):
     """
     If a place name cannot be geolocated (here: persistent timeouts), the
