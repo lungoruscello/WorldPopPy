@@ -37,8 +37,10 @@ raw manifest and will hence not be supported by the `worldpoppy` package.
 
 """
 
+from dataclasses import dataclass, field
 from datetime import datetime
 from math import floor
+from pathlib import Path
 
 import backoff
 import httpx
@@ -65,6 +67,91 @@ class APIRequestError(Exception):
     pass
 
 
+@dataclass
+class ManifestBuildReport:
+    """
+    Summary of one manifest build, as returned by `build_raw_manifest_from_api`.
+
+    Manifest builds are "robust": API branches or data series that fail are
+    logged and skipped, and the manifest is saved with everything else. This
+    report makes such gaps visible, so that callers (e.g., release scripts)
+    can refuse to ship an incomplete manifest.
+
+    Attributes
+    ----------
+    num_series : int
+        Number of supported data series (API "Leaf Nodes") found by the crawl.
+    num_files : int
+        Number of raster files in the saved manifest.
+    failed_branches : list of str
+        API paths of branches that could not be crawled. All data series
+        below them are missing from the manifest.
+    failed_series : list of str
+        API paths of data series that could not be processed.
+    saved_to : pathlib.Path or None
+        Where the manifest was saved, or None if nothing was saved.
+    fatal_error : str or None
+        Why the build was aborted, if it was.
+    """
+
+    num_series: int = 0
+    num_files: int = 0
+    failed_branches: list[str] = field(default_factory=list)
+    failed_series: list[str] = field(default_factory=list)
+    saved_to: Path | None = None
+    fatal_error: str | None = None
+
+    # The summary lists at most this many paths per kind of failure
+    # (all paths remain available in `failed_branches` / `failed_series`)
+    MAX_PATHS_IN_SUMMARY = 20
+
+    @property
+    def is_complete(self):
+        """True if the manifest was saved and nothing failed along the way."""
+        return (
+            self.saved_to is not None
+            and not self.failed_branches
+            and not self.failed_series
+        )
+
+    def summary(self):
+        """Return a human-readable summary of the build."""
+        if self.saved_to is None:
+            reason = self.fatal_error or "unknown error"
+            return f"Manifest build aborted ({reason}). No manifest was saved."
+
+        num_ok_series = self.num_series - len(self.failed_series)
+        files = "raster file" if self.num_files == 1 else "raster files"
+        lines = [
+            f"Manifest build finished: {self.num_files:,} {files} from "
+            f"{num_ok_series} of {self.num_series} data series, saved to {self.saved_to}."
+        ]
+        if self.is_complete:
+            lines.append("No failures.")
+            return " ".join(lines)
+
+        if self.failed_branches:
+            num = len(self.failed_branches)
+            branches = "API branch" if num == 1 else "API branches"
+            lines.append(
+                f"{num} {branches} could not be crawled "
+                "(all data series below them are missing):"
+            )
+            lines += self._format_paths(self.failed_branches)
+        if self.failed_series:
+            lines.append(f"{len(self.failed_series)} data series could not be processed:")
+            lines += self._format_paths(self.failed_series)
+        lines.append("The saved manifest is likely INCOMPLETE. See the log above for details.")
+        return "\n".join(lines)
+
+    def _format_paths(self, paths):
+        """Return one summary line per path, capped at MAX_PATHS_IN_SUMMARY."""
+        lines = [f"  - {path}" for path in paths[:self.MAX_PATHS_IN_SUMMARY]]
+        if (num_hidden := len(paths) - self.MAX_PATHS_IN_SUMMARY) > 0:
+            lines.append(f"  ... and {num_hidden} more")
+        return lines
+
+
 def build_raw_manifest_from_api(force_rebuild=False):
     """
     Query WorldPop's meta-data API and analyse the results to build a new,
@@ -89,6 +176,14 @@ def build_raw_manifest_from_api(force_rebuild=False):
         If True, forces a full re-crawl and re-processing of WorldPop's meta-data
         API, even if cached results from a previous run exist on disk. Default
         is False.
+
+    Returns
+    -------
+    ManifestBuildReport or None
+        A summary of the build (also logged at the end), including any API
+        branches or data series that failed. Check `report.is_complete` before
+        relying on the new manifest. None if no build was needed, because a
+        manifest already exists on disk (and `force_rebuild` is False).
     """
 
     # Check if we need to run
@@ -123,8 +218,9 @@ def build_raw_manifest_from_api(force_rebuild=False):
                 "to overwrite.\nNote that this will trigger a fresh traversal "
                 "of WorldPop's meta-data API."
             )
-        return
+        return None
 
+    report = ManifestBuildReport()
     logger.warning(
         "Traversing WorldPop's meta-data API to index supported data series..."
     )
@@ -132,10 +228,11 @@ def build_raw_manifest_from_api(force_rebuild=False):
     try:
         # --- Phase 1 ---
         # Discover candidate data series in one call (serially)
-        leaf_nodes = _discover_leaf_nodes()
+        leaf_nodes = _discover_leaf_nodes(report)
         if not leaf_nodes:
-            logger.error("Manifest update failed: No supported data series found.")
-            return
+            report.fatal_error = "no supported data series found"
+            return _finish_build(report)
+        report.num_series = len(leaf_nodes)
 
         # --- Phase 2 ---
         # Generate well-formatted listings of supported raster files for
@@ -172,25 +269,27 @@ def build_raw_manifest_from_api(force_rebuild=False):
                     f"Skipping this series. Error: {e}",
                     exc_info=True,
                 )
+                report.failed_series.append(leaf_node.get("api_path"))
                 continue
 
     except APIRequestError as e:
         # This "outer" block will *only* catch critical failures,
         # such as a network error in `_discover_leaf_nodes`.
-        logger.error(f"Manifest update failed with critical error: {e}")
-        return
+        report.fatal_error = f"critical API error: {e}"
+        return _finish_build(report)
     except Exception as e:
         # This catches any other unexpected startup error
         logger.error(f"Manifest update failed with unexpected error: {e}", exc_info=True)
-        return
+        report.fatal_error = f"unexpected error: {e}"
+        return _finish_build(report)
 
     # --- Post-Processing ---
     # Flatten results
     raw_manifest_rows = [row for sublist in raw_manifest_rows_nested for row in sublist]
 
     if not raw_manifest_rows:
-        logger.error("API traversal returned no data. Check API status or logs.")
-        return
+        report.fatal_error = "API traversal returned no data (check API status or logs)"
+        return _finish_build(report)
 
     # Save build results to disk.
     # (This will be our raw, uncleaned data manifest).
@@ -203,15 +302,26 @@ def build_raw_manifest_from_api(force_rebuild=False):
         with open(RAW_MANIFEST_TIMESTAMP_PATH, 'w') as f:
             f.write(datetime.now().isoformat())
 
-        logger.warning(
-            f"Updated raw data manifest saved to: {RAW_MANIFEST_CACHE_PATH} "
-            f"({len(raw_mdf)} supported remote files found)"
-        )
+        report.num_files = len(raw_mdf)
+        report.saved_to = RAW_MANIFEST_CACHE_PATH
 
     except Exception as e:
-        logger.error(
-            f"Failed to save updated raw data manifest to {RAW_MANIFEST_CACHE_PATH}: {e}"
-        )
+        report.fatal_error = f"failed to save the manifest to {RAW_MANIFEST_CACHE_PATH}: {e}"
+
+    return _finish_build(report)
+
+
+def _finish_build(report):
+    """
+    Log the summary of a manifest build (as an error if the build was aborted,
+    as a warning otherwise, so that it is visible by default) and return the
+    report.
+    """
+    if report.saved_to is None:
+        logger.error(report.summary())
+    else:
+        logger.warning(report.summary())
+    return report
 
 
 def _query_metadata_api(url):
@@ -268,9 +378,10 @@ def _fetch_metadata_json(url):
         return response.json()
 
 
-def _discover_leaf_nodes():
+def _discover_leaf_nodes(report):
     """
-    Discover all "Leaf Nodes" in the API hierarchy.
+    Discover all "Leaf Nodes" in the API hierarchy. API branches that cannot
+    be crawled are recorded in `report.failed_branches`.
 
     This function starts the recursive crawl from the API root and traverses
     WorldPop's top-level "Branch Nodes" (e.g., 'pop', 'covariates') serially.
@@ -311,7 +422,7 @@ def _discover_leaf_nodes():
                 # reduce number of API calls in debug mode
                 continue
 
-            leaf_nodes_from_branch = _traverse_api_node(alias, name)
+            leaf_nodes_from_branch = _traverse_api_node(alias, name, report)
             all_leaf_nodes.extend(leaf_nodes_from_branch)
 
     logger.info(
@@ -357,10 +468,11 @@ def _discover_leaf_nodes():
     return leaf_nodes_to_process
 
 
-def _traverse_api_node(api_path, node_name):
+def _traverse_api_node(api_path, node_name, report):
     """
     Recursively traverse a single node in the API hierarchy and return
-    all Leaf Nodes found.
+    all Leaf Nodes found. Branches that cannot be crawled are recorded in
+    `report.failed_branches` (a `ManifestBuildReport`).
 
     Returns:
         list[dict]: A list of all "Leaf Nodes" found under this API path.
@@ -374,6 +486,7 @@ def _traverse_api_node(api_path, node_name):
         # Guard against a JSON `null` body (`response.json()` returns None)
         if response is None:
             logger.error(f"Failed to crawl node {api_path}. Skipping this branch.")
+            report.failed_branches.append(api_path)
             return []
 
         returned_entries = response.get("data", [])
@@ -398,7 +511,8 @@ def _traverse_api_node(api_path, node_name):
                 # recurse the function (serially)
                 child_nodes = _traverse_api_node(
                     api_path=f"{api_path}/{alias}",
-                    node_name=next_node_name
+                    node_name=next_node_name,
+                    report=report,
                 )
                 leaf_nodes_to_process.extend(child_nodes)
 
@@ -426,6 +540,7 @@ def _traverse_api_node(api_path, node_name):
         # This catch is for *fatal* errors raised by _query_metadata_api
         # after all retries have failed.
         logger.error(f"Failed to crawl node {api_path}: {e}")
+        report.failed_branches.append(api_path)
         return []
 
 
@@ -521,10 +636,7 @@ def _process_leaf_node(
         logger.debug(f"Inferred URL template: {download_url_template}")
 
         # 'multi-year' requires {year} placeholder
-        if not _validate_download_url_template(
-                download_url_template, api_path, ["{year}"]
-        ):
-            return [] # stop processing this series
+        _validate_download_url_template(download_url_template, api_path, ["{year}"])
 
         for base_country_entry in coverage_index:  # outer Loop (countries)
             id_for_summary = base_country_entry.get("id")
@@ -564,10 +676,7 @@ def _process_leaf_node(
 
         # 'multi-band' requires both {year} and {band}
         required_placeholders = ["{year}", "{band}"]
-        if not _validate_download_url_template(
-                download_url_template, api_path, required_placeholders
-        ):
-            return [] # stop processing this series
+        _validate_download_url_template(download_url_template, api_path, required_placeholders)
 
         for base_country_entry in coverage_index: # outer Loop (countries)
             id_for_summary = base_country_entry.get("id")
@@ -983,29 +1092,24 @@ def _validate_download_url_template(template_string, api_path, required_placehol
     Validates that a generated URL template contains all required placeholders.
 
     This is a critical safety check to prevent silent data corruption from
-    permissive .format() calls (which ignore extra keys).
+    permissive .format() calls (which ignore extra keys). A missing placeholder
+    usually means that WorldPop changed its file naming. The resulting error is
+    caught by the series loop in `build_raw_manifest_from_api`, which skips the
+    data series and records it as failed in the build report.
 
     Parameters:
     - template_string (str): The generated URL template (e.g., "...{iso3_lower}_{year}.tif")
-    - api_path (str): The API path, for logging.
+    - api_path (str): The API path, for the error message.
     - required_placeholders (list[str]): A list of placeholders (e.g., ["{year}", "{band}"])
                                          that *must* be in the template.
 
-    Returns:
-    - bool: True if valid, False if invalid.
+    Raises:
+    - ValueError: If any required placeholder is missing.
     """
-    missing = []
-    for placeholder in required_placeholders:
-        if placeholder not in template_string:
-            missing.append(placeholder)
-
-    if not missing:
-        return True  # All checks passed
-
-    # If we are here, a check failed.
-    logger.error(
-        f"Template validation FAILED for {api_path}. "
-        f"The generated template is missing required placeholder(s): {missing}. "
-        f"Template was: '{template_string}'. Skipping this entire data series."
-    )
-    return False
+    missing = [p for p in required_placeholders if p not in template_string]
+    if missing:
+        raise ValueError(
+            f"Template validation FAILED for {api_path}. "
+            f"The generated template is missing required placeholder(s): {missing}. "
+            f"Template was: '{template_string}'."
+        )

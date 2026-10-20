@@ -46,7 +46,8 @@ def test_e2e_manifest_builder_lifecycle(isolated_manifest_assets, caplog, monkey
 
     # --- 1. First call (Cold Start) ---
     # Cache is empty, so this MUST download/build.
-    build_raw_manifest_from_api(force_rebuild=False)
+    report = build_raw_manifest_from_api(force_rebuild=False)
+    assert report.saved_to == feather_path, report.summary()
 
     # Check files exist
     assert feather_path.is_file()
@@ -63,14 +64,15 @@ def test_e2e_manifest_builder_lifecycle(isolated_manifest_assets, caplog, monkey
 
     # Check logs
     assert "Traversing WorldPop's meta-data API" in caplog.text
-    assert "Updated raw data manifest saved" in caplog.text
+    assert "Manifest build finished" in caplog.text
 
     # --- 2. Second call (Warm Cache) ---
     # Nothing should happen; cache is fresh (< 180 days).
     caplog.clear()
     time.sleep(0.1)  # Sleep to ensure system time advances
 
-    build_raw_manifest_from_api(force_rebuild=False)
+    # No build is needed, so no report is returned
+    assert build_raw_manifest_from_api(force_rebuild=False) is None
 
     # Check logs: Should verify it found cached results
     assert "Traversing WorldPop's meta-data API" not in caplog.text
@@ -86,11 +88,12 @@ def test_e2e_manifest_builder_lifecycle(isolated_manifest_assets, caplog, monkey
     caplog.clear()
     time.sleep(1.1)  # Sleep > 1s to ensure significant timestamp diff
 
-    build_raw_manifest_from_api(force_rebuild=True)
+    report = build_raw_manifest_from_api(force_rebuild=True)
+    assert report.saved_to == feather_path, report.summary()
 
     # Check logs: Should verify it ran the traversal again
     assert "Traversing WorldPop's meta-data API" in caplog.text
-    assert "Updated raw data manifest saved" in caplog.text
+    assert "Manifest build finished" in caplog.text
 
     # Verify the timestamp file WAS updated
     with open(timestamp_path, 'r') as f:

@@ -1,12 +1,38 @@
+from pathlib import Path
+
 import httpx
+import pandas as pd
 import pytest
 
+import worldpoppy.manifest_builder as manifest_builder
 from worldpoppy.config import METADATA_API_URL
-from worldpoppy.manifest_builder import APIRequestError, _query_metadata_api, _traverse_api_node
+from worldpoppy.manifest_builder import (
+    APIRequestError,
+    ManifestBuildReport,
+    _query_metadata_api,
+    _traverse_api_node,
+    build_raw_manifest_from_api,
+)
 from worldpoppy.tracking import api_query_log
 
 FAKE_API_URL = "https://fake.api/rest/data/pop"
 FAKE_PAYLOAD = {"data": [{"alias": "wpgp", "name": "Unconstrained"}]}
+
+# A tiny fake metadata API for manifest-build tests (URL -> payload, or an
+# exception to raise). Its one top-level branch ('pop') holds a data series
+# that works, one that fails to process, and a sub-branch that fails to crawl.
+FAKE_API_TREE = {
+    METADATA_API_URL: {"data": [{"alias": "pop", "name": "Population"}]},
+    f"{METADATA_API_URL}/pop": {"data": [
+        {"alias": "ok", "name": "Works"},
+        {"alias": "bad_series", "name": "Fails to process"},
+        {"alias": "bad_branch", "name": "Fails to crawl"},
+    ]},
+    f"{METADATA_API_URL}/pop/ok": {"data": [{"id": "1", "iso3": "AFG"}]},
+    f"{METADATA_API_URL}/pop/bad_series": {"data": [{"id": "2", "iso3": "AFG"}]},
+    f"{METADATA_API_URL}/pop/bad_branch": APIRequestError("HTTP 503"),
+}
+FAILING_SERIES = {"pop/bad_series"}
 
 
 # --- Fixtures ---
@@ -66,6 +92,30 @@ def _fake_redirect_loop_handler(calls):
         return httpx.Response(302, headers={"Location": url}, request=request)
 
     return fake_handle_request
+
+
+# --- Fake Build Helpers ---
+
+def _patch_build_backend(monkeypatch, api_tree, rows_per_series=1):
+    """
+    Serve `api_tree` as the metadata API, and stub the processing of each
+    data series: it yields `rows_per_series` manifest rows, or fails for
+    FAILING_SERIES. (This keeps build tests independent of real API payload
+    formats.)
+    """
+    def fake_query(url):
+        outcome = api_tree[url]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    def fake_process_leaf_node(api_path, node_name, coverage_index):
+        if api_path in FAILING_SERIES:
+            raise ValueError(f"Cannot parse {api_path}")
+        return [{"api_path": api_path, "iso3": "AFG"}] * rows_per_series
+
+    monkeypatch.setattr(manifest_builder, "_query_metadata_api", fake_query)
+    monkeypatch.setattr(manifest_builder, "_process_leaf_node", fake_process_leaf_node)
 
 
 # --- Tests: Retry Behaviour ---
@@ -193,11 +243,119 @@ def test_traverse_recovers_from_transient_error(monkeypatch, no_backoff_sleep):
     outcomes = [503, branch_payload, leaf_payload]
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _scripted_handler(outcomes, calls))
 
-    leaf_nodes = _traverse_api_node("pop", node_name="Population")
+    report = ManifestBuildReport()
+    leaf_nodes = _traverse_api_node("pop", node_name="Population", report=report)
 
     assert [node["api_path"] for node in leaf_nodes] == ["pop/wpgp"]
+    assert report.failed_branches == []
     assert calls == [
         f"{METADATA_API_URL}/pop",
         f"{METADATA_API_URL}/pop",
         f"{METADATA_API_URL}/pop/wpgp",
     ]
+
+
+# --- Tests: Build Summary ---
+
+@pytest.mark.parametrize("branch_failure", [APIRequestError("HTTP 503"), None], ids=["api_error", "null_body"])
+def test_build_reports_failed_branches_and_series(
+    monkeypatch, isolated_manifest_assets, caplog, branch_failure
+):
+    """
+    A build that loses a branch (API error, or a JSON `null` body) and a data
+    series still saves the rest, but the returned report and the logged
+    summary name what is missing.
+    """
+    api_tree = {**FAKE_API_TREE, f"{METADATA_API_URL}/pop/bad_branch": branch_failure}
+    _patch_build_backend(monkeypatch, api_tree, rows_per_series=3)
+
+    report = build_raw_manifest_from_api(force_rebuild=True)
+
+    assert report.failed_branches == ["pop/bad_branch"]
+    assert report.failed_series == ["pop/bad_series"]
+    assert (report.num_series, report.num_files) == (2, 3)
+    assert report.saved_to is not None and report.saved_to.is_file()
+    assert not report.is_complete
+    # The "- " prefix is only used by the summary (not by the per-failure log lines)
+    assert "INCOMPLETE" in caplog.text
+    assert "- pop/bad_branch" in caplog.text and "- pop/bad_series" in caplog.text
+
+
+def test_build_reports_complete_manifest(monkeypatch, isolated_manifest_assets, caplog):
+    """
+    A build without failures is reported as complete. A later call without
+    `force_rebuild` finds the fresh manifest and builds nothing; with
+    `force_rebuild`, it builds again.
+    """
+    clean_branch = {"data": [{"alias": "ok", "name": "Works"}]}
+    _patch_build_backend(monkeypatch, {**FAKE_API_TREE, f"{METADATA_API_URL}/pop": clean_branch})
+
+    report = build_raw_manifest_from_api(force_rebuild=True)
+
+    assert report.is_complete
+    assert (report.num_series, report.num_files) == (1, 1)
+    assert "1 raster file from" in caplog.text and "No failures" in caplog.text
+    assert build_raw_manifest_from_api(force_rebuild=False) is None
+    assert build_raw_manifest_from_api(force_rebuild=True).is_complete
+
+
+@pytest.mark.parametrize("tree_override, rows_per_series, expected_error", [
+    ({METADATA_API_URL: APIRequestError("HTTP 503")}, 1, "HTTP 503"),
+    (
+        {
+            f"{METADATA_API_URL}/pop": {"data": [{"alias": "global", "name": "Global"}]},
+            f"{METADATA_API_URL}/pop/global": {"data": [{"id": "9", "iso3": "WCD"}]},
+        },
+        1,
+        "no supported data series",
+    ),
+    ({}, 0, "returned no data"),
+], ids=["api_root_unreachable", "only_global_series", "no_rows"])
+def test_build_reports_fatal_error(
+    monkeypatch, isolated_manifest_assets, caplog, tree_override, rows_per_series, expected_error
+):
+    """
+    If a build cannot produce a manifest, it is aborted, nothing is saved,
+    and both the report and the logged summary say why.
+    """
+    _patch_build_backend(monkeypatch, {**FAKE_API_TREE, **tree_override}, rows_per_series)
+
+    report = build_raw_manifest_from_api(force_rebuild=True)
+
+    assert report.saved_to is None
+    assert not report.is_complete
+    assert expected_error in report.fatal_error
+    assert not list(isolated_manifest_assets.glob("*.feather"))
+    assert "aborted" in caplog.text and expected_error in caplog.text
+
+
+def test_build_reports_save_failure(monkeypatch, isolated_manifest_assets):
+    """
+    If the manifest cannot be written to disk, the report says so.
+    """
+    _patch_build_backend(monkeypatch, FAKE_API_TREE)
+
+    def failing_to_feather(*args, **kwargs):
+        raise PermissionError("read-only file system")
+
+    monkeypatch.setattr(pd.DataFrame, "to_feather", failing_to_feather)
+
+    report = build_raw_manifest_from_api(force_rebuild=True)
+
+    assert report.saved_to is None
+    assert "failed to save" in report.fatal_error
+
+
+def test_build_summary_caps_long_path_lists():
+    """
+    With many failures, the summary lists only the first few paths per kind
+    (the report itself keeps all of them).
+    """
+    failed = [f"pop/series_{i}" for i in range(ManifestBuildReport.MAX_PATHS_IN_SUMMARY + 5)]
+    report = ManifestBuildReport(num_series=100, failed_series=failed, saved_to=Path("manifest.feather"))
+
+    summary = report.summary()
+
+    assert "- pop/series_0" in summary
+    assert f"- {failed[-1]}" not in summary
+    assert "... and 5 more" in summary
