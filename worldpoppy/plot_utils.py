@@ -216,11 +216,11 @@ def plot_location_markers(
                     f"Location item must be a string or tuple, got {type(item)}."
                 )
 
-        except NominatimSearchEmptyError:
+        except NominatimSearchEmptyError as e:
             # Determine the name we were trying to find for the log message
             failed_query = item[0] if isinstance(item, tuple) else item
             logger.warning(
-                f"Nominatim returned no results for location '{failed_query}'. "
+                f"Could not geolocate '{failed_query}' ({e}). "
                 "Skipping plotting for this location."
             )
             continue

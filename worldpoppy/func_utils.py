@@ -14,7 +14,7 @@ import geopandas as gpd
 import httpx
 import numpy as np
 import xarray as xr
-from geopy.exc import GeocoderTimedOut
+from geopy.exc import GeocoderRateLimited, GeocoderTimedOut, GeocoderUnavailable
 from geopy.geocoders import Nominatim
 from pyproj import Transformer, CRS
 from shapely.geometry import box
@@ -35,6 +35,13 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
+# Geocoding errors that a retry can fix: timeouts (incl. HTTP 408/503/504),
+# connection problems, and rate limiting (HTTP 429). All other geopy errors
+# (e.g., HTTP 403 for a blocked user agent, or a malformed query) are final.
+# Note: geopy maps HTTP 500/502 to its generic `GeocoderServiceError`, which
+# is also the base class of the final errors. Hence, 500/502 are not retried.
+_RETRYABLE_GEOCODER_ERRORS = (GeocoderTimedOut, GeocoderUnavailable, GeocoderRateLimited)
+
 
 class BboxInvalidError(Exception):
     """
@@ -46,15 +53,12 @@ class BboxInvalidError(Exception):
 
 
 class NominatimSearchEmptyError(Exception):
-    """Raised when a Nominatim search returns no result."""
+    """Raised when a Nominatim search returns no result or fails."""
 
     pass
 
 
 @lru_cache(maxsize=1024)
-@backoff.on_exception(
-    backoff.expo, GeocoderTimedOut, max_tries=5, jitter=backoff.full_jitter
-)
 def geolocate_name(nominatim_query, to_crs=None):
     """
     Return the geo-coordinate associated with a given location name,
@@ -77,7 +81,8 @@ def geolocate_name(nominatim_query, to_crs=None):
     Raises
     ------
     NominatimSearchEmptyError
-        If the Nominatim query crashed or returned None.
+        If the Nominatim query failed (after retries, where applicable)
+        or returned None.
     """
     lon, lat = cached_nominatim_query(nominatim_query)
     if to_crs is None:
@@ -89,9 +94,6 @@ def geolocate_name(nominatim_query, to_crs=None):
 
 
 @lru_cache(maxsize=None)
-@backoff.on_exception(
-    backoff.expo, GeocoderTimedOut, max_tries=5, jitter=backoff.full_jitter
-)
 def cached_nominatim_query(query):
     """
     Return the lon/lat coordinate pair associated with a given location name,
@@ -105,27 +107,47 @@ def cached_nominatim_query(query):
     Returns
     -------
     Tuple[float, float]
-        The (x, y) coordinate in the target CRS, or (lon, lat) in WGS84.
+        The (lon, lat) coordinate in WGS84.
 
     Raises
     ------
     NominatimSearchEmptyError
-        If the Nominatim query crashed or returned None.
+        If the Nominatim query failed (after retries, where applicable)
+        or returned None.
     """
     try:
-        geolocator = Nominatim(user_agent="MyLocationCacher", timeout=2)
-        located = geolocator.geocode(query)
+        located = _geocode_with_retries(query)
     except Exception as e:
         # We re-raise *any* error as the same custom exception
-        # since this simplifies error handling in callees like
+        # since this simplifies error handling in callers like
         # `plot_utils.plot_location_markers`.
-        raise NominatimSearchEmptyError(f"Nominatim search failed with error: {e}")
+        raise NominatimSearchEmptyError(f"Nominatim search failed with error: {e}") from e
 
     if located is None:
         raise NominatimSearchEmptyError(f"No hit returned for location '{query}'.")
 
     lon, lat = located.point.longitude, located.point.latitude
     return lon, lat
+
+
+@backoff.on_exception(
+    backoff.expo,
+    _RETRYABLE_GEOCODER_ERRORS,
+    max_tries=5,
+    jitter=backoff.full_jitter,
+    logger=logger,
+    giveup_log_level=logging.WARNING,  # callers decide how serious a failure is
+)
+def _geocode_with_retries(query):
+    """
+    Geocode a location name with Nominatim, retrying on timeouts, connection
+    problems and rate limiting.
+
+    Exceptions must propagate out of this function, since the `backoff`
+    decorator can only retry calls that raise.
+    """
+    geolocator = Nominatim(user_agent="MyLocationCacher", timeout=2)
+    return geolocator.geocode(query)
 
 
 def is_fatal_http_error(e):
