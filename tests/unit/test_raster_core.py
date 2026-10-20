@@ -233,3 +233,44 @@ def test_merge_raises_incompatible_error(
 
     # Ensure the error message specifically identifies WHICH attribute failed
     assert f"Input rasters do not share the same {error_substring}" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "cache_downloads, skip_download_if_exists, expected_skip, expect_warning",
+    [
+        (True, None, True, False),    # Default (omitted) with cache: skip cached files
+        (False, None, False, False),  # Default (omitted) without cache: no spurious warning
+        (False, True, False, True),   # Explicit contradiction: warn and override
+        (False, False, False, False),
+        (True, True, True, False),    # Explicit skip with cache
+        (True, False, False, False),  # Explicit re-download with cache
+    ]
+)
+def test_wp_raster_skip_download_default(
+    mock_raster_factory, mock_downloader, caplog,
+    cache_downloads, skip_download_if_exists, expected_skip, expect_warning
+):
+    """
+    `skip_download_if_exists` follows `cache_downloads` by default. A warning
+    is only logged if the user explicitly combines it with `cache_downloads=False`.
+    (A `skip_download_if_exists` of None means the argument is omitted.)
+    """
+    import inspect
+    from worldpoppy import wp_raster
+    from worldpoppy.download import WorldPopDownloader
+
+    path = mock_raster_factory("A.tif", np.ones((10, 10)), origin=(0, 10))
+    mock_downloader.download.return_value = ([path], MagicMock())
+
+    kwargs = dict(cache_downloads=cache_downloads)
+    if skip_download_if_exists is not None:
+        kwargs["skip_download_if_exists"] = skip_download_if_exists
+    wp_raster(product_name="pop_g1", aoi=["MOCK"], **kwargs)
+
+    # Bind the recorded call to the real signature, so that the test does not
+    # depend on whether `wp_raster` passes the argument by position or keyword
+    call = mock_downloader.download.call_args
+    bound = inspect.signature(WorldPopDownloader.download).bind(None, *call.args, **call.kwargs)
+    passed_skip = bound.arguments["skip_download_if_exists"]
+    assert passed_skip is expected_skip
+    assert ("has no effect" in caplog.text) is expect_warning

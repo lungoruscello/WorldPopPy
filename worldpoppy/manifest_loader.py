@@ -150,7 +150,7 @@ from worldpoppy.config import (
     ESA_LAND_COVER_ALIAS_MAP,
     PRODUCT_NOTES_MAP,
     DEBUG)
-from worldpoppy.func_utils import log_info_context
+from worldpoppy.func_utils import log_info_context, standardise_iso3_codes
 from worldpoppy.manifest_builder import build_raw_manifest_from_api
 from worldpoppy.manifest_utils import (
     infer_resolution_from_description,
@@ -251,8 +251,8 @@ def wp_manifest(
     if static_only and multi_year_only:
         raise ValueError("`static_only` and `multi_year_only` are mutually exclusive.")
 
-    if isinstance(iso3_codes, str):
-        iso3_codes = [iso3_codes]
+    if iso3_codes is not None:
+        iso3_codes = standardise_iso3_codes(iso3_codes)
     if isinstance(years, int):
         years = [years]
 
@@ -348,8 +348,7 @@ def wp_manifest_constrained(product_name, iso3_codes, years=None):
     # strict validation logic below to proceed unchanged.
     years = resolve_product_years(product_name, years)
 
-    if isinstance(iso3_codes, str):
-        iso3_codes = [iso3_codes]
+    iso3_codes = standardise_iso3_codes(iso3_codes)
     if isinstance(years, int):
         years = [years]
 
@@ -1151,7 +1150,7 @@ def _validate_isos(iso3_codes):
         raise ValueError(
             f"Country code(s) not supported: {unknown_isos}. "
             f'You can list all supported country codes as follows:\n\n'
-            f'>>> from worldpoppy.manifest_new import get_all_isos\n'
+            f'>>> from worldpoppy import get_all_isos\n'
             f'>>> print(get_all_isos())'
         )
 
@@ -1165,7 +1164,7 @@ def _validate_years(years):
         raise ValueError(
             f'No supported data for the following years: '
             f'{unknown_years}. You can list the years for which supported data is '
-            f'available follows:\n\n'
-            f'>>> from worldpoppy.manifest_new import get_all_years\n'
+            f'available as follows:\n\n'
+            f'>>> from worldpoppy.manifest_loader import get_all_years\n'
             f'>>> print(get_all_years())'
         )

@@ -15,6 +15,7 @@ from worldpoppy.func_utils import (
     NominatimSearchEmptyError,
     geolocate_name,
     is_fatal_http_error,
+    standardise_iso3_codes,
 )
 from worldpoppy.plot_utils import plot_location_markers
 
@@ -245,3 +246,39 @@ def test_location_markers_skip_failed_lookups(
     [warning] = [r.getMessage() for r in caplog.records if r.name == "worldpoppy.plot_utils"]
     assert "Skipping plotting" in warning
     assert "Service timed out" in warning
+
+
+# --- Tests: ISO3 Codes ---
+
+@pytest.mark.parametrize("iso3_codes, expected", [
+    ("THA", ["THA"]),
+    ("tha", ["THA"]),
+    (" Tha \n", ["THA"]),
+    (["tha", "KHM", " lao"], ["THA", "KHM", "LAO"]),
+    (("vnm",), ["VNM"]),
+    ([], []),
+])
+def test_standardise_iso3_codes(iso3_codes, expected):
+    """
+    ISO3 codes are returned as a list of upper-case strings without
+    surrounding whitespace, whether passed as a single string or several.
+    """
+    assert standardise_iso3_codes(iso3_codes) == expected
+
+
+def test_standardise_iso3_codes_rejects_non_strings():
+    """
+    Non-string codes raise a clear TypeError instead of an AttributeError.
+    """
+    with pytest.raises(TypeError, match="must be strings"):
+        standardise_iso3_codes(["THA", 764])
+
+
+@pytest.mark.parametrize("iso3_codes", [None, b"THA"], ids=["None", "bytes"])
+def test_standardise_iso3_codes_rejects_non_iterables_of_strings(iso3_codes):
+    """
+    None and bytes raise a clear TypeError (bytes would otherwise be iterated
+    as integers, giving a confusing message).
+    """
+    with pytest.raises(TypeError, match="string or an iterable of strings"):
+        standardise_iso3_codes(iso3_codes)

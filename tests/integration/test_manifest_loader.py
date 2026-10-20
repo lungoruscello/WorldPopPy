@@ -184,3 +184,49 @@ def test_manifest_years_keywords_integration():
 
     with pytest.raises(ValueError, match="not linked to any year"):
         wp_manifest_constrained(static_product, iso3_codes='VNM', years='first')
+
+
+@pytest.mark.integration
+@needs_raw_manifest
+def test_manifest_accepts_lowercase_iso3_codes():
+    """
+    Verify that `wp_manifest` and `wp_manifest_constrained` accept country
+    codes in any case (and with surrounding whitespace).
+    """
+    from worldpoppy.manifest_loader import wp_manifest, wp_manifest_constrained
+
+    upper = wp_manifest(product_name='pop_g1', iso3_codes='LUX')
+    lower = wp_manifest(product_name='pop_g1', iso3_codes=' lux')
+    assert len(upper) > 0
+    pd.testing.assert_frame_equal(lower, upper)
+
+    constrained = wp_manifest_constrained('pop_g1', iso3_codes=['lux', 'bel'], years=2020)
+    assert sorted(constrained['iso3']) == ['BEL', 'LUX']
+
+    # Validation also sees the normalised codes
+    with pytest.raises(ValueError, match="XXX"):
+        wp_manifest(iso3_codes='xxx')
+
+
+@pytest.mark.integration
+@needs_raw_manifest
+@pytest.mark.parametrize("validator, invalid_values", [
+    ("_validate_isos", ["XXX"]),
+    ("_validate_years", [1066]),
+])
+def test_validation_errors_suggest_working_imports(validator, invalid_values):
+    """
+    Verify that the code snippets suggested in validation errors actually
+    run (they used to refer to a non-existent module).
+    """
+    from worldpoppy import manifest_loader
+
+    with pytest.raises(ValueError) as exc:
+        getattr(manifest_loader, validator)(invalid_values)
+
+    snippet_lines = [
+        line.removeprefix(">>> ") for line in str(exc.value).splitlines()
+        if line.startswith(">>> ")
+    ]
+    assert snippet_lines, "Error message should suggest a code snippet."
+    exec("\n".join(snippet_lines), {})  # must not raise

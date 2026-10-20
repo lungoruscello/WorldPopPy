@@ -26,6 +26,7 @@ __all__ = [
     "NominatimSearchEmptyError",
     "geolocate_name",
     "is_fatal_http_error",
+    "standardise_iso3_codes",
     "module_available",
     "log_info_context",
     "validate_bbox_wgs84",
@@ -152,6 +153,39 @@ def _geocode_with_retries(query):
     """
     geolocator = Nominatim(user_agent="MyLocationCacher", timeout=2)
     return geolocator.geocode(query)
+
+
+def standardise_iso3_codes(iso3_codes):
+    """
+    Return one or more ISO3 country codes as a list of upper-case strings,
+    with surrounding whitespace removed (e.g., ' tha' -> 'THA').
+
+    Parameters
+    ----------
+    iso3_codes : str or Iterable[str]
+        A single ISO3 code or several of them.
+
+    Returns
+    -------
+    List[str]
+
+    Raises
+    ------
+    TypeError
+        If any code is not a string.
+    """
+    if isinstance(iso3_codes, str):
+        iso3_codes = [iso3_codes]
+    elif iso3_codes is None or isinstance(iso3_codes, bytes):
+        raise TypeError(
+            f"ISO3 codes must be a string or an iterable of strings, got: {iso3_codes!r}."
+        )
+
+    iso3_codes = list(iso3_codes)
+    if bad_codes := [code for code in iso3_codes if not isinstance(code, str)]:
+        raise TypeError(f"ISO3 codes must be strings, got: {bad_codes}.")
+
+    return [code.strip().upper() for code in iso3_codes]
 
 
 def is_fatal_http_error(e):

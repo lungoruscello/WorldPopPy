@@ -22,7 +22,7 @@ from matplotlib import pyplot as plt
 from pyproj import Transformer
 
 from worldpoppy.config import WGS84_CRS
-from worldpoppy.func_utils import geolocate_name, NominatimSearchEmptyError
+from worldpoppy.func_utils import geolocate_name, standardise_iso3_codes, NominatimSearchEmptyError
 from worldpoppy.manifest_loader import get_all_isos
 
 logger = logging.getLogger(__name__)
@@ -51,8 +51,10 @@ def plot_country_borders(iso3_codes, ax=None, to_crs=None, **kwargs):
     """
     from worldpoppy.borders import load_country_borders
 
-    if isinstance(iso3_codes, str):
-        iso3_codes = get_all_isos() if iso3_codes == "all" else [iso3_codes]
+    if isinstance(iso3_codes, str) and iso3_codes.strip().lower() == "all":
+        iso3_codes = get_all_isos()
+    else:
+        iso3_codes = standardise_iso3_codes(iso3_codes)
 
     ax = plt.gca() if ax is None else ax
 

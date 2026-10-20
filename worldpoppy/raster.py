@@ -39,7 +39,13 @@ from rioxarray.merge import merge_arrays
 from worldpoppy.borders import load_country_borders
 from worldpoppy.config import WGS84_CRS, get_cache_dir
 from worldpoppy.download import WorldPopDownloader
-from worldpoppy.func_utils import module_available, geolocate_name, validate_bbox_wgs84, get_buffered_bounds
+from worldpoppy.func_utils import (
+    module_available,
+    geolocate_name,
+    standardise_iso3_codes,
+    validate_bbox_wgs84,
+    get_buffered_bounds,
+)
 from worldpoppy.manifest_loader import resolve_product_years
 from worldpoppy import __version__ as wpy_version
 
@@ -88,7 +94,7 @@ def wp_raster(
     chunks=None,
     pre_clip_bbox=None,
     cache_downloads=True,
-    skip_download_if_exists=True,
+    skip_download_if_exists=None,
     masked=True,
     mask_and_scale=True,
     other_read_kwargs=None,
@@ -169,8 +175,10 @@ def wp_raster(
         RAM explosions. Mutually exclusive with `suppress_pre_clip`.
     cache_downloads: bool, optional, default=True
         Whether to cache downloaded source rasters.
-    skip_download_if_exists : bool, optional, default=True
+    skip_download_if_exists : bool, optional
         Whether to skip downloading source rasters that already exist in the local cache.
+        Defaults to True if `cache_downloads` is True. Has no effect (and defaults to
+        False) if `cache_downloads` is False, since no local cache is used then.
     masked: bool, optional, default=True
         If True, read the mask of all input rasters and set masked
         values to NaN. This argument is passed to
@@ -235,11 +243,14 @@ def wp_raster(
          `scale_factor` or `add_offset` attributes.)
     """
 
-    if not cache_downloads and skip_download_if_exists:
+    if skip_download_if_exists is None:
+        skip_download_if_exists = cache_downloads
+    elif skip_download_if_exists and not cache_downloads:
+        # Only warn if the user explicitly asked for a contradictory setting
         skip_download_if_exists = False
         logger.warning(
             "'skip_download_if_exists' has no effect if "
-            "'cache_downloads' is set to False'."
+            "'cache_downloads' is set to False."
         )
 
     # --- Resolve 'all' into concrete years/None BEFORE processing ---
@@ -882,18 +893,14 @@ def _standardise_aoi(aoi):
 
     if isinstance(aoi, gpd.GeoDataFrame):
         # Case: GeoDataFrame passed
-        world = load_country_borders()
-        joined = gpd.sjoin(
-            world, aoi.to_crs(WGS84_CRS), predicate='intersects', how='right'
-        )
-        iso3_codes = sorted(joined.iso3.unique())
+        iso3_codes = _iso3_codes_intersecting(aoi)
         if orig_aoi_type is None:  # avoid over-writing existing 'bbox' type
             orig_aoi_type = 'gdf'
 
     else:
         if isinstance(aoi, str):
             # Case: single apparent ISO-code passed
-            iso3_codes = [aoi]
+            iso3_codes = standardise_iso3_codes(aoi)
             orig_aoi_type = 'iso'
         else:
             if not isinstance(aoi[0], str):
@@ -901,10 +908,58 @@ def _standardise_aoi(aoi):
                     "Cannot parse 'aoi'. Please pass one or more country codes..."
                 )
             # Case: several apparent ISO-codes passed
-            iso3_codes = aoi
+            iso3_codes = standardise_iso3_codes(aoi)
             orig_aoi_type = 'iso'
 
     return aoi, iso3_codes, orig_aoi_type
+
+
+def _iso3_codes_intersecting(aoi_gdf):
+    """
+    Return the sorted ISO3 codes of all countries that intersect at least
+    one geometry of the AoI GeoDataFrame.
+
+    AoI geometries that intersect no country (e.g., because they lie at sea)
+    contribute no codes; a warning reports how many there are.
+
+    Raises
+    ------
+    ValueError
+        If the AoI GeoDataFrame is empty, or if no AoI geometry intersects
+        any country.
+    """
+    if aoi_gdf.empty:
+        raise ValueError("The AoI GeoDataFrame is empty (it contains no geometries).")
+
+    # Join only the border geometries and their codes, under a private
+    # column name. This avoids name clashes with the user's own columns
+    # (e.g., an 'iso3' column, which `sjoin` would rename to 'iso3_left').
+    world = load_country_borders()
+    world = world[['iso3', 'geometry']].rename(columns={'iso3': '_wpy_iso3'})
+    joined = gpd.sjoin(
+        world, aoi_gdf.to_crs(WGS84_CRS), predicate='intersects', how='right'
+    )
+
+    # With a right join, AoI geometries without any country get a NaN code
+    unmatched = joined['_wpy_iso3'].isna()
+    iso3_codes = sorted(joined.loc[~unmatched, '_wpy_iso3'].unique())
+
+    if not iso3_codes:
+        raise ValueError(
+            "The area of interest does not intersect any country supported by "
+            "WorldPopPy (e.g., because it lies entirely at sea)."
+        )
+
+    # Each unmatched AoI geometry appears exactly once in a right join, so
+    # counting rows is exact (counting index labels is not, if the user's
+    # GeoDataFrame has duplicate index values)
+    if num_unmatched := int(unmatched.sum()):
+        logger.warning(
+            f"{num_unmatched} of {len(aoi_gdf)} AoI geometries do not intersect any "
+            "supported country (e.g., because they lie at sea) and contribute no data."
+        )
+
+    return iso3_codes
 
 
 def _validate_raster_attrs(raster_fpaths, masked, mask_and_scale):
