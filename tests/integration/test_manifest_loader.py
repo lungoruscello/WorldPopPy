@@ -4,7 +4,7 @@ import logging
 import pandas as pd
 import pytest
 
-from tests.test_utils import needs_raw_manifest
+from tests.helpers import needs_raw_manifest
 
 
 # --- Fixtures ---

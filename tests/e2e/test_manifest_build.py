@@ -5,7 +5,7 @@ from datetime import datetime
 import pytest
 
 import worldpoppy.manifest_builder  # Import target for patching
-from tests.test_utils import needs_internet
+from tests.helpers import needs_internet
 from worldpoppy.config import ENABLE_HEAVY_TESTS
 
 

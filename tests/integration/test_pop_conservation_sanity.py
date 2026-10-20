@@ -37,7 +37,7 @@ Warning:
 import pytest
 from pyproj import CRS
 
-from tests.test_utils import needs_internet_or_cache
+from tests.helpers import needs_internet_or_cache
 
 # Lambert equal-area projection for Europe
 LAEA_EUROPE = "EPSG:3035"
