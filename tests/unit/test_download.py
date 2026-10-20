@@ -1,10 +1,19 @@
+import os
+import stat
+import time
 from contextlib import contextmanager
 from unittest.mock import MagicMock
 
 import httpx
 import pandas as pd
 import pytest
-from worldpoppy.download import WorldPopDownloader, DownloadError, DownloadSizeCheckError
+from worldpoppy.download import (
+    WorldPopDownloader,
+    DownloadError,
+    DownloadSizeCheckError,
+    _repair_cache,
+    _STALE_DOWNLOAD_AGE_SECONDS,
+)
 
 
 FAKE_URL = "https://fake.url/afg.tif"
@@ -50,6 +59,21 @@ class _MidStreamFailure(httpx.SyncByteStream):
     def __iter__(self):
         yield b"PARTIAL-"
         raise httpx.ReadError("Connection dropped mid-stream")
+
+
+class _InterruptedStream(httpx.SyncByteStream):
+    """
+    A response body that calls `interruption()` halfway through the download,
+    e.g., to simulate another process acting on the same cache meanwhile.
+    """
+
+    def __init__(self, interruption):
+        self.interruption = interruption
+
+    def __iter__(self):
+        yield FAKE_CONTENT[:4]
+        self.interruption()
+        yield FAKE_CONTENT[4:]
 
 
 def _next_outcome(outcomes):
@@ -463,6 +487,102 @@ def test_download_does_not_retry_redirect_loop(tmp_path, monkeypatch):
     assert set(calls) == {("GET", FAKE_URL)}
     assert not local_path.exists()
     assert not list(tmp_path.glob("*.download"))
+
+
+# --- Tests: Concurrent Downloads ---
+
+def test_download_survives_cache_cleanup_by_another_process(isolated_raster_cache, monkeypatch):
+    """
+    Another process that starts up mid-download (and cleans up partial
+    downloads) must not delete the temporary file of a running download.
+    """
+    calls = []
+    monkeypatch.setattr(httpx, "stream", _scripted_stream([_InterruptedStream(_repair_cache)], calls))
+
+    local_path = isolated_raster_cache / "afg.tif"
+    res = WorldPopDownloader(directory=isolated_raster_cache)._download_file(FAKE_URL, local_path)
+
+    assert res.success, res.error
+    assert local_path.read_bytes() == FAKE_CONTENT
+
+
+def test_overlapping_downloads_of_same_raster(tmp_path, monkeypatch):
+    """
+    A second download of the same raster that runs while the first one is
+    still in progress (e.g., by a parallel job) must not break either of them:
+    each writes to its own temporary file in the cache dir.
+    """
+    downloader = WorldPopDownloader(directory=tmp_path)
+    local_path = tmp_path / "afg.tif"
+    temp_files_during_first, second_result = [], []
+
+    def second_download():
+        temp_files_during_first.extend(tmp_path.glob("*.download"))
+        second_result.append(downloader._download_file(FAKE_URL, local_path, skip_if_exists=False))
+
+    outcomes = [_InterruptedStream(second_download), 200]
+    monkeypatch.setattr(httpx, "stream", _scripted_stream(outcomes, []))
+
+    first_result = downloader._download_file(FAKE_URL, local_path)
+
+    assert len(temp_files_during_first) == 1  # the first download's own temp file
+    assert first_result.success, first_result.error
+    assert second_result[0].success, second_result[0].error
+    assert local_path.read_bytes() == FAKE_CONTENT
+    assert not list(tmp_path.glob("*.download"))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file permissions")
+def test_downloaded_raster_has_usual_permissions(tmp_path, monkeypatch):
+    """
+    Cached rasters get the usual file permissions (subject to the umask), not
+    owner-only ones, so that they stay readable in shared caches.
+    """
+    monkeypatch.setattr(httpx, "stream", _scripted_stream([200], []))
+    local_path = tmp_path / "afg.tif"
+
+    assert WorldPopDownloader(directory=tmp_path)._download_file(FAKE_URL, local_path).success
+
+    umask = os.umask(0)
+    os.umask(umask)
+    assert stat.S_IMODE(local_path.stat().st_mode) == 0o666 & ~umask
+
+
+def test_download_cleans_up_stale_leftovers_first(
+    isolated_raster_cache, mock_wp_manifest_constrained, monkeypatch
+):
+    """
+    `download()` removes stale partial downloads before it starts.
+    """
+    monkeypatch.setattr("worldpoppy.download.pqdm", MagicMock())
+    (isolated_raster_cache / "pop_g1_AFG_2020.tif").touch()
+    (isolated_raster_cache / "pop_g1_ALB_2020.tif").touch()
+    leftover = isolated_raster_cache / "pop_g1_AFG_2020.tif.abc123.download"
+    leftover.write_bytes(b"partial")
+    long_ago = time.time() - _STALE_DOWNLOAD_AGE_SECONDS - 60
+    os.utime(leftover, (long_ago, long_ago))
+
+    WorldPopDownloader().download("pop_g1", ["AFG", "ALB"], 2020)
+
+    assert not leftover.exists()
+
+
+def test_repair_cache_deletes_only_stale_partial_downloads(isolated_raster_cache):
+    """
+    Partial downloads left behind by crashed runs are deleted; recent ones
+    (possibly still being written by another process) are kept.
+    """
+    stale = isolated_raster_cache / "pop_g1_AFG_2020.tif.abc123.download"
+    recent = isolated_raster_cache / "pop_g1_ALB_2020.tif.def456.download"
+    stale.write_bytes(b"partial")
+    recent.write_bytes(b"partial")
+    an_hour_and_a_bit_ago = time.time() - _STALE_DOWNLOAD_AGE_SECONDS - 60
+    os.utime(stale, (time.time(), an_hour_and_a_bit_ago))  # (atime, mtime): only mtime counts
+
+    _repair_cache()
+
+    assert not stale.exists()
+    assert recent.exists()
 
 
 # --- Tests: Cache Purging ---

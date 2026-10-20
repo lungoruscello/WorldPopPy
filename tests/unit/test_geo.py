@@ -264,12 +264,17 @@ def test_plot_country_borders_all_keyword(synthetic_borders, monkeypatch, keywor
     country, exactly as if all their codes had been passed explicitly.
     """
     from matplotlib.figure import Figure
-    from worldpoppy import get_all_isos
+    import worldpoppy.plot_utils
     from worldpoppy.plot_utils import plot_country_borders
+
+    # Synthetic list of supported countries (instead of the real manifest).
+    # FRA is "supported" but has no border in the synthetic world.
+    all_isos = ["BEL", "FRA", "KEN", "LUX"]
+    monkeypatch.setattr(worldpoppy.plot_utils, "get_all_isos", lambda: all_isos)
 
     plotted = _record_plotted_isos(monkeypatch)
     plot_country_borders(keyword, ax=Figure().add_subplot())
-    plot_country_borders(get_all_isos(), ax=Figure().add_subplot())
+    plot_country_borders(all_isos, ax=Figure().add_subplot())
 
     via_keyword, via_codes = plotted
     assert via_keyword == set(SYNTHETIC_BORDERS)

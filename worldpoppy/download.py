@@ -23,6 +23,8 @@ Main methods
 
 """
 import logging
+import secrets
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, Optional, Any
@@ -57,6 +59,14 @@ _DATA_REQUEST_KWARGS = dict(
     follow_redirects=True,
     timeout=DATA_DOWNLOAD_TIMEOUT,
 )
+
+# Partial downloads ('*.download') untouched for this long are treated as
+# leftovers from crashed runs and deleted by `_repair_cache`. A running download
+# updates its file with every chunk it writes (4 MB by default), and it aborts
+# if the server sends nothing for DATA_DOWNLOAD_TIMEOUT seconds. So a download
+# still in progress only looks stale below roughly 1 KB/s, which leaves a wide
+# margin for other processes that are still downloading.
+_STALE_DOWNLOAD_AGE_SECONDS = 60 * 60
 
 
 class DownloadError(Exception):
@@ -298,16 +308,20 @@ class WorldPopDownloader:
 
         local_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # download the raster to a temporary path in the same directory
-        tmp_path = local_path.with_suffix(local_path.suffix + ".download")
+        # Download the raster to a uniquely named temporary file in the same
+        # directory, so that concurrent downloads of the same raster (e.g., by
+        # parallel jobs) never share, truncate or delete each other's files
+        tmp_path = _create_unique_temp_file(local_path)
 
         try:
             self._stream_to_file(remote_url, tmp_path, chunk_size)
 
-            # Only after the download has finished do we rename the temporary
+            # Only after the download has finished do we move the temporary
             # file to its proper name. In this way, crashing downloads will
-            # not corrupt the local cache.
-            tmp_path.rename(local_path)
+            # not corrupt the local cache. (`replace` is atomic and overwrites
+            # a file that a concurrent download of the same raster finished
+            # first; both files are complete and identical.)
+            tmp_path.replace(local_path)
             return DownloadResult(success=True)
 
         except Exception as e:
@@ -465,16 +479,42 @@ def purge_cache(dry_run=True, keep_country_borders=True):
     }
 
 
+def _create_unique_temp_file(local_path):
+    """
+    Create an empty, uniquely named temporary file next to `local_path`
+    (e.g., 'x.tif.3f9a1c2e.download') and return its path.
+
+    Unlike `tempfile.mkstemp`, which creates files readable only by their
+    owner, this file gets the usual permissions (subject to the umask). The
+    cached raster keeps them after the final move, so that it stays readable
+    in shared caches (e.g., a group cache on a cluster).
+    """
+    while True:
+        tmp_path = local_path.with_name(f"{local_path.name}.{secrets.token_hex(4)}.download")
+        try:
+            open(tmp_path, "xb").close()  # exclusive create: fails if the name is taken
+            return tmp_path
+        except FileExistsError:
+            continue
+
+
 def _repair_cache():
     """
-    Delete all files ending on '.download' in the local cache directory
-    and any of its subdirectories.
+    Delete stale partial downloads (files ending on '.download') in the local
+    cache directory and any of its subdirectories.
+
+    Only files that have not been modified for `_STALE_DOWNLOAD_AGE_SECONDS`
+    are deleted. Recent ones may belong to downloads that another process is
+    still running.
     """
     cache_dir = get_cache_dir()
-    fpaths = list(cache_dir.glob('**/*.download'))
+    stale_before = time.time() - _STALE_DOWNLOAD_AGE_SECONDS
 
-    for path in fpaths:
+    for path in cache_dir.glob('**/*.download'):
         try:
-            path.unlink()
+            if path.stat().st_mtime < stale_before:
+                path.unlink()
+        except FileNotFoundError:
+            pass  # already finished or removed by its own process
         except Exception as e:
-            print(f"Failed to delete cached file at {path}: {e}")
+            logger.warning(f"Failed to delete stale partial download at {path}: {e}")
