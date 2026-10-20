@@ -883,6 +883,12 @@ def _standardise_aoi(aoi):
 
     orig_aoi_type = None
 
+    if isinstance(aoi, (list, tuple)) and len(aoi) == 0:
+        raise ValueError(
+            "`aoi` is empty. Please pass one or more country codes, a bounding "
+            "box (min_lon, min_lat, max_lon, max_lat), or a GeoDataFrame."
+        )
+
     if isinstance(aoi, (list, tuple)):
         if not isinstance(aoi[0], str):
             # Case: apparent bounding box passed

@@ -121,6 +121,18 @@ def test_aoi_at_sea_raises_clear_error(synthetic_borders):
         _standardise_aoi(SEA_BOX_A.bounds)
 
 
+@pytest.mark.parametrize("empty_aoi", [[], ()], ids=["list", "tuple"])
+def test_aoi_empty_sequence_raises_clear_error(empty_aoi):
+    """
+    An empty list or tuple raises a clear ValueError, rather than an
+    IndexError from deep inside the AoI parsing.
+    """
+    from worldpoppy.raster import _standardise_aoi
+
+    with pytest.raises(ValueError, match="`aoi` is empty"):
+        _standardise_aoi(empty_aoi)
+
+
 def test_aoi_empty_gdf_raises_clear_error(synthetic_borders):
     """
     An AoI GeoDataFrame without any geometries is reported as empty (not as
