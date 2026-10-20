@@ -409,24 +409,29 @@ class WorldPopDownloader:
         return self.directory / fname
 
 
-def purge_cache(dry_run=True, keep_country_borders=False):
+def purge_cache(dry_run=True, keep_country_borders=True):
     """
     Purge the local cache directory and any of its subdirectories.
+
+    By default, this deletes the downloaded WorldPop rasters but keeps the
+    (buffered) country borders, which are derived from an asset shipped with
+    `worldpoppy` rather than downloaded.
 
     Parameters
     ----------
     dry_run : bool, optional
         If True (default), do not delete any files and simply report what would be
         deleted without the `dry_run` flag.
-    keep_country_borders : bool, optional, default=False
-        If True, do not delete any cached data related to country borders. This
-        data is assumed to be the only one which includes the 'level0' keyword
-        in a file name.
+    keep_country_borders : bool, optional, default=True
+        If True (default), do not delete any cached data related to country borders.
+        This data is assumed to be the only one which includes the 'level0' keyword
+        in a file name. If False, the country borders are deleted as well; they are
+        rebuilt automatically (offline, in a few seconds) the next time they are needed.
 
     Returns
     -------
     dict
-        Summary of how many files and total size (bytes) would be or were deleted.
+        Summary of how many files and what total size (in MB) would be or were deleted.
     """
     cache_dir = get_cache_dir()
     fpaths = list(cache_dir.glob('**/*'))

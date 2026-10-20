@@ -206,8 +206,11 @@ print(get_cache_dir())
 # Check local cache size
 purge_cache(dry_run=True)
 
-# Delete all cached files
+# Delete all downloaded rasters (keeps the cached country borders)
 purge_cache(dry_run=False)
+
+# Delete everything, incl. the country borders (rebuilt automatically when needed)
+purge_cache(dry_run=False, keep_country_borders=False)
 ```
 
 ### 2. Download Dry Run

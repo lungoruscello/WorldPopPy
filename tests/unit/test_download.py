@@ -463,3 +463,46 @@ def test_download_does_not_retry_redirect_loop(tmp_path, monkeypatch):
     assert set(calls) == {("GET", FAKE_URL)}
     assert not local_path.exists()
     assert not list(tmp_path.glob("*.download"))
+
+
+# --- Tests: Cache Purging ---
+
+def test_purge_cache_keeps_country_borders_by_default(isolated_raster_cache):
+    """
+    By default, `purge_cache` deletes downloaded rasters but keeps the cached
+    country borders. With `keep_country_borders=False`, it deletes both.
+    """
+    from worldpoppy import purge_cache
+    from worldpoppy.borders import _border_buffered_fpath
+
+    raster_fpath = isolated_raster_cache / "pop_g1_AFG_2020.tif"
+    raster_fpath.write_bytes(b"fake raster")
+    borders_fpath = _border_buffered_fpath()
+    # Safety: never write fake borders outside the isolated cache (e.g., into
+    # the user's real cache, should the path resolution ever regress)
+    assert borders_fpath.parent == isolated_raster_cache
+    borders_fpath.write_bytes(b"fake borders")
+
+    summary = purge_cache(dry_run=False)
+    assert not raster_fpath.exists()
+    assert borders_fpath.exists()
+    assert (summary["matched_files"], summary["deleted_files"]) == (1, 1)
+
+    summary = purge_cache(dry_run=False, keep_country_borders=False)
+    assert not borders_fpath.exists()
+    assert (summary["matched_files"], summary["deleted_files"]) == (1, 1)
+
+
+def test_purge_cache_dry_run_deletes_nothing(isolated_raster_cache):
+    """
+    A dry run only reports what would be deleted.
+    """
+    from worldpoppy import purge_cache
+
+    raster_fpath = isolated_raster_cache / "pop_g1_AFG_2020.tif"
+    raster_fpath.write_bytes(b"fake raster")
+
+    summary = purge_cache(dry_run=True)
+
+    assert raster_fpath.exists()
+    assert (summary["matched_files"], summary["deleted_files"]) == (1, 0)
