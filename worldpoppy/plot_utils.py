@@ -22,7 +22,7 @@ from matplotlib import pyplot as plt
 from pyproj import Transformer
 
 from worldpoppy.config import WGS84_CRS
-from worldpoppy.func_utils import cached_nominatim_query, NominatimSearchEmptyError
+from worldpoppy.func_utils import geolocate_name, NominatimSearchEmptyError
 from worldpoppy.manifest_loader import get_all_isos
 
 logger = logging.getLogger(__name__)
@@ -176,7 +176,7 @@ def plot_location_markers(
         try:
             if isinstance(item, str):
                 # Case 1: Simple location name string
-                lon, lat = cached_nominatim_query(query=item)
+                lon, lat = geolocate_name(item)
                 label = item
 
             elif isinstance(item, tuple):
@@ -192,7 +192,7 @@ def plot_location_markers(
                             "Expected (query_name, display_label)."
                         )
                     query_name, custom_label = item
-                    lon, lat = cached_nominatim_query(query=query_name)
+                    lon, lat = geolocate_name(query_name)
                     label = custom_label
 
                 else:

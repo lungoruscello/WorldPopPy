@@ -25,7 +25,6 @@ __all__ = [
     "BboxInvalidError",
     "NominatimSearchEmptyError",
     "geolocate_name",
-    "cached_nominatim_query",
     "is_fatal_http_error",
     "module_available",
     "log_info_context",
@@ -58,11 +57,13 @@ class NominatimSearchEmptyError(Exception):
     pass
 
 
-@lru_cache(maxsize=1024)
 def geolocate_name(nominatim_query, to_crs=None):
     """
     Return the geo-coordinate associated with a given location name,
     based on search results from OSM's 'Nominatim' service.
+
+    Results are cached per location name, so repeated lookups of the same
+    name do not send new queries to Nominatim.
 
     Parameters
     ----------
@@ -84,7 +85,7 @@ def geolocate_name(nominatim_query, to_crs=None):
         If the Nominatim query failed (after retries, where applicable)
         or returned None.
     """
-    lon, lat = cached_nominatim_query(nominatim_query)
+    lon, lat = _nominatim_query(nominatim_query)
     if to_crs is None:
         return lon, lat
 
@@ -94,10 +95,13 @@ def geolocate_name(nominatim_query, to_crs=None):
 
 
 @lru_cache(maxsize=None)
-def cached_nominatim_query(query):
+def _nominatim_query(query):
     """
     Return the lon/lat coordinate pair associated with a given location name,
     based on search results from OSM's 'Nominatim' service.
+
+    This is the cached access layer behind `geolocate_name`. Failed lookups
+    are not cached (`lru_cache` does not store exceptions).
 
     Parameters
     ----------
@@ -119,8 +123,8 @@ def cached_nominatim_query(query):
         located = _geocode_with_retries(query)
     except Exception as e:
         # We re-raise *any* error as the same custom exception
-        # since this simplifies error handling in callers like
-        # `plot_utils.plot_location_markers`.
+        # since this simplifies error handling in callers of
+        # `geolocate_name` like `plot_utils.plot_location_markers`.
         raise NominatimSearchEmptyError(f"Nominatim search failed with error: {e}") from e
 
     if located is None:

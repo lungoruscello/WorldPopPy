@@ -13,7 +13,6 @@ from matplotlib.figure import Figure
 import worldpoppy.func_utils as func_utils
 from worldpoppy.func_utils import (
     NominatimSearchEmptyError,
-    cached_nominatim_query,
     geolocate_name,
     is_fatal_http_error,
 )
@@ -27,16 +26,14 @@ FAKE_LON_LAT = (36.82, -1.29)
 # --- Fixtures ---
 
 @pytest.fixture
-def clear_geocoding_caches():
+def clear_geocoding_cache():
     """
-    Clear the `lru_cache` of both geocoding functions, so that every test
-    actually reaches the (fake) Nominatim service.
+    Clear the geocoding cache, so that every test actually reaches the
+    (fake) Nominatim service.
     """
-    cached_nominatim_query.cache_clear()
-    geolocate_name.cache_clear()
+    func_utils._nominatim_query.cache_clear()
     yield
-    cached_nominatim_query.cache_clear()
-    geolocate_name.cache_clear()
+    func_utils._nominatim_query.cache_clear()
 
 
 # --- Helpers ---
@@ -61,7 +58,7 @@ def _scripted_nominatim(outcomes, calls):
         def geocode(self, query):
             calls.append(query)
             # Fail loudly if a test makes more calls than scripted. (`pytest.fail`
-            # raises a BaseException, so `cached_nominatim_query` cannot swallow it.)
+            # raises a BaseException, so `geolocate_name` cannot swallow it.)
             if not outcomes:
                 pytest.fail("Fake Nominatim received more queries than scripted.")
             outcome = outcomes.pop(0)
@@ -119,7 +116,7 @@ def test_is_fatal_http_error_exception_types(error, is_fatal):
     GeocoderRateLimited("Too many requests"),
 ], ids=lambda e: type(e).__name__)
 def test_geocoding_retries_transient_errors(
-    monkeypatch, no_backoff_sleep, clear_geocoding_caches, transient_error
+    monkeypatch, no_backoff_sleep, clear_geocoding_cache, transient_error
 ):
     """
     Timeouts, connection problems and rate limiting must be retried until the
@@ -129,14 +126,14 @@ def test_geocoding_retries_transient_errors(
     outcomes = [transient_error, FAKE_LON_LAT]
     monkeypatch.setattr(func_utils, "Nominatim", _scripted_nominatim(outcomes, calls))
 
-    lon, lat = cached_nominatim_query(FAKE_PLACE)
+    lon, lat = geolocate_name(FAKE_PLACE)
 
     assert (lon, lat) == pytest.approx(FAKE_LON_LAT)
     assert calls == [FAKE_PLACE] * 2
 
 
 def test_geocoding_gives_up_after_persistent_errors(
-    monkeypatch, no_backoff_sleep, clear_geocoding_caches
+    monkeypatch, no_backoff_sleep, clear_geocoding_cache
 ):
     """
     If Nominatim keeps timing out, the lookup gives up after the maximum
@@ -148,7 +145,7 @@ def test_geocoding_gives_up_after_persistent_errors(
     monkeypatch.setattr(func_utils, "Nominatim", _scripted_nominatim(outcomes, calls))
 
     with pytest.raises(NominatimSearchEmptyError) as exc:
-        cached_nominatim_query(FAKE_PLACE)
+        geolocate_name(FAKE_PLACE)
 
     assert len(calls) == 5
     assert isinstance(exc.value.__cause__, GeocoderTimedOut)
@@ -159,7 +156,7 @@ def test_geocoding_gives_up_after_persistent_errors(
     GeocoderQueryError("HTTP 400: malformed query"),
 ], ids=lambda e: type(e).__name__)
 def test_geocoding_does_not_retry_fatal_errors(
-    monkeypatch, no_backoff_sleep, clear_geocoding_caches, fatal_error
+    monkeypatch, no_backoff_sleep, clear_geocoding_cache, fatal_error
 ):
     """
     Errors that a retry cannot fix fail after a single attempt.
@@ -168,14 +165,14 @@ def test_geocoding_does_not_retry_fatal_errors(
     monkeypatch.setattr(func_utils, "Nominatim", _scripted_nominatim([fatal_error], calls))
 
     with pytest.raises(NominatimSearchEmptyError) as exc:
-        cached_nominatim_query(FAKE_PLACE)
+        geolocate_name(FAKE_PLACE)
 
     assert len(calls) == 1
     assert exc.value.__cause__ is fatal_error
 
 
 def test_geocoding_does_not_retry_empty_result(
-    monkeypatch, no_backoff_sleep, clear_geocoding_caches
+    monkeypatch, no_backoff_sleep, clear_geocoding_cache
 ):
     """
     "No hit" is a valid answer, not a failure: it is reported straight away.
@@ -184,32 +181,14 @@ def test_geocoding_does_not_retry_empty_result(
     monkeypatch.setattr(func_utils, "Nominatim", _scripted_nominatim([None], calls))
 
     with pytest.raises(NominatimSearchEmptyError, match="No hit"):
-        cached_nominatim_query(FAKE_PLACE)
+        geolocate_name(FAKE_PLACE)
 
     assert len(calls) == 1
 
 
-def test_geolocate_name_retries_via_cached_query(
-    monkeypatch, no_backoff_sleep, clear_geocoding_caches
-):
-    """
-    `geolocate_name` (used by `bbox_from_location`) must benefit from the
-    retries inside `cached_nominatim_query`: exactly the maximum number of
-    attempts, before giving up.
-    """
-    calls = []
-    outcomes = [GeocoderTimedOut("Service timed out")] * 5
-    monkeypatch.setattr(func_utils, "Nominatim", _scripted_nominatim(outcomes, calls))
-
-    with pytest.raises(NominatimSearchEmptyError):
-        geolocate_name(FAKE_PLACE)
-
-    assert len(calls) == 5
-
-
 # --- Tests: Geocoding Cache ---
 
-def test_geocoding_caches_successful_lookups(monkeypatch, clear_geocoding_caches):
+def test_geocoding_caches_successful_lookups(monkeypatch, clear_geocoding_cache):
     """
     A successful lookup is cached, so repeating it sends no new query to
     Nominatim. (Its usage policy asks clients to avoid repeat queries.)
@@ -217,30 +196,14 @@ def test_geocoding_caches_successful_lookups(monkeypatch, clear_geocoding_caches
     calls = []
     monkeypatch.setattr(func_utils, "Nominatim", _scripted_nominatim([FAKE_LON_LAT], calls))
 
-    first = cached_nominatim_query(FAKE_PLACE)
-    second = cached_nominatim_query(FAKE_PLACE)
-
-    assert first == second
-    assert calls == [FAKE_PLACE]
-
-
-def test_geolocate_name_caches_its_own_results(monkeypatch, clear_geocoding_caches):
-    """
-    `geolocate_name` has its own cache (keyed by query *and* target CRS), so
-    a repeated call is served without even reaching `cached_nominatim_query`.
-    """
-    calls = []
-    monkeypatch.setattr(func_utils, "Nominatim", _scripted_nominatim([FAKE_LON_LAT], calls))
-
     first = geolocate_name(FAKE_PLACE)
-    cached_nominatim_query.cache_clear()  # only `geolocate_name`'s cache can serve the repeat
     second = geolocate_name(FAKE_PLACE)
 
     assert first == second
     assert calls == [FAKE_PLACE]
 
 
-def test_geocoding_does_not_cache_failures(monkeypatch, no_backoff_sleep, clear_geocoding_caches):
+def test_geocoding_does_not_cache_failures(monkeypatch, no_backoff_sleep, clear_geocoding_cache):
     """
     A failed lookup is not cached (`lru_cache` does not store exceptions), so
     the next call queries Nominatim again and can succeed.
@@ -250,8 +213,8 @@ def test_geocoding_does_not_cache_failures(monkeypatch, no_backoff_sleep, clear_
     monkeypatch.setattr(func_utils, "Nominatim", _scripted_nominatim(outcomes, calls))
 
     with pytest.raises(NominatimSearchEmptyError):
-        cached_nominatim_query(FAKE_PLACE)
-    lon, lat = cached_nominatim_query(FAKE_PLACE)
+        geolocate_name(FAKE_PLACE)
+    lon, lat = geolocate_name(FAKE_PLACE)
 
     assert (lon, lat) == pytest.approx(FAKE_LON_LAT)
     assert calls == [FAKE_PLACE] * 2
@@ -260,7 +223,7 @@ def test_geocoding_does_not_cache_failures(monkeypatch, no_backoff_sleep, clear_
 # --- Tests: Location Markers ---
 
 def test_location_markers_skip_failed_lookups(
-    monkeypatch, caplog, no_backoff_sleep, clear_geocoding_caches
+    monkeypatch, caplog, no_backoff_sleep, clear_geocoding_cache
 ):
     """
     If a place name cannot be geolocated (here: persistent timeouts), the
