@@ -213,10 +213,13 @@ def build_raw_manifest_from_api(force_rebuild=False):
 
         if age_days > 180:
             logger.warning(
-                f"worldpoppy's existing data manifest was built {floor(age_days)} "
-                f"days ago. Use `build_raw_manifest_from_api(force_rebuild=True)` "
-                "to overwrite.\nNote that this will trigger a fresh traversal "
-                "of WorldPop's meta-data API."
+                f"worldpoppy's data manifest (its list of available WorldPop files) "
+                f"was built {floor(age_days)} days ago. It may lack datasets that "
+                "WorldPop has published since; the datasets it lists should still be "
+                "available. Optionally, you can update the data manifest from WorldPop's "
+                "API (takes a few minutes):\n\n"
+                "    from worldpoppy.manifest_builder import build_raw_manifest_from_api\n"
+                "    build_raw_manifest_from_api(force_rebuild=True)\n"
             )
         return None
 

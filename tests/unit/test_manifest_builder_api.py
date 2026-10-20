@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -359,3 +360,22 @@ def test_build_summary_caps_long_path_lists():
     assert "- pop/series_0" in summary
     assert f"- {failed[-1]}" not in summary
     assert "... and 5 more" in summary
+
+
+@pytest.mark.parametrize("age_days, expect_hint", [(200, True), (10, False)])
+def test_stale_manifest_suggests_optional_update(isolated_manifest_assets, caplog, age_days, expect_hint):
+    """
+    An old manifest is kept as is (no build), but the log suggests an optional
+    update with a snippet that works as shown. A recent manifest stays quiet.
+    """
+    built = datetime.now() - timedelta(days=age_days)
+    manifest_builder.RAW_MANIFEST_CACHE_PATH.write_bytes(b"existing manifest")
+    manifest_builder.RAW_MANIFEST_TIMESTAMP_PATH.write_text(built.isoformat())
+
+    assert build_raw_manifest_from_api(force_rebuild=False) is None
+
+    assert (f"built {age_days} days ago" in caplog.text) is expect_hint
+    if expect_hint:
+        assert "Optionally" in caplog.text
+        snippet = [line.strip() for line in caplog.text.splitlines() if line.startswith("    ")]
+        exec(snippet[0], {})  # the import line must work (the rebuild itself is not run)
