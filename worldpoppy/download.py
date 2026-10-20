@@ -51,6 +51,13 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
+# Shared options for all requests to WorldPop's data server. Keeping them
+# in one place ensures that downloads and dry-run size checks behave alike.
+_DATA_REQUEST_KWARGS = dict(
+    follow_redirects=True,
+    timeout=DATA_DOWNLOAD_TIMEOUT,
+)
+
 
 class DownloadError(Exception):
     """Raised when one or more files fail to download."""
@@ -64,11 +71,17 @@ class DownloadSizeCheckError(DownloadError):
     pass
 
 
-def _is_fatal_code(e):
+def _is_fatal_error(e):
     """
-    Return True if the httpx exception is a 4xx Client Error
-    (which should not be retried), unless it is a 429 (Too Many Requests).
+    Return True if the httpx exception signals a failure that retrying cannot
+    fix, namely:
+
+    - a 4xx Client Error, unless it is a 429 (Too Many Requests);
+    - a redirect loop (`httpx.TooManyRedirects`); or
+    - a URL scheme httpx cannot handle (`httpx.UnsupportedProtocol`).
     """
+    if isinstance(e, (httpx.TooManyRedirects, httpx.UnsupportedProtocol)):
+        return True
     if isinstance(e, httpx.HTTPStatusError):
         # Do not retry 404 (Not Found) or 400 (Bad Request)
         # DO retry 429 (Too Many Requests) or 500+ (Server Errors)
@@ -324,7 +337,7 @@ class WorldPopDownloader:
         httpx.HTTPError,  # catch EVERYTHING (Network, Timeout, Status codes)
         max_tries=5,
         jitter=backoff.full_jitter,
-        giveup=_is_fatal_code,  # stop retrying if it's a 404
+        giveup=_is_fatal_error,  # stop retrying if it's a 404, loop, etc.
     )
     def _stream_to_file(self, remote_url, tmp_path, chunk_size):
         """
@@ -338,7 +351,7 @@ class WorldPopDownloader:
         remote_fname = remote_url.split("/")[-1]
 
         with open(tmp_path, "wb+") as f:
-            with httpx.stream("GET", remote_url, timeout=DATA_DOWNLOAD_TIMEOUT) as response:
+            with httpx.stream("GET", remote_url, **_DATA_REQUEST_KWARGS) as response:
                 response.raise_for_status()
 
                 total = int(response.headers.get("Content-Length", 0))
@@ -392,14 +405,14 @@ class WorldPopDownloader:
         httpx.HTTPError,  # catch EVERYTHING (Network, Timeout, Status codes)
         max_tries=5,
         jitter=backoff.full_jitter,
-        giveup=_is_fatal_code,  # stop retrying if it's a 404
+        giveup=_is_fatal_error,  # stop retrying if it's a 404, loop, etc.
     )
     def _fetch_file_size(self, remote_url):
         """
         Return the size of a remote file in bytes using a HEAD request,
         retrying on network errors and retryable HTTP status codes.
         """
-        response = httpx.head(remote_url, follow_redirects=True, timeout=DATA_DOWNLOAD_TIMEOUT)
+        response = httpx.head(remote_url, **_DATA_REQUEST_KWARGS)
         response.raise_for_status()
         return int(response.headers.get("Content-Length", 0))
 

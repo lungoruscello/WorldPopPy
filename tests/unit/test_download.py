@@ -38,10 +38,16 @@ def no_backoff_sleep(monkeypatch):
 
 
 # --- Fake HTTP Helpers ---
-# These helpers fake `httpx.stream` / `httpx.head` with a scripted sequence
-# of outcomes, one per request. Each outcome is either an exception to raise,
-# an HTTP status code to respond with, or (for `httpx.stream` only) a custom
-# `httpx.SyncByteStream` to serve as a 200 response body.
+# Most helpers below fake `httpx.stream` / `httpx.head` with a scripted
+# sequence of outcomes, one per request. Each outcome is either an exception
+# to raise, an HTTP status code to respond with, or (for `httpx.stream` only)
+# a custom `httpx.SyncByteStream` to serve as a 200 response body.
+#
+# The `_fake_..._handler` helpers instead fake the network one level lower,
+# by replacing `httpx.HTTPTransport.handle_request`. This keeps httpx's own
+# redirect handling in play, which replacing `httpx.stream` / `httpx.head`
+# wholesale would bypass. (Because the patch is applied to the class, it also
+# covers any proxy transports httpx creates from environment variables.)
 
 
 class _MidStreamFailure(httpx.SyncByteStream):
@@ -99,6 +105,43 @@ def _scripted_head(outcomes, calls):
         )
 
     return fake_head
+
+
+def _fake_https_redirect_handler(calls):
+    """
+    Return a fake `HTTPTransport.handle_request` that redirects every
+    'http://' URL to its 'https://' equivalent (as WorldPop's data server
+    does) and serves FAKE_CONTENT for 'https://' URLs. Each request is
+    recorded in `calls` as a (method, url) tuple.
+    """
+    def fake_handle_request(self, request):
+        url = str(request.url)
+        calls.append((request.method, url))
+        if request.url.scheme == "http":
+            https_url = url.replace("http://", "https://", 1)
+            return httpx.Response(302, headers={"Location": https_url}, request=request)
+        return httpx.Response(
+            200,
+            headers={"Content-Length": str(len(FAKE_CONTENT))},
+            stream=httpx.ByteStream(b"" if request.method == "HEAD" else FAKE_CONTENT),
+            request=request,
+        )
+
+    return fake_handle_request
+
+
+def _fake_redirect_loop_handler(calls):
+    """
+    Return a fake `HTTPTransport.handle_request` that redirects every URL to
+    itself, so httpx eventually raises `TooManyRedirects`. Each request is
+    recorded in `calls` as a (method, url) tuple.
+    """
+    def fake_handle_request(self, request):
+        url = str(request.url)
+        calls.append((request.method, url))
+        return httpx.Response(302, headers={"Location": url}, request=request)
+
+    return fake_handle_request
 
 
 # --- Tests: Download Orchestration ---
@@ -293,6 +336,25 @@ def test_download_does_not_retry_fatal_client_errors(tmp_path, monkeypatch, no_b
     assert not list(tmp_path.glob("*.download"))
 
 
+def test_download_does_not_retry_unsupported_protocol(tmp_path, monkeypatch, no_backoff_sleep):
+    """
+    httpx files an unsupported URL scheme (e.g., 'ftp://') under transport
+    errors, but retrying cannot fix it, so the download fails immediately.
+    """
+    calls = []
+    outcomes = [httpx.UnsupportedProtocol("Request URL has an unsupported protocol 'ftp://'.")]
+    monkeypatch.setattr(httpx, "stream", _scripted_stream(outcomes, calls))
+
+    local_path = tmp_path / "afg.tif"
+    res = WorldPopDownloader(directory=tmp_path)._download_file(FAKE_URL, local_path)
+
+    assert not res.success
+    assert isinstance(res.error, httpx.UnsupportedProtocol)
+    assert len(calls) == 1
+    assert not local_path.exists()
+    assert not list(tmp_path.glob("*.download"))
+
+
 def test_size_check_retries_transient_errors(tmp_path, monkeypatch, no_backoff_sleep):
     """
     HEAD requests during a dry run must also be retried.
@@ -345,3 +407,65 @@ def test_size_check_does_not_retry_fatal_client_errors(tmp_path, monkeypatch, no
     assert isinstance(res.error, httpx.HTTPStatusError)
     assert res.error.response.status_code == 404
     assert len(calls) == 1
+
+
+# --- Tests: Redirect Handling ---
+
+def test_download_follows_redirects(tmp_path, monkeypatch, no_backoff_sleep):
+    """
+    Downloads must follow redirects (e.g., WorldPop's 'http://' -> 'https://').
+    """
+    calls = []
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _fake_https_redirect_handler(calls))
+
+    http_url = FAKE_URL.replace("https://", "http://", 1)
+    local_path = tmp_path / "afg.tif"
+    res = WorldPopDownloader(directory=tmp_path)._download_file(http_url, local_path)
+
+    # Check `calls` first: on failure, it shows whether the redirect was ignored
+    assert calls == [("GET", http_url), ("GET", FAKE_URL)]
+    assert res.success
+    assert local_path.read_bytes() == FAKE_CONTENT
+
+
+def test_size_check_follows_redirects(tmp_path, monkeypatch, no_backoff_sleep):
+    """
+    HEAD requests during a dry run must follow redirects, just like downloads.
+    """
+    calls = []
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _fake_https_redirect_handler(calls))
+
+    http_url = FAKE_URL.replace("https://", "http://", 1)
+    res = WorldPopDownloader(directory=tmp_path)._get_required_file_download_size(
+        http_url, tmp_path / "afg.tif"
+    )
+
+    # Check `calls` first: on failure, it shows whether the redirect was ignored
+    assert calls == [("HEAD", http_url), ("HEAD", FAKE_URL)]
+    assert res.success
+    assert res.value == len(FAKE_CONTENT)
+
+
+def test_download_does_not_retry_redirect_loop(tmp_path, monkeypatch):
+    """
+    A redirect loop is final: retrying cannot fix it, so the download fails
+    after a single attempt.
+    """
+    calls = []
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _fake_redirect_loop_handler(calls))
+
+    # Record backoff's sleeps instead of skipping them: one attempt means
+    # backoff never sleeps. (This avoids pinning httpx's redirect limit,
+    # which determines how many requests a single attempt makes.)
+    sleeps = []
+    monkeypatch.setattr("time.sleep", sleeps.append)
+
+    local_path = tmp_path / "afg.tif"
+    res = WorldPopDownloader(directory=tmp_path)._download_file(FAKE_URL, local_path)
+
+    assert sleeps == []
+    assert not res.success
+    assert isinstance(res.error, httpx.TooManyRedirects)
+    assert set(calls) == {("GET", FAKE_URL)}
+    assert not local_path.exists()
+    assert not list(tmp_path.glob("*.download"))
