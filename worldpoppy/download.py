@@ -266,13 +266,6 @@ class WorldPopDownloader:
 
         return local_paths, filtered_mdf
 
-    @backoff.on_exception(
-        backoff.expo,
-        httpx.HTTPError,  # catch EVERYTHING (Network, Timeout, Status codes)
-        max_tries=5,
-        jitter=backoff.full_jitter,
-        giveup=_is_fatal_code,  # stop retrying if it's a 404
-    )
     def _download_file(
         self,
         remote_url,
@@ -282,6 +275,10 @@ class WorldPopDownloader:
     ):
         """
         Download a WorldPop raster with automatic retries.
+
+        Retries happen inside `_stream_to_file`. This wrapper only converts
+        the final outcome into a `DownloadResult`, so that one failed file
+        does not abort the parallel download of all other files.
 
         Parameters
         ----------
@@ -304,24 +301,13 @@ class WorldPopDownloader:
             # nothing to do
             return DownloadResult(success=True)
 
-        remote_fname = remote_url.split("/")[-1]
         local_path.parent.mkdir(parents=True, exist_ok=True)
 
         # download the raster to a temporary path in the same directory
         tmp_path = local_path.with_suffix(local_path.suffix + ".download")
 
         try:
-            with open(tmp_path, "wb+") as f:
-                with httpx.stream("GET", remote_url, timeout=DATA_DOWNLOAD_TIMEOUT) as response:
-                    response.raise_for_status()
-
-                    total = int(response.headers.get("Content-Length", 0))
-                    pbar = tqdm(total=total, unit="B", unit_scale=True, leave=False)
-                    with pbar:
-                        pbar.set_description(f"Downloading {remote_fname}...")
-                        for chunk in response.iter_raw(chunk_size=chunk_size):
-                            f.write(chunk)
-                            pbar.update(len(chunk))
+            self._stream_to_file(remote_url, tmp_path, chunk_size)
 
             # Only after the download has finished do we rename the temporary
             # file to its proper name. In this way, crashing downloads will
@@ -330,6 +316,7 @@ class WorldPopDownloader:
             return DownloadResult(success=True)
 
         except Exception as e:
+            tmp_path.unlink(missing_ok=True)
             return DownloadResult(success=False, error=e)
 
     @backoff.on_exception(
@@ -339,6 +326,29 @@ class WorldPopDownloader:
         jitter=backoff.full_jitter,
         giveup=_is_fatal_code,  # stop retrying if it's a 404
     )
+    def _stream_to_file(self, remote_url, tmp_path, chunk_size):
+        """
+        Stream a remote file to `tmp_path`, retrying on network errors and
+        retryable HTTP status codes.
+
+        Exceptions must propagate out of this method, since the `backoff`
+        decorator can only retry calls that raise. Each attempt re-opens
+        (and thus truncates) `tmp_path`, so no partial data is carried over.
+        """
+        remote_fname = remote_url.split("/")[-1]
+
+        with open(tmp_path, "wb+") as f:
+            with httpx.stream("GET", remote_url, timeout=DATA_DOWNLOAD_TIMEOUT) as response:
+                response.raise_for_status()
+
+                total = int(response.headers.get("Content-Length", 0))
+                pbar = tqdm(total=total, unit="B", unit_scale=True, leave=False)
+                with pbar:
+                    pbar.set_description(f"Downloading {remote_fname}...")
+                    for chunk in response.iter_raw(chunk_size=chunk_size):
+                        f.write(chunk)
+                        pbar.update(len(chunk))
+
     def _get_required_file_download_size(
             self,
             remote_url,
@@ -371,13 +381,27 @@ class WorldPopDownloader:
             return DownloadResult(success=True, value=0)
 
         try:
-            response = httpx.head(remote_url, follow_redirects=True, timeout=DATA_DOWNLOAD_TIMEOUT)
-            response.raise_for_status()
-            size = int(response.headers.get("Content-Length", 0))
+            size = self._fetch_file_size(remote_url)
         except Exception as e:
             return DownloadResult(success=False, error=e)
         else:
             return DownloadResult(success=True, value=size)
+
+    @backoff.on_exception(
+        backoff.expo,
+        httpx.HTTPError,  # catch EVERYTHING (Network, Timeout, Status codes)
+        max_tries=5,
+        jitter=backoff.full_jitter,
+        giveup=_is_fatal_code,  # stop retrying if it's a 404
+    )
+    def _fetch_file_size(self, remote_url):
+        """
+        Return the size of a remote file in bytes using a HEAD request,
+        retrying on network errors and retryable HTTP status codes.
+        """
+        response = httpx.head(remote_url, follow_redirects=True, timeout=DATA_DOWNLOAD_TIMEOUT)
+        response.raise_for_status()
+        return int(response.headers.get("Content-Length", 0))
 
     def _build_local_fpath(self, product_name, iso3, year=None):
         """Return the local file path used to store a single downloaded WorldPop raster"""

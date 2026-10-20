@@ -1,8 +1,17 @@
+from contextlib import contextmanager
+from unittest.mock import MagicMock
+
+import httpx
 import pandas as pd
 import pytest
-from unittest.mock import MagicMock
 from worldpoppy.download import WorldPopDownloader, DownloadError, DownloadSizeCheckError
 
+
+FAKE_URL = "https://fake.url/afg.tif"
+FAKE_CONTENT = b"fake-tif-bytes"
+
+
+# --- Fixtures ---
 
 @pytest.fixture
 def mock_wp_manifest_constrained(monkeypatch):
@@ -21,6 +30,78 @@ def mock_wp_manifest_constrained(monkeypatch):
 
     monkeypatch.setattr("worldpoppy.download.wp_manifest_constrained", _mock_return)
 
+
+@pytest.fixture
+def no_backoff_sleep(monkeypatch):
+    """Patch out backoff's sleep between retries to keep tests fast."""
+    monkeypatch.setattr("time.sleep", lambda seconds: None)
+
+
+# --- Fake HTTP Helpers ---
+# These helpers fake `httpx.stream` / `httpx.head` with a scripted sequence
+# of outcomes, one per request. Each outcome is either an exception to raise,
+# an HTTP status code to respond with, or (for `httpx.stream` only) a custom
+# `httpx.SyncByteStream` to serve as a 200 response body.
+
+
+class _MidStreamFailure(httpx.SyncByteStream):
+    """A response body that delivers some bytes and then drops the connection."""
+
+    def __iter__(self):
+        yield b"PARTIAL-"
+        raise httpx.ReadError("Connection dropped mid-stream")
+
+
+def _next_outcome(outcomes):
+    # Fail loudly if a test makes more requests than scripted. (`pytest.fail`
+    # raises a BaseException, so the downloader's `except Exception` cannot
+    # swallow it into an ordinary failed DownloadResult.)
+    if not outcomes:
+        pytest.fail("Fake server received more requests than scripted.")
+    return outcomes.pop(0)
+
+
+def _scripted_stream(outcomes, calls):
+    @contextmanager
+    def fake_stream(method, url, **kwargs):
+        calls.append(url)
+        outcome = _next_outcome(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        if isinstance(outcome, httpx.SyncByteStream):
+            status, stream, headers = 200, outcome, {}
+        else:
+            # Use an unread stream (not `content=`) so that `iter_raw` works
+            status = outcome
+            stream = httpx.ByteStream(FAKE_CONTENT)
+            headers = {"Content-Length": str(len(FAKE_CONTENT))}
+        yield httpx.Response(
+            status,
+            headers=headers,
+            stream=stream,
+            request=httpx.Request(method, url),
+        )
+
+    return fake_stream
+
+
+def _scripted_head(outcomes, calls):
+    def fake_head(url, **kwargs):
+        calls.append(url)
+        outcome = _next_outcome(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        # A real HEAD response has no body, only the Content-Length header
+        return httpx.Response(
+            outcome,
+            headers={"Content-Length": str(len(FAKE_CONTENT))},
+            request=httpx.Request("HEAD", url),
+        )
+
+    return fake_head
+
+
+# --- Tests: Download Orchestration ---
 
 def test_download_smart_filtering(isolated_raster_cache, mock_wp_manifest_constrained, monkeypatch):
     """
@@ -114,3 +195,153 @@ def test_download_raises_on_worker_failure(isolated_raster_cache, mock_wp_manife
 
     assert "2 download(s) failed" in str(exc.value)
     assert "Connection Reset" in str(exc.value)
+
+
+# --- Tests: Retry Behaviour ---
+
+def test_download_retries_transient_errors(tmp_path, monkeypatch, no_backoff_sleep):
+    """
+    Transient network errors and 5xx responses must be retried until the
+    download succeeds.
+    """
+    calls = []
+    outcomes = [httpx.ConnectError("Connection Reset"), 503, 200]
+    monkeypatch.setattr(httpx, "stream", _scripted_stream(outcomes, calls))
+
+    local_path = tmp_path / "afg.tif"
+    res = WorldPopDownloader(directory=tmp_path)._download_file(FAKE_URL, local_path)
+
+    assert res.success
+    assert len(calls) == 3
+    assert local_path.read_bytes() == FAKE_CONTENT
+    assert not list(tmp_path.glob("*.download"))
+
+
+def test_download_retry_discards_partial_data(tmp_path, monkeypatch, no_backoff_sleep):
+    """
+    If a connection drops mid-stream, the retry must start from an empty temp
+    file. Otherwise, bytes from the failed attempt would corrupt the cached
+    raster.
+    """
+    calls = []
+    outcomes = [_MidStreamFailure(), 200]
+    monkeypatch.setattr(httpx, "stream", _scripted_stream(outcomes, calls))
+
+    local_path = tmp_path / "afg.tif"
+    res = WorldPopDownloader(directory=tmp_path)._download_file(
+        FAKE_URL, local_path, chunk_size=4
+    )
+
+    assert res.success
+    assert len(calls) == 2
+    assert local_path.read_bytes() == FAKE_CONTENT
+    assert not list(tmp_path.glob("*.download"))
+
+
+def test_download_gives_up_after_persistent_network_errors(tmp_path, monkeypatch, no_backoff_sleep):
+    """
+    If the connection keeps failing, the download gives up after the maximum
+    number of attempts and reports the network error.
+    """
+    calls = []
+    outcomes = [httpx.ConnectError("Connection Reset")] * 5
+    monkeypatch.setattr(httpx, "stream", _scripted_stream(outcomes, calls))
+
+    local_path = tmp_path / "afg.tif"
+    res = WorldPopDownloader(directory=tmp_path)._download_file(FAKE_URL, local_path)
+
+    assert not res.success
+    assert isinstance(res.error, httpx.ConnectError)
+    assert len(calls) == 5
+    assert not local_path.exists()
+    assert not list(tmp_path.glob("*.download"))
+
+
+def test_download_retries_rate_limit_then_gives_up(tmp_path, monkeypatch, no_backoff_sleep):
+    """
+    A 429 is retried (unlike other 4xx codes). If it persists, the download
+    fails after the maximum number of attempts.
+    """
+    calls = []
+    monkeypatch.setattr(httpx, "stream", _scripted_stream([429] * 5, calls))
+
+    local_path = tmp_path / "afg.tif"
+    res = WorldPopDownloader(directory=tmp_path)._download_file(FAKE_URL, local_path)
+
+    assert not res.success
+    assert isinstance(res.error, httpx.HTTPStatusError)
+    assert res.error.response.status_code == 429
+    assert len(calls) == 5
+    assert not local_path.exists()
+    assert not list(tmp_path.glob("*.download"))
+
+
+def test_download_does_not_retry_fatal_client_errors(tmp_path, monkeypatch, no_backoff_sleep):
+    """
+    A 404 is final: no retries, a failed result, and no leftover temp file.
+    """
+    calls = []
+    monkeypatch.setattr(httpx, "stream", _scripted_stream([404], calls))
+
+    local_path = tmp_path / "afg.tif"
+    res = WorldPopDownloader(directory=tmp_path)._download_file(FAKE_URL, local_path)
+
+    assert not res.success
+    assert isinstance(res.error, httpx.HTTPStatusError)
+    assert len(calls) == 1
+    assert not local_path.exists()
+    assert not list(tmp_path.glob("*.download"))
+
+
+def test_size_check_retries_transient_errors(tmp_path, monkeypatch, no_backoff_sleep):
+    """
+    HEAD requests during a dry run must also be retried.
+    """
+    calls = []
+    outcomes = [httpx.ReadTimeout("Timed out"), 200]
+    monkeypatch.setattr(httpx, "head", _scripted_head(outcomes, calls))
+
+    res = WorldPopDownloader(directory=tmp_path)._get_required_file_download_size(
+        FAKE_URL, tmp_path / "afg.tif"
+    )
+
+    assert res.success
+    assert res.value == len(FAKE_CONTENT)
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize("status_code", [503, 429])
+def test_size_check_retries_retryable_status_codes(
+    tmp_path, monkeypatch, no_backoff_sleep, status_code
+):
+    """
+    HEAD requests answered with 5xx or 429 must be retried until they succeed.
+    """
+    calls = []
+    monkeypatch.setattr(httpx, "head", _scripted_head([status_code, 200], calls))
+
+    res = WorldPopDownloader(directory=tmp_path)._get_required_file_download_size(
+        FAKE_URL, tmp_path / "afg.tif"
+    )
+
+    assert res.success
+    assert res.value == len(FAKE_CONTENT)
+    assert len(calls) == 2
+
+
+def test_size_check_does_not_retry_fatal_client_errors(tmp_path, monkeypatch, no_backoff_sleep):
+    """
+    A 404 on a HEAD request is final: no retries, and a failed result rather
+    than a silent file size of zero.
+    """
+    calls = []
+    monkeypatch.setattr(httpx, "head", _scripted_head([404], calls))
+
+    res = WorldPopDownloader(directory=tmp_path)._get_required_file_download_size(
+        FAKE_URL, tmp_path / "afg.tif"
+    )
+
+    assert not res.success
+    assert isinstance(res.error, httpx.HTTPStatusError)
+    assert res.error.response.status_code == 404
+    assert len(calls) == 1
