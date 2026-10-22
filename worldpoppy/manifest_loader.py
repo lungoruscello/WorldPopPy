@@ -137,21 +137,23 @@ columns:
 
 import logging
 import sys
-from datetime import datetime
 from functools import lru_cache
 
 import numpy as np
 import pandas as pd
 
 from worldpoppy.config import (
-    RAW_MANIFEST_CACHE_PATH,
     PRODUCT_BASE_NAME_MAP,
     ESA_LAND_COVER_DESC_MAP,
     ESA_LAND_COVER_ALIAS_MAP,
     PRODUCT_NOTES_MAP,
     DEBUG)
 from worldpoppy.func_utils import log_info_context, standardise_iso3_codes
-from worldpoppy.manifest_builder import build_raw_manifest_from_api
+from worldpoppy.manifest_builder import (
+    build_raw_manifest_from_api,
+    _select_manifest,
+    _warn_if_stale,
+)
 from worldpoppy.manifest_utils import (
     infer_resolution_from_description,
     infer_data_series,
@@ -482,10 +484,12 @@ def show_supported_data_products(
     if static_only and years is not None:
         raise ValueError("You cannot provide `years` when `static_only` is True.")
 
-    ts = RAW_MANIFEST_CACHE_PATH.stat().st_mtime
-    dt = datetime.fromtimestamp(ts)
-    last_update_str = dt.strftime('%Y-%m-%d %H:%M:%S')
-    print(f"Manifest data was last updated on: {last_update_str}.\n")
+    info = _get_active_manifest_info()
+    origin = "rebuilt by you" if info.source == "user" else "bundled with worldpoppy"
+    if info.built_at is not None:
+        print(f"Data manifest built on: {info.built_at:%Y-%m-%d %H:%M:%S} ({origin}).\n")
+    else:
+        print(f"Data manifest: build date unknown ({origin}).\n")
 
     mdf = wp_manifest(
         iso3_codes=iso3_codes,
@@ -693,23 +697,47 @@ def _get_cleaned_manifest():
 
 def _get_raw_manifest():
     """
-    [TODO]
-
-    Thin wrapper around `build_raw_manifest_from_api`.
+    Load the raw manifest selected by `_get_active_manifest_info`.
     """
+    return pd.read_feather(_get_active_manifest_info().path)
 
-    # trigger a re-crawl and r-processing if the cache is empty
+
+@lru_cache(maxsize=1)
+def _get_active_manifest_info():
+    """
+    Return the `ManifestInfo` of the raw manifest used in this session: the
+    newer of the bundled and the user-updated manifest (see `_select_manifest`).
+
+    If no manifest exists at all (which should only happen in a development
+    setup), one is built from WorldPop's API first. Otherwise, an optional
+    update is suggested if the manifest is old.
+    """
+    info = _select_manifest()
+    if info is not None:
+        _warn_if_stale(info)
+        return info
+
     build_raw_manifest_from_api(force_rebuild=False)
-
-    if not RAW_MANIFEST_CACHE_PATH.is_file():
+    if (info := _select_manifest()) is None:
         raise FileNotFoundError(
-            "Fatal error: No API crawl results found on disk. "
-            "Please check your internet connection and permissions. "
-            f"Expected at: {RAW_MANIFEST_CACHE_PATH}"
+            "Fatal error: No raw data manifest found, and building one from "
+            "WorldPop's API failed. Please check your internet connection and "
+            "the permissions of your cache directory (see `get_cache_dir`)."
         )
+    return info
 
-    raw_mdf = pd.read_feather(RAW_MANIFEST_CACHE_PATH)
-    return raw_mdf
+
+def _clear_manifest_caches():
+    """
+    Clear the in-memory caches of all functions that depend on the loaded
+    manifest, so that the next call loads the (possibly rebuilt) manifest.
+
+    This covers every `lru_cache`-wrapped function defined in this module, so
+    that cached functions added later are included automatically.
+    """
+    for obj in list(globals().values()):
+        if hasattr(obj, "cache_clear") and getattr(obj, "__module__", None) == __name__:
+            obj.cache_clear()
 
 
 def _filter_manifest_by_keyword(mdf, keywords=None):

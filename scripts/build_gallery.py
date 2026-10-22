@@ -1,6 +1,13 @@
 import matplotlib.pyplot as plt
 import runpy
+import sys
 from pathlib import Path
+
+# Run the examples against this repository's worldpoppy, not an installed copy.
+# (`python scripts/build_gallery.py` puts `scripts/` first on the import path,
+# so `import worldpoppy` would otherwise find the installed package.)
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 # Config: Map script paths to (output_filename, save_mode)
 # Modes:
@@ -18,8 +25,7 @@ GALLERY_MAP = {
 
 
 def build_gallery():
-    # Define root of the repo
-    repo_root = Path(__file__).parents[1]
+    repo_root = REPO_ROOT
     asset_dir = repo_root / "worldpoppy" / "assets"
 
     print(f"--- Building Repo Gallery ---")

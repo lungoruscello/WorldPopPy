@@ -37,6 +37,7 @@ raw manifest and will hence not be supported by the `worldpoppy` package.
 
 """
 
+import secrets
 from dataclasses import dataclass, field
 from datetime import datetime
 from math import floor
@@ -44,15 +45,19 @@ from pathlib import Path
 
 import backoff
 import httpx
+import pyarrow as pa
+import pyarrow.feather
 from tqdm.autonotebook import tqdm
 
+from worldpoppy import __version__
 from worldpoppy.config import (
     DEBUG,
     METADATA_API_URL,
     METADATA_API_TIMEOUT,
-    RAW_MANIFEST_CACHE_PATH,
-    RAW_MANIFEST_TIMESTAMP_PATH,
+    BUNDLED_MANIFEST_PATH,
+    BUNDLED_MANIFEST_TIMESTAMP_PATH,
     DOWNLOADABLE_ISO3_CODES,
+    get_user_manifest_path,
 )
 from worldpoppy.func_utils import is_fatal_http_error
 from worldpoppy.manifest_utils import *
@@ -82,7 +87,7 @@ class ManifestBuildReport:
     num_series : int
         Number of supported data series (API "Leaf Nodes") found by the crawl.
     num_files : int
-        Number of raster files in the saved manifest.
+        Number of raster files in the new manifest.
     failed_branches : list of str
         API paths of branches that could not be crawled. All data series
         below them are missing from the manifest.
@@ -92,6 +97,10 @@ class ManifestBuildReport:
         Where the manifest was saved, or None if nothing was saved.
     fatal_error : str or None
         Why the build was aborted, if it was.
+    kept_existing : bool
+        True if the build was incomplete and therefore not saved, so that an
+        existing manifest stays in use (instead of being shadowed by a newer
+        but incomplete one).
     """
 
     num_series: int = 0
@@ -100,6 +109,7 @@ class ManifestBuildReport:
     failed_series: list[str] = field(default_factory=list)
     saved_to: Path | None = None
     fatal_error: str | None = None
+    kept_existing: bool = False
 
     # The summary lists at most this many paths per kind of failure
     # (all paths remain available in `failed_branches` / `failed_series`)
@@ -116,15 +126,16 @@ class ManifestBuildReport:
 
     def summary(self):
         """Return a human-readable summary of the build."""
-        if self.saved_to is None:
+        if self.saved_to is None and not self.kept_existing:
             reason = self.fatal_error or "unknown error"
             return f"Manifest build aborted ({reason}). No manifest was saved."
 
         num_ok_series = self.num_series - len(self.failed_series)
         files = "raster file" if self.num_files == 1 else "raster files"
+        where = "NOT saved" if self.kept_existing else f"saved to {self.saved_to}"
         lines = [
             f"Manifest build finished: {self.num_files:,} {files} from "
-            f"{num_ok_series} of {self.num_series} data series, saved to {self.saved_to}."
+            f"{num_ok_series} of {self.num_series} data series, {where}."
         ]
         if self.is_complete:
             lines.append("No failures.")
@@ -141,7 +152,13 @@ class ManifestBuildReport:
         if self.failed_series:
             lines.append(f"{len(self.failed_series)} data series could not be processed:")
             lines += self._format_paths(self.failed_series)
-        lines.append("The saved manifest is likely INCOMPLETE. See the log above for details.")
+        if self.kept_existing:
+            lines.append(
+                "Because the new manifest is INCOMPLETE, it was not saved: worldpoppy keeps using "
+                "the existing one. Such failures are often temporary; consider trying again later."
+            )
+        else:
+            lines.append("The saved manifest is likely INCOMPLETE. See the log above for details.")
         return "\n".join(lines)
 
     def _format_paths(self, paths):
@@ -150,6 +167,31 @@ class ManifestBuildReport:
         if (num_hidden := len(paths) - self.MAX_PATHS_IN_SUMMARY) > 0:
             lines.append(f"  ... and {num_hidden} more")
         return lines
+
+
+@dataclass
+class ManifestInfo:
+    """
+    Where a raw manifest is stored, and when and by which `worldpoppy`
+    version it was built (from metadata embedded in the file).
+
+    Attributes
+    ----------
+    path : pathlib.Path
+        Location of the manifest file.
+    source : str
+        Either 'bundled' (shipped with the package) or 'user' (updated by
+        the user into their cache directory).
+    built_at : datetime.datetime or None
+        Build time, or None if unknown.
+    version : str or None
+        The `worldpoppy` version that built the manifest, or None if unknown.
+    """
+
+    path: Path
+    source: str
+    built_at: datetime | None = None
+    version: str | None = None
 
 
 def build_raw_manifest_from_api(force_rebuild=False):
@@ -170,12 +212,24 @@ def build_raw_manifest_from_api(force_rebuild=False):
     failure on one Leaf Node will be logged and skipped, allowing the
     raw manifest build to continue.
 
+    **For expert users only.** A rebuild sends more than a hundred requests to
+    WorldPop's meta-data API, so please rebuild sparingly. Most users never need
+    to: `worldpoppy` ships with a manifest of all supported data.
+
+    The new manifest is saved to the user's cache directory (see
+    `worldpoppy.config.get_user_manifest_path`), never into the installed
+    package. From then on, it is used instead of the bundled manifest as long
+    as it is the newer of the two and was built by a compatible `worldpoppy`
+    version. The manifest loaded in the current session is refreshed as well.
+    If some API branches or data series fail during a rebuild, the incomplete
+    result is not saved, and the existing manifest stays in use.
+
     Parameters
     ----------
     force_rebuild : bool, optional
         If True, forces a full re-crawl and re-processing of WorldPop's meta-data
-        API, even if cached results from a previous run exist on disk. Default
-        is False.
+        API, even if a usable manifest (bundled or user-updated) already exists.
+        Default is False.
 
     Returns
     -------
@@ -183,45 +237,27 @@ def build_raw_manifest_from_api(force_rebuild=False):
         A summary of the build (also logged at the end), including any API
         branches or data series that failed. Check `report.is_complete` before
         relying on the new manifest. None if no build was needed, because a
-        manifest already exists on disk (and `force_rebuild` is False).
+        usable manifest already exists (and `force_rebuild` is False).
     """
-
-    # Check if we need to run
-    if RAW_MANIFEST_CACHE_PATH.is_file() and not force_rebuild:
-        age_days = 0
-
-        # 1. Try to read manifest age from the sidecar timestamp file (Preferred)
-        if RAW_MANIFEST_TIMESTAMP_PATH.is_file():
-            try:
-                with open(RAW_MANIFEST_TIMESTAMP_PATH, 'r') as f:
-                    ts_str = f.read().strip()
-                    last_build_time = datetime.fromisoformat(ts_str)
-                    age_days = (datetime.now() - last_build_time).days
-            except Exception as e:
-                logger.warning(
-                    f"Could not read manifest timestamp sidecar: {e}. "
-                    "Falling back to file system time."
-                )
-                # Fallback to system time if read fails
-                mtime = RAW_MANIFEST_CACHE_PATH.stat().st_mtime
-                age_days = (datetime.now().timestamp() - mtime) / (3600 * 24)
-
-        # 2. Fallback to file system time (Legacy/Dev scenarios)
-        else:
-            mtime = RAW_MANIFEST_CACHE_PATH.stat().st_mtime
-            age_days = (datetime.now().timestamp() - mtime) / (3600 * 24)
-
-        if age_days > 180:
-            logger.warning(
-                f"worldpoppy's data manifest (its list of available WorldPop files) "
-                f"was built {floor(age_days)} days ago. It may lack datasets that "
-                "WorldPop has published since; the datasets it lists should still be "
-                "available. Optionally, you can update the data manifest from WorldPop's "
-                "API (takes a few minutes):\n\n"
-                "    from worldpoppy.manifest_builder import build_raw_manifest_from_api\n"
-                "    build_raw_manifest_from_api(force_rebuild=True)\n"
-            )
+    existing = _select_manifest()
+    if existing is not None and not force_rebuild:
+        _warn_if_stale(existing)
         return None
+
+    # An incomplete rebuild must not shadow an existing (complete) manifest.
+    # Without any manifest, an incomplete one is still better than none.
+    return _build_manifest(get_user_manifest_path(), save_incomplete=existing is None)
+
+
+def _build_manifest(output_path, save_incomplete=True):
+    """
+    Crawl WorldPop's meta-data API, save the resulting raw manifest to
+    `output_path` (with embedded build metadata), and return a
+    `ManifestBuildReport`. See `build_raw_manifest_from_api` for details.
+
+    If `save_incomplete` is False, a build with failed API branches or data
+    series is not saved (the report's `kept_existing` is then True).
+    """
 
     report = ManifestBuildReport()
     logger.warning(
@@ -297,19 +333,23 @@ def build_raw_manifest_from_api(force_rebuild=False):
     # Save build results to disk.
     # (This will be our raw, uncleaned data manifest).
     raw_mdf = pd.DataFrame(raw_manifest_rows)
-    try:
-        # 1. Save the actual data
-        raw_mdf.to_feather(RAW_MANIFEST_CACHE_PATH, compression="zstd")
-
-        # 2. Save the timestamp sidecar
-        with open(RAW_MANIFEST_TIMESTAMP_PATH, 'w') as f:
-            f.write(datetime.now().isoformat())
-
+    if not save_incomplete and (report.failed_branches or report.failed_series):
         report.num_files = len(raw_mdf)
-        report.saved_to = RAW_MANIFEST_CACHE_PATH
+        report.kept_existing = True
+        return _finish_build(report)
+    try:
+        _write_manifest(raw_mdf, output_path)
+        report.num_files = len(raw_mdf)
+        report.saved_to = output_path
 
     except Exception as e:
-        report.fatal_error = f"failed to save the manifest to {RAW_MANIFEST_CACHE_PATH}: {e}"
+        report.fatal_error = f"failed to save the manifest to {output_path}: {e}"
+
+    else:
+        # Make the running session use the new manifest from now on.
+        # (Imported here, since `manifest_loader` imports this module.)
+        from worldpoppy.manifest_loader import _clear_manifest_caches
+        _clear_manifest_caches()
 
     return _finish_build(report)
 
@@ -325,6 +365,146 @@ def _finish_build(report):
     else:
         logger.warning(report.summary())
     return report
+
+
+def _write_manifest(mdf, path, built_at=None, version=None):
+    """
+    Save a raw manifest as a Feather file, with its build time and the
+    building `worldpoppy` version embedded in the file's schema metadata.
+
+    The file is written to a temporary name first and then moved into place,
+    so that readers never see a half-written manifest. (`built_at` and
+    `version` default to now and the installed version; tests may set them.)
+    """
+    built_at = built_at or datetime.now()
+    version = version or __version__
+
+    table = pa.Table.from_pandas(mdf, preserve_index=False)
+    metadata = {
+        **(table.schema.metadata or {}),
+        b"wpy_built_at": built_at.isoformat().encode(),
+        b"wpy_version": version.encode(),
+    }
+    table = table.replace_schema_metadata(metadata)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.{secrets.token_hex(4)}.tmp")
+    try:
+        pyarrow.feather.write_feather(table, tmp_path, compression="zstd")
+        tmp_path.replace(path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+def _read_manifest_info(path, source):
+    """
+    Return a `ManifestInfo` for the manifest at `path`, or None if there is
+    no readable manifest there (an unreadable file is reported in the log).
+    Only the file header is read, not the data.
+    """
+    if not path.is_file():
+        return None
+    try:
+        with pa.memory_map(str(path)) as source_file:
+            metadata = pa.ipc.open_file(source_file).schema.metadata or {}
+    except (pa.ArrowInvalid, OSError) as e:
+        logger.warning(f"Ignoring the unreadable data manifest at {path}: {e}")
+        return None
+
+    built_at = metadata.get(b"wpy_built_at")
+    version = metadata.get(b"wpy_version")
+    try:
+        built_at = datetime.fromisoformat(built_at.decode()) if built_at else None
+    except ValueError:
+        built_at = None  # malformed: treated like an unknown build time
+    return ManifestInfo(
+        path=path,
+        source=source,
+        built_at=built_at,
+        version=version.decode() if version else None,
+    )
+
+
+def _major_minor(version):
+    """Return the (major, minor) version numbers as ints, or None if unparsable."""
+    try:
+        major, minor = version.split(".")[:2]
+        return int(major), int(minor)
+    except (AttributeError, ValueError):
+        return None
+
+
+def _is_compatible_version(version):
+    """
+    Return True if a manifest built by `worldpoppy` `version` can be used by
+    the installed version (same major and minor version, e.g. 0.4.x).
+    """
+    built_by = _major_minor(version)
+    return built_by is not None and built_by == _major_minor(__version__)
+
+
+def _select_manifest():
+    """
+    Return the `ManifestInfo` of the raw manifest to use, or None if there is
+    none at all.
+
+    The bundled manifest is always usable. A user-updated manifest (in the
+    cache directory) is used instead if it is newer and was built by a
+    compatible `worldpoppy` version; otherwise, it is ignored with a warning.
+    """
+    bundled = _read_manifest_info(BUNDLED_MANIFEST_PATH, source="bundled")
+    if bundled is not None and bundled.built_at is None:
+        # Legacy: bundled manifests without embedded metadata ship a sidecar
+        bundled.built_at = _read_legacy_build_time(BUNDLED_MANIFEST_TIMESTAMP_PATH)
+
+    user = _read_manifest_info(get_user_manifest_path(), source="user")
+    if user is not None and not (user.built_at and _is_compatible_version(user.version)):
+        built_by = _major_minor(user.version)
+        if built_by is not None and built_by > _major_minor(__version__):
+            reason = (
+                f"it was built by a newer worldpoppy ({user.version}). Upgrade worldpoppy "
+                "to use it"
+            )
+        elif user.built_at is None:
+            reason = "its build time is unknown"
+        else:
+            version = f"worldpoppy {user.version}" if user.version else "an unknown worldpoppy version"
+            reason = f"it was built by {version}, which is not compatible with worldpoppy {__version__}"
+        logger.warning(
+            f"Ignoring the rebuilt data manifest at {user.path}: {reason}. "
+            "Using the bundled manifest instead."
+        )
+        user = None
+
+    candidates = [info for info in (bundled, user) if info is not None]
+    if not candidates:
+        return None
+    # Prefer the newer manifest (a manifest of unknown age counts as oldest)
+    return max(candidates, key=lambda info: info.built_at or datetime.min)
+
+
+def _read_legacy_build_time(sidecar_path):
+    """Return the build time stored in a legacy sidecar file, or None."""
+    try:
+        return datetime.fromisoformat(sidecar_path.read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _warn_if_stale(info, max_age_days=180):
+    """Suggest an optional update if the manifest in use is older than `max_age_days`."""
+    if info.built_at is None:
+        return
+    age_days = (datetime.now() - info.built_at).days
+    if age_days > max_age_days:
+        logger.warning(
+            f"worldpoppy's data manifest (its list of available WorldPop files) "
+            f"was built {floor(age_days)} days ago. It may lack datasets that "
+            "WorldPop has published since; the datasets it lists should still be "
+            "available. (Expert users can rebuild the manifest from WorldPop's API; "
+            "see `worldpoppy.manifest_builder.build_raw_manifest_from_api`. Please do "
+            "so sparingly, as each rebuild sends more than a hundred requests to WorldPop.)"
+        )
 
 
 def _query_metadata_api(url):

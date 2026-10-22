@@ -29,45 +29,32 @@ def no_manifest_update(monkeypatch):
 @pytest.fixture
 def isolated_manifest_assets(monkeypatch, tmp_path):
     """
-    Fixture to isolate manifest assets (Feather + Timestamp Sidecar).
+    Fixture to isolate tests from the real raw data manifests.
 
-    This redirects the manifest paths to a temporary directory.
-    Critically, it patches the variables in `config`, `manifest_loader`,
-    AND `manifest_builder` to ensure consistency, as these modules
-    import the path constants directly.
+    The bundled manifest (and its legacy timestamp sidecar) is redirected to
+    a non-existent location in a temporary directory, and the cache directory,
+    where user-updated manifests are saved, to an empty temporary directory.
+    Manifest builds therefore start "cold" and save into the latter. The
+    loader's in-memory manifest caches are cleared before and after the test,
+    so that no manifest loaded elsewhere leaks in (or out).
 
     Yields
     ------
     pathlib.Path
-        The temporary directory containing the isolated manifest assets.
+        The temporary cache directory, where (re)built manifests are saved.
     """
-    import worldpoppy as wpy
+    import worldpoppy.manifest_builder as builder
 
-    # 1. Define temp paths
-    new_manifest_path = tmp_path / "raw_api_manifest.feather"
-    new_timestamp_path = tmp_path / "raw_api_manifest_timestamp.txt"
+    bundled_dir = tmp_path / "bundled"
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(builder, "BUNDLED_MANIFEST_PATH", bundled_dir / "raw_api_manifest.feather")
+    monkeypatch.setattr(builder, "BUNDLED_MANIFEST_TIMESTAMP_PATH", bundled_dir / "raw_api_manifest_timestamp.txt")
+    monkeypatch.setenv("WORLDPOPPY_CACHE_DIR", str(cache_dir))
 
-    # 2. Patch 'RAW_MANIFEST_CACHE_PATH' in all locations
-    # (Required because modules use: from worldpoppy.config import RAW_MANIFEST_CACHE_PATH)
-    monkeypatch.setattr(wpy.config, "RAW_MANIFEST_CACHE_PATH", new_manifest_path)
-    monkeypatch.setattr(
-        wpy.manifest_loader, "RAW_MANIFEST_CACHE_PATH", new_manifest_path
-    )
-    monkeypatch.setattr(
-        wpy.manifest_builder, "RAW_MANIFEST_CACHE_PATH", new_manifest_path
-    )
-
-    # 3. Patch 'RAW_MANIFEST_TIMESTAMP_PATH' in all locations
-    # (Note: Loader might not import this yet, but Config and Builder do)
-    monkeypatch.setattr(
-        wpy.config, "RAW_MANIFEST_TIMESTAMP_PATH", new_timestamp_path
-    )
-    monkeypatch.setattr(
-        wpy.manifest_builder, "RAW_MANIFEST_TIMESTAMP_PATH", new_timestamp_path
-    )
-
-    # Yield the temp path for inspection in tests
-    yield tmp_path
+    from worldpoppy.manifest_loader import _clear_manifest_caches
+    _clear_manifest_caches()
+    yield cache_dir
+    _clear_manifest_caches()
 
 
 @pytest.fixture

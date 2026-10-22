@@ -21,8 +21,8 @@ __all__ = [
     "DEBUG",
     "ROOT_DIR",
     "ASSET_DIR",
-    "RAW_MANIFEST_CACHE_PATH",
-    "RAW_MANIFEST_TIMESTAMP_PATH",
+    "RAW_MANIFEST_FNAME",
+    "BUNDLED_MANIFEST_PATH",
     "METADATA_API_URL",
     "DATA_SERVER_URL",
     "METADATA_API_TIMEOUT",
@@ -39,14 +39,21 @@ __all__ = [
     "ENABLE_HEAVY_TESTS",
     "get_cache_dir",
     "get_max_concurrency",
+    "get_user_manifest_path",
 ]
 
 DEFAULT_CACHE_DIR = Path(platformdirs.user_cache_dir(appname="worldpoppy"))
 DEFAULT_MAX_CONCURRENCY = max(1, cpu_count() - 1)
 ROOT_DIR = Path(__file__).parent
 ASSET_DIR = ROOT_DIR / 'assets'
-RAW_MANIFEST_CACHE_PATH = ASSET_DIR / "raw_api_manifest.feather"
-RAW_MANIFEST_TIMESTAMP_PATH = ASSET_DIR / "raw_api_manifest_timestamp.txt"
+# The raw data manifest exists in up to two places: a version bundled with the
+# package (read-only), and a version that users can update into their cache
+# directory (see `get_user_manifest_path`). The loader uses the newer of the two.
+RAW_MANIFEST_FNAME = "raw_api_manifest.feather"
+BUNDLED_MANIFEST_PATH = ASSET_DIR / RAW_MANIFEST_FNAME
+# Legacy: build-time sidecar of a bundled manifest without embedded metadata.
+# (Obsolete once the bundled manifest is rebuilt with `scripts/update_bundled_manifest.py`.)
+BUNDLED_MANIFEST_TIMESTAMP_PATH = ASSET_DIR / "raw_api_manifest_timestamp.txt"
 CUSTOM_MAPPING_TOML_PATH = ASSET_DIR / "product_definitions.toml"
 
 METADATA_API_URL = "https://hub.worldpop.org/rest/data"
@@ -86,6 +93,14 @@ def get_cache_dir():
     cache_dir = os.getenv("WORLDPOPPY_CACHE_DIR", str(DEFAULT_CACHE_DIR))
     cache_dir = Path(cache_dir)
     return cache_dir
+
+
+def get_user_manifest_path():
+    """
+    Return the path of a user-rebuilt raw data manifest in the current cache
+    directory (see `worldpoppy.manifest_builder.build_raw_manifest_from_api`).
+    """
+    return get_cache_dir() / RAW_MANIFEST_FNAME
 
 
 def get_max_concurrency():

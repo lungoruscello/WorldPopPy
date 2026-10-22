@@ -38,6 +38,7 @@ from tqdm.auto import tqdm
 
 from worldpoppy.config import (
     DATA_DOWNLOAD_TIMEOUT,
+    RAW_MANIFEST_FNAME,
     get_cache_dir,
     get_max_concurrency,
 )
@@ -423,13 +424,14 @@ class WorldPopDownloader:
         return self.directory / fname
 
 
-def purge_cache(dry_run=True, keep_country_borders=True):
+def purge_cache(dry_run=True, keep_country_borders=True, keep_manifest=True):
     """
     Purge the local cache directory and any of its subdirectories.
 
     By default, this deletes the downloaded WorldPop rasters but keeps the
     (buffered) country borders, which are derived from an asset shipped with
-    `worldpoppy` rather than downloaded.
+    `worldpoppy` rather than downloaded, and a data manifest you rebuilt from
+    WorldPop's API (rebuilding it takes a few minutes and many API requests).
 
     Parameters
     ----------
@@ -441,6 +443,10 @@ def purge_cache(dry_run=True, keep_country_borders=True):
         This data is assumed to be the only one which includes the 'level0' keyword
         in a file name. If False, the country borders are deleted as well; they are
         rebuilt automatically (offline, in a few seconds) the next time they are needed.
+    keep_manifest : bool, optional, default=True
+        If True (default), do not delete a data manifest you rebuilt from WorldPop's
+        API. If False, it is deleted, and `worldpoppy` falls back to the manifest
+        bundled with the package.
 
     Returns
     -------
@@ -459,6 +465,8 @@ def purge_cache(dry_run=True, keep_country_borders=True):
             continue
 
         if keep_country_borders and 'level0' in path.name:
+            continue
+        if keep_manifest and path.name == RAW_MANIFEST_FNAME:
             continue
 
         num_matched += 1

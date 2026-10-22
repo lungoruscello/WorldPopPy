@@ -12,7 +12,7 @@ from .manifest_loader import (
     wp_manifest,
     get_product_info,
     get_all_isos,
-    get_static_product_names
+    get_static_product_names,
 )
 from .raster import wp_raster, wp_warp, merge_rasters, bbox_from_location
 from .borders import load_country_borders

@@ -613,6 +613,26 @@ def test_purge_cache_keeps_country_borders_by_default(isolated_raster_cache):
     assert (summary["matched_files"], summary["deleted_files"]) == (1, 1)
 
 
+def test_purge_cache_keeps_updated_manifest_by_default(isolated_raster_cache):
+    """
+    By default, `purge_cache` keeps a data manifest updated by the user
+    (rebuilding it takes minutes). With `keep_manifest=False`, it deletes it.
+    """
+    from worldpoppy import purge_cache
+    from worldpoppy.config import get_user_manifest_path
+
+    manifest_fpath = get_user_manifest_path()
+    # Safety: never write a fake manifest outside the isolated cache
+    assert manifest_fpath.parent == isolated_raster_cache
+    manifest_fpath.write_bytes(b"fake manifest")
+
+    purge_cache(dry_run=False)
+    assert manifest_fpath.exists()
+
+    purge_cache(dry_run=False, keep_manifest=False)
+    assert not manifest_fpath.exists()
+
+
 def test_purge_cache_dry_run_deletes_nothing(isolated_raster_cache):
     """
     A dry run only reports what would be deleted.

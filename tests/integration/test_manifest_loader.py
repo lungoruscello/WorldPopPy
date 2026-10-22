@@ -13,16 +13,17 @@ from tests.helpers import needs_raw_manifest
 def augmented_raw_manifest(tmp_path, monkeypatch):
     """
     Loads the REAL raw manifest, appends a set of fake 'unknown' dataset entries
-    (multi-year AND multi-band), saves it to a temp file, and monkeypatches
-    the config to point to it.
+    (multi-year AND multi-band), saves it to a temp file, and points the
+    bundled-manifest path to it. The cache directory is redirected to an empty
+    temp directory, so that no user-updated manifest takes precedence.
 
     Note: This fixture assumes the file exists because the test using it
     is guarded by @needs_raw_manifest.
     """
-    from worldpoppy import config
+    from worldpoppy import config, manifest_builder
 
     # 1. Load Real Data
-    real_df = pd.read_feather(config.RAW_MANIFEST_CACHE_PATH)
+    real_df = pd.read_feather(config.BUNDLED_MANIFEST_PATH)
 
     # 2. Generate Fake Data (Combinatorial)
     fake_product_name = "alien_life_g2"
@@ -61,8 +62,9 @@ def augmented_raw_manifest(tmp_path, monkeypatch):
     temp_manifest_path = tmp_path / "augmented_manifest.feather"
     augmented_df.to_feather(temp_manifest_path, compression="zstd")
 
-    # 4. Point config to the temp file
-    monkeypatch.setattr(config, "RAW_MANIFEST_CACHE_PATH", temp_manifest_path)
+    # 4. Use the temp file as the bundled manifest (and ignore any user update)
+    monkeypatch.setattr(manifest_builder, "BUNDLED_MANIFEST_PATH", temp_manifest_path)
+    monkeypatch.setenv("WORLDPOPPY_CACHE_DIR", str(tmp_path / "cache"))
 
     return fake_product_name
 

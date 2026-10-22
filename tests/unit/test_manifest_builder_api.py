@@ -3,15 +3,21 @@ from pathlib import Path
 
 import httpx
 import pandas as pd
+import pyarrow as pa
+import pyarrow.feather
 import pytest
 
 import worldpoppy.manifest_builder as manifest_builder
-from worldpoppy.config import METADATA_API_URL
+from worldpoppy import __version__
+from worldpoppy.config import METADATA_API_URL, get_user_manifest_path
 from worldpoppy.manifest_builder import (
     APIRequestError,
     ManifestBuildReport,
     _query_metadata_api,
+    _read_manifest_info,
+    _select_manifest,
     _traverse_api_node,
+    _write_manifest,
     build_raw_manifest_from_api,
 )
 from worldpoppy.tracking import api_query_log
@@ -38,6 +44,7 @@ FAILING_SERIES = {"pop/bad_series"}
 
 # --- Fixtures ---
 
+
 @pytest.fixture(autouse=True)
 def clean_api_query_log():
     """Keep the global API query log from leaking between tests."""
@@ -58,6 +65,7 @@ def clean_api_query_log():
 #   - a dict to serve as a 200 JSON body;
 #   - raw bytes to serve as a 200 body; or
 #   - a ready-made `httpx.Response` (e.g., a redirect).
+
 
 def _scripted_handler(outcomes, calls):
     def fake_handle_request(self, request):
@@ -97,6 +105,7 @@ def _fake_redirect_loop_handler(calls):
 
 # --- Fake Build Helpers ---
 
+
 def _patch_build_backend(monkeypatch, api_tree, rows_per_series=1):
     """
     Serve `api_tree` as the metadata API, and stub the processing of each
@@ -119,7 +128,29 @@ def _patch_build_backend(monkeypatch, api_tree, rows_per_series=1):
     monkeypatch.setattr(manifest_builder, "_process_leaf_node", fake_process_leaf_node)
 
 
+def _write_fake_manifest(path, days_old, version=__version__):
+    """
+    Write a tiny manifest file built `days_old` days ago by `version`. With
+    `days_old="unknown"` or `version=None`, the respective metadata is left
+    out (as in manifests written by older or other tools).
+    """
+    mdf = pd.DataFrame({"iso3": ["AFG"]})
+    if days_old != "unknown" and version is not None:
+        _write_manifest(mdf, path, built_at=datetime.now() - timedelta(days=days_old), version=version)
+        return
+
+    metadata = {}
+    if days_old != "unknown":
+        metadata[b"wpy_built_at"] = (datetime.now() - timedelta(days=days_old)).isoformat().encode()
+    if version is not None:
+        metadata[b"wpy_version"] = version.encode()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    table = pa.Table.from_pandas(mdf, preserve_index=False).replace_schema_metadata(metadata)
+    pyarrow.feather.write_feather(table, path)
+
+
 # --- Tests: Retry Behaviour ---
+
 
 @pytest.mark.parametrize("transient_outcome, num_logged_responses", [
     (httpx.ConnectError("Connection refused"), 1),
@@ -193,6 +224,7 @@ def test_query_does_not_retry_invalid_json(monkeypatch, no_backoff_sleep):
 
 # --- Tests: Redirect Handling ---
 
+
 def test_query_follows_redirects(monkeypatch, no_backoff_sleep):
     """
     Metadata API queries must follow redirects.
@@ -232,6 +264,7 @@ def test_query_does_not_retry_redirect_loop(monkeypatch):
 
 # --- Tests: Crawler ---
 
+
 def test_traverse_recovers_from_transient_error(monkeypatch, no_backoff_sleep):
     """
     A transient error while crawling a Branch Node must not cost the manifest
@@ -257,6 +290,7 @@ def test_traverse_recovers_from_transient_error(monkeypatch, no_backoff_sleep):
 
 
 # --- Tests: Build Summary ---
+
 
 @pytest.mark.parametrize("branch_failure", [APIRequestError("HTTP 503"), None], ids=["api_error", "null_body"])
 def test_build_reports_failed_branches_and_series(
@@ -336,10 +370,10 @@ def test_build_reports_save_failure(monkeypatch, isolated_manifest_assets):
     """
     _patch_build_backend(monkeypatch, FAKE_API_TREE)
 
-    def failing_to_feather(*args, **kwargs):
+    def failing_write(*args, **kwargs):
         raise PermissionError("read-only file system")
 
-    monkeypatch.setattr(pd.DataFrame, "to_feather", failing_to_feather)
+    monkeypatch.setattr(manifest_builder, "_write_manifest", failing_write)
 
     report = build_raw_manifest_from_api(force_rebuild=True)
 
@@ -362,20 +396,194 @@ def test_build_summary_caps_long_path_lists():
     assert "... and 5 more" in summary
 
 
+# --- Tests: Manifest Files ---
+
+
+def test_manifest_metadata_round_trip(tmp_path):
+    """
+    Build time and version are embedded in the manifest file itself, readable
+    without loading the data, and the data still loads as usual.
+    """
+    path = tmp_path / "manifest.feather"
+    built_at = datetime(2026, 1, 2, 3, 4, 5)
+    _write_manifest(pd.DataFrame({"iso3": ["AFG", "ALB"]}), path, built_at=built_at, version="0.4.9")
+
+    info = _read_manifest_info(path, source="user")
+
+    assert (info.built_at, info.version, info.source) == (built_at, "0.4.9", "user")
+    assert list(pd.read_feather(path)["iso3"]) == ["AFG", "ALB"]
+    assert not list(tmp_path.glob("*.tmp"))  # written atomically, no leftovers
+
+
+def test_failed_manifest_write_leaves_existing_manifest_intact(tmp_path, monkeypatch):
+    """
+    If writing a manifest fails halfway (e.g., disk full), the existing
+    manifest is untouched: the new one is only moved into place when complete.
+    """
+    path = tmp_path / "manifest.feather"
+    _write_manifest(pd.DataFrame({"iso3": ["AFG"]}), path)
+    original = path.read_bytes()
+
+    def failing_write_feather(table, target, **kwargs):
+        Path(target).write_bytes(b"half-written garbage")
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(manifest_builder.pyarrow.feather, "write_feather", failing_write_feather)
+
+    with pytest.raises(OSError):
+        _write_manifest(pd.DataFrame({"iso3": ["ALB"]}), path)
+
+    assert path.read_bytes() == original
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+_SAME_MINOR_OTHER_PATCH = ".".join(__version__.split(".")[:2] + ["999"])
+
+
+@pytest.mark.parametrize("bundled_age, user_age, user_version, expected", [
+    (300, None, None, "bundled"),                         # no user update
+    (300, 10, __version__, "user"),                       # newer user update
+    (10, 300, __version__, "bundled"),                    # newer bundled manifest (e.g. after an upgrade)
+    (300, 10, "0.1.0", "bundled"),                        # user update by an older, incompatible version
+    (300, 10, "99.0.0", "bundled"),                       # user update by a newer version (downgrade)
+    (300, 10, _SAME_MINOR_OTHER_PATCH, "user"),           # patch versions are compatible
+    (300, 10, None, "bundled"),                           # user update without a recorded version
+    (300, "unknown", __version__, "bundled"),             # user update without a build time
+    ("unknown", 10, __version__, "user"),                 # bundled manifest of unknown age
+    (None, 10, __version__, "user"),                      # no bundled manifest (dev setup)
+    (None, None, None, None),                             # no manifest at all
+], ids=[
+    "bundled_only", "user_newer", "bundled_newer", "user_older_version", "user_newer_version",
+    "user_other_patch", "user_no_version", "user_no_build_time", "bundled_unknown_age", "user_only", "none",
+])
+def test_select_manifest(isolated_manifest_assets, bundled_age, user_age, user_version, expected):
+    """
+    The loader uses the newer of the bundled and the user-updated manifest,
+    but only user updates built by a compatible worldpoppy version.
+    """
+    if bundled_age is not None:
+        _write_fake_manifest(manifest_builder.BUNDLED_MANIFEST_PATH, days_old=bundled_age)
+    if user_age is not None:
+        _write_fake_manifest(get_user_manifest_path(), days_old=user_age, version=user_version)
+
+    info = _select_manifest()
+
+    assert (info.source if info else None) == expected
+
+
+def _write_manifest_with_malformed_build_time(path):
+    """Write a manifest whose recorded build time cannot be parsed."""
+    metadata = {b"wpy_built_at": b"yesterday", b"wpy_version": __version__.encode()}
+    table = pa.Table.from_pandas(pd.DataFrame({"iso3": ["AFG"]})).replace_schema_metadata(metadata)
+    pyarrow.feather.write_feather(table, path)
+
+
+@pytest.mark.parametrize("write_user_manifest, expected_reason", [
+    (lambda path: _write_fake_manifest(path, days_old=1, version="99.0.0"), "Upgrade worldpoppy"),
+    (lambda path: path.write_text("not a manifest"), "unreadable"),
+    (_write_manifest_with_malformed_build_time, "build time is unknown"),
+], ids=["newer_version", "corrupt_file", "malformed_build_time"])
+def test_select_manifest_explains_ignored_user_manifest(
+    isolated_manifest_assets, caplog, write_user_manifest, expected_reason
+):
+    """
+    A rebuilt manifest that cannot be used is ignored with a warning that says
+    why, and the bundled manifest is used instead (without crashing).
+    """
+    _write_fake_manifest(manifest_builder.BUNDLED_MANIFEST_PATH, days_old=300)
+    user_path = get_user_manifest_path()
+    user_path.parent.mkdir(parents=True, exist_ok=True)
+    write_user_manifest(user_path)
+
+    assert _select_manifest().source == "bundled"
+    assert expected_reason in caplog.text
+
+
+def test_incomplete_rebuild_keeps_existing_manifest(monkeypatch, isolated_manifest_assets, caplog):
+    """
+    An incomplete rebuild must not shadow an existing manifest: it is not
+    saved, the existing manifest stays in use, and the summary says so.
+    (Without any existing manifest, an incomplete one is saved; see
+    `test_build_reports_failed_branches_and_series`.)
+    """
+    from worldpoppy import manifest_loader
+
+    _write_fake_manifest(manifest_builder.BUNDLED_MANIFEST_PATH, days_old=300)
+    _patch_build_backend(monkeypatch, FAKE_API_TREE)  # includes a failing branch and series
+
+    report = build_raw_manifest_from_api(force_rebuild=True)
+
+    assert report.kept_existing and report.saved_to is None and not report.is_complete
+    assert not get_user_manifest_path().exists()
+    assert manifest_loader._get_active_manifest_info().source == "bundled"
+    assert "NOT saved" in caplog.text and "- pop/bad_branch" in caplog.text
+
+
+def test_select_manifest_reads_legacy_bundled_sidecar(isolated_manifest_assets):
+    """
+    A bundled manifest without embedded metadata (as shipped up to 0.4.x) gets
+    its build time from the legacy sidecar file, so that a newer user update
+    still wins and an older one does not.
+    """
+    bundled = manifest_builder.BUNDLED_MANIFEST_PATH
+    bundled.parent.mkdir(parents=True)
+    pd.DataFrame({"iso3": ["AFG"]}).to_feather(bundled)  # no worldpoppy metadata
+    manifest_builder.BUNDLED_MANIFEST_TIMESTAMP_PATH.write_text((datetime.now() - timedelta(days=100)).isoformat())
+
+    _write_fake_manifest(get_user_manifest_path(), days_old=200)
+    assert _select_manifest().source == "bundled"
+
+    _write_fake_manifest(get_user_manifest_path(), days_old=1)
+    assert _select_manifest().source == "user"
+
+
+def test_rebuild_refreshes_the_loaded_manifest(monkeypatch, isolated_manifest_assets):
+    """
+    A rebuild is saved to the cache directory and used by the running session
+    right away, instead of the (older) bundled manifest loaded before.
+    """
+    from worldpoppy import manifest_loader
+
+    _write_fake_manifest(manifest_builder.BUNDLED_MANIFEST_PATH, days_old=300)
+    assert manifest_loader._get_active_manifest_info().source == "bundled"  # loaded and cached
+
+    clean_branch = {"data": [{"alias": "ok", "name": "Works"}]}
+    _patch_build_backend(monkeypatch, {**FAKE_API_TREE, f"{METADATA_API_URL}/pop": clean_branch})
+    report = build_raw_manifest_from_api(force_rebuild=True)
+
+    assert report.is_complete and report.saved_to == get_user_manifest_path()
+    assert manifest_loader._get_active_manifest_info().source == "user"
+    assert list(manifest_loader._get_raw_manifest()["api_path"]) == ["pop/ok"]
+
+
+def test_clear_manifest_caches_covers_all_cached_loader_functions(isolated_manifest_assets):
+    """
+    Every in-memory cache in the loader is cleared, so that a cached function
+    added later cannot keep serving an outdated manifest.
+    """
+    from worldpoppy import manifest_loader
+
+    _write_fake_manifest(manifest_builder.BUNDLED_MANIFEST_PATH, days_old=1)
+    manifest_loader._get_active_manifest_info()  # fill at least one cache
+
+    manifest_loader._clear_manifest_caches()
+
+    cached = [f for f in vars(manifest_loader).values() if hasattr(f, "cache_info")]
+    assert cached and all(f.cache_info().currsize == 0 for f in cached)
+
+
 @pytest.mark.parametrize("age_days, expect_hint", [(200, True), (10, False)])
 def test_stale_manifest_suggests_optional_update(isolated_manifest_assets, caplog, age_days, expect_hint):
     """
-    An old manifest is kept as is (no build), but the log suggests an optional
-    update with a snippet that works as shown. A recent manifest stays quiet.
+    An old manifest is kept as is (no build). The log says so and points expert
+    users to the rebuild function, asking them to use it sparingly. A recent
+    manifest stays quiet.
     """
-    built = datetime.now() - timedelta(days=age_days)
-    manifest_builder.RAW_MANIFEST_CACHE_PATH.write_bytes(b"existing manifest")
-    manifest_builder.RAW_MANIFEST_TIMESTAMP_PATH.write_text(built.isoformat())
+    _write_fake_manifest(get_user_manifest_path(), days_old=age_days)
 
     assert build_raw_manifest_from_api(force_rebuild=False) is None
 
     assert (f"built {age_days} days ago" in caplog.text) is expect_hint
     if expect_hint:
-        assert "Optionally" in caplog.text
-        snippet = [line.strip() for line in caplog.text.splitlines() if line.startswith("    ")]
-        exec(snippet[0], {})  # the import line must work (the rebuild itself is not run)
+        assert "worldpoppy.manifest_builder.build_raw_manifest_from_api" in caplog.text
+        assert "sparingly" in caplog.text
