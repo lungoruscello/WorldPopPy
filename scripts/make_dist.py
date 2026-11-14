@@ -33,8 +33,8 @@ def clean_readme_for_pypi():
     content = re.sub(r'# WorldPopPy <img.*?>', '# WorldPopPy README', content)
 
     # Remove Badges
-    content = re.sub(r'\[!\[PyPI Latest Release\].*?\)\n', '', content)
-    content = re.sub(r'\[!\[License\].*?\)\n', '', content)
+    # (every line that consists of a linked badge image: [![alt](image)](link))
+    content = re.sub(r'^\[!\[[^\]]*\]\([^)]*\)\]\([^)]*\)[ \t]*\n', '', content, flags=re.MULTILINE)
 
     # FIX HTML IMAGES: Convert relative paths to Absolute Raw GitHub URLs
     # Matches src="worldpoppy/..." or src="./worldpoppy/..."

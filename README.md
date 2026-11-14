@@ -7,6 +7,7 @@ Keywords: WorldPop Python package, download and combine WorldPop datasets, globa
 -->
 
 [![PyPI Latest Release](https://img.shields.io/pypi/v/WorldPopPy.svg)](https://pypi.org/project/WorldPopPy/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/WorldPopPy.svg)](https://pypi.org/project/WorldPopPy/)
 [![License](https://img.shields.io/badge/license-MPL_2.0-green.svg)](https://github.com/lungoruscello/WorldPopPy/blob/master/LICENSE.txt)
 
 **WorldPopPy** provides a programmatic interface to the [WorldPop](https://www.worldpop.org/) open data archive.
