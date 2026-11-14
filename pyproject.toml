@@ -12,8 +12,16 @@ license = "MPL-2.0"
 authors = [
   { name="Sascha Langenbach", email="lungoruscello@gmail.com" }
 ]
+# The Python versions listed here are the ones tested by the `versions` session
+# in `noxfile.py`, which reads them from these classifiers.
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
 ]
 dependencies = [
@@ -57,6 +65,7 @@ test = [
 dev = [
     { include-group = "test" },
     "black",
+    "nox>=2026.10.20",
 ]
 docs = [
     "sphinx",
