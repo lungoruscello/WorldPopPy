@@ -60,6 +60,7 @@ gdal = [
 # with the package. `uv sync` installs the `dev` group by default.
 [dependency-groups]
 test = [
+    "netcdf4>=1.7.3",
     "pytest>=7.0",
 ]
 dev = [

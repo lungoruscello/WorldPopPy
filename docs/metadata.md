@@ -18,11 +18,13 @@
 3. **Saveable values.** Attribute values are strings or numbers only (no `None`, no lists, no
    booleans), so that they survive saving to GeoTIFF and netCDF unchanged. Several values are
    separated by newlines (file names, URLs) or single spaces (country codes, years).
-   One deliberate exception: `long_name` on multi-year results is a tuple of band names (one year
-   per band), following rioxarray's convention for band descriptions (see section 3).
-4. **History is append-only.** Each public function call adds exactly one line to `history`. No
-   function removes or rewrites earlier lines.
-5. **One place.** All attributes are set by one internal helper; no other code assigns them.
+   One deliberate exception: `long_name` on results with a `year` dimension is a tuple of band
+   names (one year per band), following rioxarray's convention for band descriptions (see
+   section 3).
+4. **History records every processing step.** Each public function that processes data appends
+   exactly one line to `history`; nothing removes or rewrites earlier lines.
+5. **Attributes are only written by the metadata helpers:** `_set_result_metadata` for new
+   results, `_append_history` for later steps. No other code assigns attributes.
 6. **Inputs are never modified.** No function changes the attributes, encoding or data of an
    array passed in by the user.
 7. **Eager equals lazy.** Results with and without `chunks=` carry the same metadata (apart from
@@ -46,18 +48,20 @@ Example: `wp_raster('pop_g2_1km_r25a', aoi=bbox, years=[2015, 2024])`.
 | `history` | see section 4 | | always |
 | `wpy_version` | WorldPopPy version | `0.5.0` | always |
 | `wpy_product_name` | WorldPopPy's curated product name | `pop_g2_1km_r25a` | always |
-| `wpy_manifest_built_at` | build time of the data manifest used (UTC) | `2025-12-08T19:24:34Z` | always |
+| `wpy_manifest_built_at` | build time of the data manifest used, as recorded in the manifest (in UTC, marked `Z`, if the manifest records a time zone) | `2025-12-08T19:24:34` | always (`unknown` if the manifest does not record it) |
 | `wpy_source_files` | WorldPop file names that contributed data, one per line | `khm_pop_2015_CN_1km_R2025A_UA_v1.tif` | always |
 | `wpy_countries` | ISO3 codes of the source files, space-separated | `KHM VNM` | always |
 | `wpy_product_type` | whether the product is static (one dataset per country) or multi-year, in the package's terms | `static` or `multi-year` | always |
 | `wpy_years` | the years of the data, space-separated. Static results have no `year` dimension, so for them this is the only record of the year. | `2015 2024` (multi-year); `2024` (static product such as `pop_g2_alt`) | whenever the datasets have a year; absent for static products without one |
 | `wpy_aoi` | the AoI as passed (in short) | `countries: KHM VNM`, `bbox: 103.0 10.0 105.0 12.0`, `geometry: 3 features, bounds 103.0 10.0 105.0 12.0` | always |
-| `wpy_pre_clip_bbox` | the effective pre-clip box | `97.5 18.0 99.0 20.0` | only if pre-clipping was applied |
+| `wpy_pre_clip_bbox` | the pre-clip box passed by the user (`pre_clip_bbox`). The automatic pre-clipping for bbox and geometry AoIs only speeds up processing and is not recorded. | `97.5 18.0 99.0 20.0` | only if the user passed a pre-clip box |
 | `wpy_read_masked`, `wpy_read_mask_and_scale` | the effective settings used to read the source files (the `wp_raster` parameters `masked` and `mask_and_scale`) | `true` / `false` | always (both) |
 
 `wpy_source_files`, `wpy_countries` and `references` describe only datasets that contributed data
-to the result. Files that were downloaded but did not overlap the AoI (or the pre-clip box) are left
-out; a log message reports them when this happens.
+to the result: files that do not overlap the pre-clip box (the user's `pre_clip_bbox`, or the AoI's
+slightly enlarged bounding box) are left out, and a log message reports them. (A file that overlaps
+this box but not the AoI itself is still listed; detecting that exactly would need a pixel-level
+check.)
 
 **Manifest requirement.** `license` and the citations in `references` come from WorldPop's metadata
 API: each Details Call entry has `license`, `citation` and `doi` fields (checked on 2026-11-14 for
@@ -75,7 +79,7 @@ logged).
 | Unmasked results | the source files' data type; `rio.nodata` is the source files' nodata value |
 | CRS | in the `spatial_ref` coordinate (EPSG:4326 for all WorldPop data), not in the attributes |
 | Name | the product name, or the `name` passed by the user |
-| Multi-year results | a `year` dimension with the years as coordinate values, and `long_name` set to the years as a tuple of strings, e.g. `('2015', '2024')`. This is rioxarray's convention for band descriptions: `rio.to_raster` labels each GeoTIFF band with its year, and `rioxarray.open_rasterio` restores the tuple when reading the file back. (Without it, every band would be named after the product, and the years would be lost in saved GeoTIFFs.) |
+| Results with several years | a `year` dimension with the years as coordinate values, and `long_name` set to the years as a tuple of strings, e.g. `('2015', '2024')`. This is rioxarray's convention for band descriptions: `rio.to_raster` labels each GeoTIFF band with its year, and `rioxarray.open_rasterio` restores the tuple when reading the file back. (Without it, every band would be named after the product, and the years would be lost in saved GeoTIFFs.) A single year of a multi-year product has no `year` dimension and no `long_name`; its year is in `wpy_years`. |
 | Scale and offset | handled as today: `_FillValue`, `scale_factor`, `add_offset` only for unmasked, unscaled reads |
 
 ## 4. `history`
@@ -83,14 +87,15 @@ logged).
 Format: one line per public function call, oldest first, in UTC:
 
 ```
-2026-11-14T15:50:08Z worldpoppy 0.5.0: wp_raster('pop_g2_1km_r25a', years=[2015, 2024]): merged 4 files; pre-clipped to bbox; clipped to AoI
+2026-11-14T15:50:08Z worldpoppy 0.5.0: wp_raster('pop_g2_1km_r25a', years=[2015, 2024]): merged 4 files; clipped to AoI
 2026-11-14T15:52:31Z worldpoppy 0.5.0: wp_warp(to_crs='EPSG:3857', res=1000, resampling='sum')
 ```
 
 - `wp_raster` adds **one** line for the whole call, also for multi-year products. Internal merging
   steps do not add lines of their own.
-- The line names the function, the key arguments, and every step applied (merging, pre-clipping,
-  clipping). Details such as the full AoI are in the `wpy_` attributes, not in `history`.
+- The line names the function, the key arguments, and every step applied: merging, pre-clipping
+  (only with a user-provided `pre_clip_bbox`), and clipping to the AoI. Details such as the full AoI
+  are in the `wpy_` attributes, not in `history`.
 
 ## 5. Other functions
 

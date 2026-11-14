@@ -21,7 +21,7 @@ import logging
 import re
 import warnings
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -30,6 +30,7 @@ from contextlib import nullcontext
 
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 import rioxarray
 import shapely
 import xarray as xr
@@ -37,6 +38,7 @@ from pyproj import CRS, Transformer
 from rasterio.enums import Resampling
 from shapely.geometry import box
 from shapely.geometry.base import BaseGeometry
+from rioxarray.exceptions import NoDataInBounds, OneDimensionalRaster
 from rioxarray.merge import merge_arrays
 from worldpoppy.borders import load_country_borders
 from worldpoppy.config import WGS84_CRS, get_cache_dir
@@ -50,8 +52,8 @@ from worldpoppy.func_utils import (
     validate_bbox_wgs84,
     get_buffered_bounds,
 )
-from worldpoppy.manifest_loader import resolve_product_years
-from worldpoppy import __version__ as wpy_version
+from worldpoppy.manifest_loader import _get_active_manifest_info, resolve_product_years
+from worldpoppy import __url__ as wpy_url, __version__ as wpy_version
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,22 @@ RESAMPLING_MAP = {
     'bilinear': Resampling.bilinear,
     'cubic': Resampling.cubic
 }
+
+# --- Metadata of results (see docs/metadata.md) ---
+# Fixed attribute values. The creator of the data is WorldPop; WorldPopPy
+# provides no data (only its curated product names and notes are its own).
+CREATOR_NAME = "WorldPop"
+CREATOR_URL = "https://www.worldpop.org"
+SOURCE_DESCRIPTION = (
+    "WorldPop gridded datasets (see 'references'), processed with WorldPopPy (see 'history')"
+)
+RESULT_COMMENT = (
+    f"Retrieved and processed with WorldPopPy ({wpy_url}), an independent client "
+    "not affiliated with WorldPop. Please cite the original datasets (see "
+    "'references'). The summary URLs in 'references' are inferred by WorldPopPy "
+    "and may occasionally not resolve; the official dataset titles help to find "
+    "the pages."
+)
 
 # Appended to error messages about unusable `aoi` arguments
 AOI_INPUT_HINT = (
@@ -249,6 +267,11 @@ def wp_raster(
 
         Returns None if `download_dry_run` is True.
 
+        The attributes of the result credit WorldPop as the creator of the data
+        (with the recommended citations and summary pages of the source datasets)
+        and record how the result was produced. They are described on the
+        documentation page "Metadata of WorldPopPy results" (`docs/metadata.md`).
+
     Raises
     -------
     RasterReadError
@@ -331,7 +354,6 @@ def wp_raster(
         pre_clip_bbox=pre_clip_bbox,
         clipping_gdf=clipping_gdf,
         suppress_pre_clip=suppress_pre_clip,
-        name=name,
     )
 
     with TemporaryDirectory() if not cache_downloads else nullcontext(get_cache_dir()) as d:
@@ -348,81 +370,59 @@ def wp_raster(
         if download_dry_run:
             return None
 
-        # --- Static Product ---
-        # Meta-data validation for file-paths passed to `merge_rasters`
-        # is *always* performed within that stand-alone function.
         if years is None:
-            merged = merge_rasters(all_raster_paths, **shared_processing_kwargs)
-            return merged.squeeze()
+            # --- Static Product ---
+            # Meta-data validation for file-paths passed to `_merge_rasters`
+            # is *always* performed within that function.
+            merged, used_paths, safe_attrs = _merge_rasters(
+                all_raster_paths, **shared_processing_kwargs
+            )
+            result = merged.squeeze()
 
-        # --- Multi-year Product  ---
-        paths_by_year = defaultdict(list)
-        for path, mrow in zip(all_raster_paths, filtered_mdf.itertuples()):
-            year = int(mrow.year)  # convert from numpy type
-            paths_by_year[year].append(path)
+        else:
+            # --- Multi-year Product ---
+            paths_by_year = defaultdict(list)
+            for path, mrow in zip(all_raster_paths, filtered_mdf.itertuples()):
+                year = int(mrow.year)  # convert from numpy type
+                paths_by_year[year].append(path)
 
-        # In the multi-year case, we must validate raster meta-data for
-        # raster files from *all years* in one go (to catch inconsistencies
-        # across years).
-        global_safe_attrs = _validate_raster_attrs(
-            all_raster_paths, masked, mask_and_scale
-        )
+            # In the multi-year case, we must validate raster meta-data for
+            # raster files from *all years* in one go (to catch inconsistencies
+            # across years).
+            safe_attrs = _validate_raster_attrs(all_raster_paths, masked, mask_and_scale)
 
-        # Merge the actual rasters separately by year
-        annual_rasters = []
-        for year, year_paths in paths_by_year.items():
-            merged = merge_rasters(year_paths, **shared_processing_kwargs)
-            merged['year'] = year
-            annual_rasters.append(merged)
+            # Merge the actual rasters separately by year
+            annual_rasters, used_paths = [], []
+            for year, year_paths in paths_by_year.items():
+                merged, used_year_paths, _ = _merge_rasters(year_paths, **shared_processing_kwargs)
+                merged['year'] = year
+                annual_rasters.append(merged)
+                used_paths.extend(used_year_paths)
 
-        # Stack years via `xr.concat`
-        time_series = _concat_with_info(
-            annual_rasters,
-            dim='year',
-            combine_attrs='drop_conflicts',
-        )
+            # Stack years via `xr.concat` (attributes are set below)
+            result = _concat_with_info(annual_rasters, dim='year', combine_attrs='drop').squeeze()
 
-        # Ensure correct name after concat
-        if name is not None:
-            time_series.name = name
+        # --- Metadata (see docs/metadata.md) ---
+        result.name = name
+        used = {str(p) for p in used_paths}
+        used_rows = filtered_mdf[[str(p) in used for p in all_raster_paths]]
 
-        # --- Metadata Construction (Executive Summary) ---
-        time_series.attrs = {}
+        steps = [f"merged {len(used_rows)} files"]
+        if pre_clip_bbox is not None:
+            steps.append("pre-clipped to bbox")
+        if clipping_gdf is not None:
+            steps.append("clipped to AoI")
+        call = f"wp_raster({product_name!r}" + (f", years={years!r})" if years is not None else ")")
 
-        # Restore the validated source attributes (excluding the
-        # CRS, which we leave for rioxarray/grid_mapping to handle).
-        safe_copy = global_safe_attrs.copy()
-        if 'crs' in safe_copy:
-            safe_copy.pop('crs')
-        time_series.attrs.update(safe_copy)
-
-        # Inherit wpy_ configuration from the first year's raster
-        # (Assuming homogeneity across years, which is guaranteed by the code flow)
-        if annual_rasters:
-            base_attrs = annual_rasters[0].attrs
-            for k, v in base_attrs.items():
-                if k.startswith('wpy_'):
-                    time_series.attrs[k] = v
-
-        # Create a concise History string
-        timestamp = datetime.now().isoformat()
-
-        # Calculate summary statistics
-        year_list = sorted(paths_by_year.keys())
-        total_files = len(all_raster_paths)
-
-        # Define Executive Summary
-        # TODO: Which settings should we track for transparent provenance?
-        actor = f"Generated by worldpoppy version {wpy_version} on {timestamp}"
-        action = f"Processed '{product_name}' data for {len(year_list)} years"
-        details = f"Total of {total_files} input files"
-        time_series.attrs['history'] = f"{actor} | {action} | {details}"
-
-        # Store list of all input files (flattened)
-        all_fnames = [Path(p).name for p in all_raster_paths]
-        time_series.attrs['input_files'] = ", ".join(all_fnames)
-
-        return time_series.squeeze()
+        attrs = _provenance_attrs(product_name, used_rows, _describe_aoi(aoi, iso3_codes, orig_aoi_type))
+        attrs.update(_processing_attrs(
+            call, steps,
+            source_files=list(used_rows.remote_name),
+            masked=masked,
+            mask_and_scale=mask_and_scale,
+            pre_clip_bbox=pre_clip_bbox,
+        ))
+        return _set_result_metadata(result, attrs, masked, mask_and_scale, safe_attrs)
 
 
 def wp_warp(
@@ -502,7 +502,8 @@ def wp_warp(
         raise ValueError("Input raster has no CRS and 'to_crs' was not provided.")
 
     # --- Standardise Nodata ---
-    da = _standardise_rio_nodata_meta(da)
+    # (on a copy: the input must never be modified; the data itself is shared)
+    da = _standardise_rio_nodata_meta(da.copy())
     fill_value = da.rio.nodata
 
     if fill_value is None:
@@ -520,7 +521,7 @@ def wp_warp(
             "wp_warp: Input is a lazy Dask array. Materialising into memory "
             "before warping."
         )
-        da.load()
+        da = da.compute()  # unlike `load()`, this leaves the (lazy) input as it is
 
     # --- Execute Warp ---
     reproject_kwargs = {'resampling': resampling_enum}
@@ -538,17 +539,9 @@ def wp_warp(
 
     warped = da.rio.reproject(target_crs, **reproject_kwargs)
 
-    # --- History Handling ---
-    history = da.attrs.get('history', "")
-    timestamp = datetime.now().isoformat()
-    op_name = "Resampled" if to_crs is None else f"Warped to {to_crs}"
-    new_entry = f"{timestamp}: {op_name} (res={res}, algo={resampling_enum.name})."
-
-    # Append new line
-    if history:
-        warped.attrs['history'] = f"{history}\n{new_entry}"
-    else:
-        warped.attrs['history'] = new_entry
+    # --- History (all other attributes are kept) ---
+    call = f"wp_warp(to_crs={to_crs!r}, res={res!r}, resampling={resampling!r})"
+    _append_history(warped, _history_line(call))
 
     return warped
 
@@ -619,7 +612,10 @@ def merge_rasters(
     Returns
     -------
     xarray.DataArray
-        The merged and optionally clipped raster.
+        The merged and optionally clipped raster. Its attributes record how it
+        was produced (see "Metadata of WorldPopPy results", `docs/metadata.md`);
+        since the input files may come from anywhere, they include no WorldPop
+        provenance.
 
     Raises
     ------
@@ -652,6 +648,59 @@ def merge_rasters(
     first.
     """
 
+    da, used_paths, safe_attrs = _merge_rasters(
+        raster_fpaths,
+        chunks=chunks,
+        masked=masked,
+        mask_and_scale=mask_and_scale,
+        other_read_kwargs=other_read_kwargs,
+        pre_clip_bbox=pre_clip_bbox,
+        clipping_gdf=clipping_gdf,
+        suppress_pre_clip=suppress_pre_clip,
+    )
+
+    # --- Metadata (see docs/metadata.md) ---
+    # The files may come from anywhere, so no WorldPop provenance is recorded
+    steps = [f"merged {len(used_paths)} files"]
+    if pre_clip_bbox is not None:
+        steps.append("pre-clipped to bbox")
+    if clipping_gdf is not None:
+        steps.append("clipped to AoI")
+
+    da.name = name if name is not None else "wpy_data"
+    attrs = _processing_attrs(
+        "merge_rasters()", steps,
+        source_files=[Path(p).name for p in used_paths],
+        masked=masked,
+        mask_and_scale=mask_and_scale,
+        pre_clip_bbox=pre_clip_bbox,
+    )
+    return _set_result_metadata(da, attrs, masked, mask_and_scale, safe_attrs)
+
+
+def _merge_rasters(
+    raster_fpaths,
+    *,
+    chunks,
+    masked,
+    mask_and_scale,
+    other_read_kwargs,
+    pre_clip_bbox,
+    clipping_gdf,
+    suppress_pre_clip,
+):
+    """
+    Merge multiple rasters and optionally clip the result (see `merge_rasters`
+    for the parameters). Attributes are left to the caller.
+
+    Returns
+    -------
+    tuple
+        The merged DataArray, the paths of the input rasters that contributed
+        to it (rasters without overlap with the pre-clip box are skipped), and
+        the validated attributes shared by all input rasters (see
+        `_validate_raster_attrs`).
+    """
     use_dask = chunks is not None
 
     # --- Argument Validation ---
@@ -715,7 +764,7 @@ def merge_rasters(
     # ------------------------------------------------------------------
     # --- Open Input Rasters ---
     # ------------------------------------------------------------------
-    rasters_to_merge = []
+    rasters_to_merge, used_paths = [], []
 
     for path in raster_fpaths:
         try:
@@ -729,17 +778,18 @@ def merge_rasters(
             if processing_clip_box is not None:
                 try:
                     da = da.rio.clip_box(*processing_clip_box)
+                except (NoDataInBounds, OneDimensionalRaster):
+                    # No overlap with the pre-clip box: the raster contributes
+                    # nothing (rather than the full raster being used)
+                    da = None
                 except Exception as e:
                     logger.warning(
                         f"Pre-clipping optimization failed for {Path(path).name}. "
                         f"Proceeding with full raster load. Reason: {e}"
                     )
 
-            # Check for empty arrays (no overlap with pre-clip BBox)
-            if da.sizes['x'] == 0 or da.sizes['y'] == 0:
-                logger.debug(
-                    f"Skipping {Path(path).name} (no overlap with processing box)."
-                )
+            if da is None or da.sizes['x'] == 0 or da.sizes['y'] == 0:
+                logger.info(f"Skipping {Path(path).name}: no overlap with the pre-clip box.")
                 continue
 
             # -- Round Coordinates ---
@@ -751,6 +801,7 @@ def merge_rasters(
             da.name = "wpy_data"
 
             rasters_to_merge.append(da)
+            used_paths.append(path)
 
         except Exception as e:
             raise RasterReadError(f"Failed to read {path}: {e}")
@@ -775,36 +826,7 @@ def merge_rasters(
         geoms = clipping_gdf.geometry.apply(shapely.geometry.mapping)
         da = da.rio.clip(geoms, clipping_gdf.crs, drop=True, all_touched=True)
 
-    # --- Clean-up and Create Final Metadata ---
-    da.attrs = {}
-
-    # Restore the validated source attribute (excluding the
-    # CRS, which we leave for rioxarray/grid_mapping to handle).
-    safe_attrs.pop('crs')
-    da.attrs.update(safe_attrs)
-
-    fnames = [Path(x).name for x in raster_fpaths]
-    num_files = len(fnames)
-    timestamp = datetime.now().isoformat()
-
-    # History: Track provenance
-    action_desc = f"Merged {num_files} input files."
-    if clipping_gdf is not None:
-        action_desc += " Clipped to AoI geometry."
-
-    da.attrs['history'] = f"{timestamp}: {action_desc}"
-    da.attrs['input_files'] = ", ".join(fnames)
-
-    # Configuration: Track settings (How it was configured)
-    da.attrs['wpy_masked'] = str(masked)
-    if mask_and_scale:
-        da.attrs['wpy_mask_and_scale'] = "True"
-
-    # --- Set User Name ---
-    if name is not None:
-        da.name = name
-
-    return da
+    return da, used_paths, safe_attrs
 
 
 def bbox_from_location(centre, width_degrees=None, width_km=None):
@@ -1163,7 +1185,7 @@ def _validate_raster_attrs(raster_fpaths, masked, mask_and_scale):
     # Loop through the rest of the rasters
     for meta in metadata_list[1:]:
         for key, attr_name in CHECKS_TO_RUN:
-            if meta[key] != ref[key]:
+            if not _same_value(meta[key], ref[key]):
                 raise IncompatibleRasterError(
                     f"Input rasters do not share the same '{attr_name}'. "
                     f"{Path(ref['path']).name} has '{ref[key]}' but "
@@ -1181,6 +1203,19 @@ def _validate_raster_attrs(raster_fpaths, masked, mask_and_scale):
         safe_attrs['add_offset'] = ref['add_offset']
 
     return safe_attrs
+
+
+def _same_value(a, b):
+    """
+    Return True if two raster attribute values are equal, treating NaN as
+    equal to NaN (a common nodata value).
+    """
+    try:
+        if np.isnan(a) and np.isnan(b):
+            return True
+    except TypeError:
+        pass  # not a number (e.g., a CRS string or None)
+    return a == b
 
 
 @lru_cache(maxsize=4096)
@@ -1260,6 +1295,170 @@ def _standardise_rio_nodata_meta(da, masked=False, mask_and_scale=False):
         da.rio.write_nodata(np.nan, encoded=True, inplace=True)
 
     return da
+
+
+def _set_result_metadata(da, attrs, masked, mask_and_scale, safe_attrs):
+    """
+    Set the attributes and the nodata metadata of a new result, following
+    `docs/metadata.md`. Besides `_append_history` (for later processing
+    steps), this is the only place where attributes are written.
+
+    Parameters
+    ----------
+    da : xarray.DataArray
+        The result (it is modified and returned).
+    attrs : dict
+        The attributes (see `_provenance_attrs` and `_processing_attrs`).
+    masked, mask_and_scale : bool
+        The read settings.
+    safe_attrs : dict
+        The validated attributes shared by all input rasters (see
+        `_validate_raster_attrs`), e.g. the `_FillValue` of unmasked data.
+    """
+    # The CRS is left to rioxarray (in the `spatial_ref` coordinate)
+    da.attrs = {key: value for key, value in safe_attrs.items() if key != 'crs'}
+    da.attrs.update(attrs)
+
+    if 'year' in da.dims:
+        # Band names, which `rio.to_raster` writes as band descriptions
+        # (rioxarray's convention; the one non-scalar attribute)
+        da.attrs['long_name'] = tuple(str(int(year)) for year in da.year.values)
+
+    if masked or mask_and_scale:
+        # Masked data is floating point with NaN as nodata. Drop any encoding
+        # inherited from the source files (e.g., their data type and fill
+        # value), so that eager and lazy results are saved alike.
+        da.encoding = {key: value for key, value in da.encoding.items() if key == 'grid_mapping'}
+        da.rio.write_nodata(np.nan, encoded=True, inplace=True)
+    elif (fill_value := safe_attrs.get('_FillValue')) is not None:
+        # Raw data keeps the source files' nodata value (validated to be the
+        # same for all files). Earlier steps (e.g., stacking years) may have
+        # left a different fill value in the encoding, which would take
+        # precedence over the one in the attributes.
+        da.encoding.pop('_FillValue', None)
+        da.rio.write_nodata(fill_value, inplace=True)
+
+    return da
+
+
+def _provenance_attrs(product_name, rows, aoi_description):
+    """
+    Return the attributes that credit WorldPop and describe the data of a
+    `wp_raster` result.
+
+    Parameters
+    ----------
+    product_name : str
+        The (curated) WorldPopPy product name.
+    rows : pandas.DataFrame
+        The manifest rows of the datasets that contributed to the result.
+    aoi_description : str
+        A short description of the AoI (see `_describe_aoi`).
+    """
+    title = f"{product_name} (curated WorldPopPy product name)"
+    if notes := _unique(rows['product_notes']):
+        title += f": {notes[0]}"
+
+    institution = "; ".join(_unique(rows['api_source']))
+    citations = _unique(rows['citation']) if 'citation' in rows else []
+    summary_pages = _unique(
+        f"{title_}: {url}"
+        for title_, url in zip(rows['api_entry_title'], rows['summary_url'])
+        if pd.notna(url)
+    )
+    attrs = {
+        'title': title,
+        'creator_name': CREATOR_NAME,
+        'creator_url': CREATOR_URL,
+        'creator_institution': institution,
+        'institution': institution,
+        'source': SOURCE_DESCRIPTION,
+        'references': "\n".join(citations + summary_pages),
+        'comment': RESULT_COMMENT,
+    }
+    if licences := (_unique(rows['license']) if 'license' in rows else []):
+        attrs['license'] = "\n".join(licences)
+
+    attrs['wpy_product_name'] = product_name
+    attrs['wpy_product_type'] = "multi-year" if rows['multi_year'].any() else "static"
+    attrs['wpy_manifest_built_at'] = _format_build_time(_get_active_manifest_info().built_at)
+    attrs['wpy_countries'] = " ".join(sorted(_unique(rows['iso3'])))
+    if years := sorted(int(year) for year in _unique(rows['year'])):
+        attrs['wpy_years'] = " ".join(str(year) for year in years)
+    attrs['wpy_aoi'] = aoi_description
+    return attrs
+
+
+def _processing_attrs(call, steps, *, source_files, masked, mask_and_scale, pre_clip_bbox):
+    """
+    Return the attributes that describe how a result was produced: one
+    `history` line for the function call, the source files, and settings.
+    """
+    attrs = {
+        'history': _history_line(call, steps),
+        'wpy_version': wpy_version,
+        'wpy_source_files': "\n".join(source_files),
+        'wpy_read_masked': "true" if masked else "false",
+        'wpy_read_mask_and_scale': "true" if mask_and_scale else "false",
+    }
+    if pre_clip_bbox is not None:
+        attrs['wpy_pre_clip_bbox'] = _format_numbers(pre_clip_bbox)
+    return attrs
+
+
+def _describe_aoi(aoi, iso3_codes, orig_aoi_type):
+    """
+    Return a short description of the AoI for the `wpy_aoi` attribute, e.g.,
+    'countries: KHM VNM' or 'bbox: 103.0 10.0 105.0 12.0'.
+    """
+    if orig_aoi_type == 'iso':
+        return "countries: " + " ".join(iso3_codes)
+
+    bounds = _format_numbers(aoi.to_crs(WGS84_CRS).total_bounds)
+    if orig_aoi_type == 'bbox':
+        return f"bbox: {bounds}"
+    num = len(aoi)
+    return f"geometry: {num} feature{'' if num == 1 else 's'}, bounds {bounds}"
+
+
+def _history_line(call, steps=()):
+    """
+    Return one `history` line: the UTC time, the worldpoppy version, the
+    function call and the processing steps applied.
+    """
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    line = f"{timestamp} worldpoppy {wpy_version}: {call}"
+    if steps:
+        line += ": " + "; ".join(steps)
+    return line
+
+
+def _append_history(da, line):
+    """
+    Append a line to the `history` attribute of a result (in place). Besides
+    `_set_result_metadata`, this is the only place where attributes are written.
+    """
+    history = da.attrs.get('history')
+    da.attrs['history'] = f"{history}\n{line}" if history else line
+
+
+def _format_build_time(built_at):
+    """Format the manifest's build time (as recorded in the manifest)."""
+    if built_at is None:
+        return "unknown"
+    if built_at.tzinfo is not None:
+        return built_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return built_at.isoformat(timespec="seconds")
+
+
+def _format_numbers(values):
+    """Format numbers as a space-separated string, e.g. '103.0 10.0 105.0 12.0'."""
+    return " ".join(str(float(value)) for value in values)
+
+
+def _unique(values):
+    """Return the distinct, non-missing values in order of appearance."""
+    return list(dict.fromkeys(value for value in values if pd.notna(value)))
 
 
 def _concat_with_info(objs, **kwargs):

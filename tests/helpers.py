@@ -1,6 +1,7 @@
 import functools
 import socket
 
+import pandas as pd
 import pytest
 
 
@@ -65,3 +66,46 @@ def needs_raw_manifest(func):
     if not BUNDLED_MANIFEST_PATH.exists():
         return pytest.mark.skip(reason="Raw manifest file not found in assets.")(func)
     return func
+
+
+# --- Fake Manifest Helpers ---
+
+def fake_manifest_rows(datasets, product_name="pop_test", multi_year=False, citations=False):
+    """
+    Return fake (cleaned) manifest rows for unit tests that mock the
+    downloader, with one row per dataset in the same order.
+
+    Parameters
+    ----------
+    datasets : list of (str, int or None)
+        The (ISO3 code, year) of each dataset. Use None as year for static
+        datasets without a year.
+    product_name : str
+        The product name of all rows.
+    multi_year : bool
+        The value of the `multi_year` column.
+    citations : bool
+        If True, add the columns `citation`, `doi` and `license` (with the same
+        values for all rows, as for a real data series).
+    """
+    rows = []
+    for iso3, year in datasets:
+        tag = f"{iso3}{year or ''}"
+        row = {
+            "product_name": product_name,
+            "iso3": iso3,
+            "year": pd.NA if year is None else year,
+            "multi_year": multi_year,
+            "product_notes": "Estimated number of people per grid-cell.",
+            "remote_name": f"{iso3.lower()}_pop_{year or 'static'}.tif",
+            "summary_url": f"https://hub.example/summary?id={tag}",
+            "api_entry_title": f"Population of {iso3} in {year or 'all years'}",
+            "api_source": "WorldPop, University of Southampton, UK",
+        }
+        if citations:
+            row["citation"] = "WorldPop (2018). A test citation. https://dx.doi.org/10.0/TEST"
+            row["doi"] = "10.0/TEST"
+            row["license"] = "https://hub.example/licence.txt"
+        rows.append(row)
+    return pd.DataFrame(rows)
+

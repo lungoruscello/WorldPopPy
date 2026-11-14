@@ -1,10 +1,10 @@
-from unittest.mock import MagicMock
-
 import dask.array as da
 import numpy as np
 import pytest
 import rioxarray
 import xarray as xr
+
+from tests.helpers import fake_manifest_rows
 
 
 def test_merge_preserves_count(mock_raster_factory):
@@ -100,7 +100,7 @@ def test_pre_clipping_optimisation(mock_raster_factory, mock_downloader):
     huge_data = np.zeros((100, 100))
     path_huge = mock_raster_factory("huge.tif", huge_data, origin=(0, 100))
 
-    mock_downloader.download.return_value = ([path_huge], MagicMock())
+    mock_downloader.download.return_value = ([path_huge], fake_manifest_rows([("MCK", None)]))
 
     # Define a tiny clip box: X=10..20, Y=10..20 (10x10 area)
     tiny_box = (10, 10, 20, 20)
@@ -146,7 +146,7 @@ def test_wp_raster_clips_to_shapely_aoi(mock_raster_factory, mock_downloader, mo
     monkeypatch.setattr(worldpoppy.raster, "load_country_borders", lambda: world)
 
     path = mock_raster_factory("mock.tif", np.ones((100, 100)), origin=(0, 100))
-    mock_downloader.download.return_value = ([path], MagicMock())
+    mock_downloader.download.return_value = ([path], fake_manifest_rows([("MCK", None)]))
     triangle = Polygon([(10, 10), (40, 10), (10, 40)])
 
     from_shapely = wp_raster(product_name="pop_g1", aoi=triangle)
@@ -188,8 +188,8 @@ def test_wp_raster_execution_modes(
     path_b = mock_raster_factory("B.tif", np.ones((10, 10)), origin=(5, 12))
 
     # Configure the mock downloader
-    mock_df = MagicMock()
-    mock_downloader.download.return_value = ([path_a, path_b], mock_df)
+    datasets = [("MCK", None), ("MCK", None)]
+    mock_downloader.download.return_value = ([path_a, path_b], fake_manifest_rows(datasets))
 
     # --- Act ---
     result = wp_raster(
@@ -288,7 +288,7 @@ def test_wp_raster_skip_download_default(
     from worldpoppy.download import WorldPopDownloader
 
     path = mock_raster_factory("A.tif", np.ones((10, 10)), origin=(0, 10))
-    mock_downloader.download.return_value = ([path], MagicMock())
+    mock_downloader.download.return_value = ([path], fake_manifest_rows([("MCK", None)]))
 
     kwargs = dict(cache_downloads=cache_downloads)
     if skip_download_if_exists is not None:

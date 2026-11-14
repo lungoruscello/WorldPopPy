@@ -1,9 +1,15 @@
+from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 import xarray as xr
 from affine import Affine
+
+
+# Build time of the (fake) data manifest used by `mock_downloader`
+FAKE_MANIFEST_BUILT_AT = datetime(2025, 12, 8, 19, 24, 34)
 
 
 # --- Fixtures ---
@@ -140,9 +146,17 @@ def mock_downloader(monkeypatch):
 
     This ensures that tests do not attempt real HTTP requests. The returned
     mock instance can be configured in tests (e.g. `mock_dl.download.return_value = ...`).
+    It also fakes the information about the data manifest in use (build time
+    FAKE_MANIFEST_BUILT_AT), so that `wp_raster` does not read the real manifest.
     """
     # We patch the class where it is imported/used: worldpoppy.raster
     import worldpoppy.raster as raster_module
+
+    monkeypatch.setattr(
+        raster_module,
+        "_get_active_manifest_info",
+        lambda: SimpleNamespace(built_at=FAKE_MANIFEST_BUILT_AT),
+    )
 
     # 1. Create the mock instance (the object returned when class is instantiated)
     mock_instance = MagicMock()
