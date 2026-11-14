@@ -1,7 +1,11 @@
+from pathlib import Path
+
 import geopandas as gpd
 import numpy as np
 import pytest
-from shapely.geometry import box
+from shapely.geometry import Polygon, box
+
+from worldpoppy.func_utils import BboxInvalidError
 
 # A tiny synthetic "world" of rectangular countries (WGS84). Belgium and
 # Luxembourg share an edge at lon=5.0; everything outside the boxes is sea.
@@ -207,19 +211,103 @@ def test_aoi_gdf_with_own_iso3_column(synthetic_borders):
     assert iso3_codes == ["KEN"]
 
 
+def _write_aoi_file(path, crs="EPSG:4326"):
+    """
+    Write BEL_LUX_STRADDLE_BOX (in the given CRS) to a vector file, whose
+    format follows from the file suffix, and return the path.
+    """
+    gpd.GeoSeries([BEL_LUX_STRADDLE_BOX], crs="EPSG:4326").to_crs(crs).to_file(path)
+    return path
+
+
+@pytest.mark.parametrize("make_aoi", [
+    lambda tmp_path: BEL_LUX_STRADDLE_BOX,
+    lambda tmp_path: gpd.GeoSeries([BEL_LUX_STRADDLE_BOX], crs="EPSG:4326"),
+    lambda tmp_path: gpd.GeoSeries([BEL_LUX_STRADDLE_BOX], crs="EPSG:4326").to_crs("EPSG:3857"),
+    lambda tmp_path: str(_write_aoi_file(tmp_path / "aoi.geojson")),
+    lambda tmp_path: _write_aoi_file(tmp_path / "aoi.gpkg", crs="EPSG:3857"),
+], ids=["shapely", "geoseries", "geoseries-projected", "geojson-str", "gpkg-path-projected"])
+def test_aoi_geometry_inputs(synthetic_borders, tmp_path, make_aoi):
+    """
+    A shapely geometry, a GeoSeries, or the path to a vector file (as str or
+    Path) becomes a GeoDataFrame with the same geometry (respecting the input's
+    CRS), and resolves to all countries that this geometry intersects.
+    """
+    from worldpoppy.raster import _standardise_aoi
+
+    aoi, iso3_codes, orig_aoi_type = _standardise_aoi(make_aoi(tmp_path))
+
+    assert isinstance(aoi, gpd.GeoDataFrame)
+    aoi_geom = aoi.to_crs("EPSG:4326").geometry.iloc[0]
+    assert aoi_geom.equals_exact(BEL_LUX_STRADDLE_BOX, tolerance=1e-6)
+    assert iso3_codes == ["BEL", "LUX"]
+    assert orig_aoi_type == "gdf"
+
+
+@pytest.mark.parametrize("aoi, error, match", [
+    (box(500_000, 5_500_000, 600_000, 5_600_000), BboxInvalidError, "must use longitude/latitude"),
+    (Polygon(), ValueError, "geometry is empty"),
+    (gpd.GeoSeries([KEN_INLAND_BOX]), ValueError, "no coordinate reference system"),
+    (gpd.GeoDataFrame(geometry=[KEN_INLAND_BOX]), ValueError, "no coordinate reference system"),
+    ("Kenya", FileNotFoundError, "other than a three-letter country code"),
+    (Path("missing.gpkg"), FileNotFoundError, "Cannot find the AoI file"),
+    (42, TypeError, "Cannot parse `aoi` of type int"),
+], ids=["shapely-projected", "shapely-empty", "geoseries-no-crs", "gdf-no-crs",
+        "str-no-code-no-file", "path-missing", "unsupported-type"])
+def test_aoi_unusable_geometry_inputs_raise_clear_errors(
+    synthetic_borders, monkeypatch, tmp_path, aoi, error, match
+):
+    """
+    Unusable geometry-like AoIs raise errors that say what is wrong. In
+    particular, a shapely geometry (which carries no CRS) must use WGS84
+    coordinates, and GeoSeries/GeoDataFrames must have a CRS (rather than
+    being silently taken to be WGS84).
+    """
+    from worldpoppy.raster import _standardise_aoi
+
+    monkeypatch.chdir(tmp_path)  # relative paths must not exist
+    with pytest.raises(error, match=match):
+        _standardise_aoi(aoi)
+
+
 @pytest.mark.parametrize("aoi, expected", [
     ("lux", ["LUX"]),
     ([" tha", "khm"], ["THA", "KHM"]),
 ])
-def test_aoi_iso3_codes_are_standardised(aoi, expected):
+def test_aoi_iso3_codes_are_standardised(monkeypatch, aoi, expected):
     """
     Country codes are accepted in any case and with surrounding whitespace.
+    They are used as they are: no country borders are loaded and no geometry
+    is created (so the merged raster is not clipped).
+    """
+    import worldpoppy.raster
+    from worldpoppy.raster import _standardise_aoi
+
+    def fail():
+        raise AssertionError("Country borders were loaded for country codes.")
+
+    monkeypatch.setattr(worldpoppy.raster, "load_country_borders", fail)
+
+    std_aoi, iso3_codes, orig_aoi_type = _standardise_aoi(aoi)
+
+    assert std_aoi == aoi
+    assert iso3_codes == expected
+    assert orig_aoi_type == "iso"
+
+
+def test_aoi_country_code_takes_precedence_over_file(monkeypatch, tmp_path):
+    """
+    A three-letter string is always a country code, even if a file of that
+    name exists in the working directory.
     """
     from worldpoppy.raster import _standardise_aoi
 
-    _, iso3_codes, orig_aoi_type = _standardise_aoi(aoi)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "ken").touch()
 
-    assert iso3_codes == expected
+    _, iso3_codes, orig_aoi_type = _standardise_aoi("ken")
+
+    assert iso3_codes == ["KEN"]
     assert orig_aoi_type == "iso"
 
 

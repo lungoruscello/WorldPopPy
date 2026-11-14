@@ -131,6 +131,34 @@ def test_pre_clipping_optimisation(mock_raster_factory, mock_downloader):
     assert w_full == 100
 
 
+def test_wp_raster_clips_to_shapely_aoi(mock_raster_factory, mock_downloader, monkeypatch):
+    """
+    A shapely geometry AoI clips the merged raster exactly like the
+    equivalent GeoDataFrame does.
+    """
+    import geopandas as gpd
+    import worldpoppy.raster
+    from shapely.geometry import Polygon, box
+    from worldpoppy import wp_raster
+
+    # A synthetic world with one country that covers the whole mock raster
+    world = gpd.GeoDataFrame({"iso3": ["MOCK"]}, geometry=[box(0, 0, 100, 100)], crs="EPSG:4326")
+    monkeypatch.setattr(worldpoppy.raster, "load_country_borders", lambda: world)
+
+    path = mock_raster_factory("mock.tif", np.ones((100, 100)), origin=(0, 100))
+    mock_downloader.download.return_value = ([path], MagicMock())
+    triangle = Polygon([(10, 10), (40, 10), (10, 40)])
+
+    from_shapely = wp_raster(product_name="pop_g1", aoi=triangle)
+    from_gdf = wp_raster(
+        product_name="pop_g1", aoi=gpd.GeoDataFrame(geometry=[triangle], crs="EPSG:4326")
+    )
+
+    xr.testing.assert_equal(from_shapely, from_gdf)
+    assert max(from_gdf.shape) < 100  # clipped to the triangle's bounding box ...
+    assert from_gdf.isnull().any()  # ... and masked outside the triangle
+
+
 @pytest.mark.parametrize(
     "chunks_arg, expected_backend",
     [

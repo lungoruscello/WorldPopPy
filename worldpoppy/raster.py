@@ -35,11 +35,13 @@ import xarray as xr
 from pyproj import CRS, Transformer
 from rasterio.enums import Resampling
 from shapely.geometry import box
+from shapely.geometry.base import BaseGeometry
 from rioxarray.merge import merge_arrays
 from worldpoppy.borders import load_country_borders
 from worldpoppy.config import WGS84_CRS, get_cache_dir
 from worldpoppy.download import WorldPopDownloader
 from worldpoppy.func_utils import (
+    BboxInvalidError,
     module_available,
     geolocate_name,
     standardise_iso3_codes,
@@ -71,6 +73,13 @@ RESAMPLING_MAP = {
     'bilinear': Resampling.bilinear,
     'cubic': Resampling.cubic
 }
+
+# Appended to error messages about unusable `aoi` arguments
+AOI_INPUT_HINT = (
+    "Please pass one or more three-letter country codes, a bounding box "
+    "(min_lon, min_lat, max_lon, max_lat), a GeoDataFrame, a GeoSeries, a "
+    "shapely geometry, or the path to a vector file."
+)
 
 
 class RasterReadError(Exception):
@@ -123,18 +132,27 @@ def wp_raster(
     ----------
     product_name : str
         The name of the WorldPop data product of interest.
-    aoi : str, List[str], List[float], Tuple[float], or geopandas.GeoDataFrame
+    aoi : str, List[str], Tuple[float], GeoDataFrame, GeoSeries, shapely geometry or Path
         The area of interest (AoI) for which to obtain the raster data. Users can specify
         this area using:
 
         - one or more three-letter country codes (alpha-3 IS0 codes);
-        - a GeoDataFrame with one or more polygonal geometries; or
-        - a bounding box of the format (min_lon, min_lat, max_lon, max_lat).
+        - a bounding box of the format (min_lon, min_lat, max_lon, max_lat);
+        - a GeoDataFrame or GeoSeries with one or more geometries (in any CRS);
+        - a shapely geometry, whose coordinates are assumed to be longitude and
+          latitude (WGS84), as for bounding boxes; or
+        - the path to a vector file (e.g., GeoPackage, GeoJSON or Shapefile) that
+          `geopandas.read_file` can read. Any string other than a three-letter
+          country code is treated as such a path. To read a specific layer or a
+          subset of a file, read it with `geopandas.read_file` yourself and pass
+          the resulting GeoDataFrame.
 
-        In the latter two cases, WorldPop data is first downloaded and merged for
-        all countries that intersect the area of interest, regardless of how large
-        this intersection is. Subsequently, the merged raster is then clipped using
-        the AoI.
+        Country codes are used as they are. For all other AoI types, WorldPop data
+        is first downloaded and merged for all countries that intersect the area of
+        interest, regardless of how large this intersection is. Subsequently, the
+        merged raster is then clipped using the AoI.
+
+        The AoI's CRS does not affect the CRS of the result (see Returns).
     name : str, optional
         A custom name for the returned DataArray. This is useful for plotting
         (it appears as the title/label) or when converting to a Dataset.
@@ -214,7 +232,9 @@ def wp_raster(
     Returns
     -------
     xarray.DataArray or None
-        The combined raster data.
+        The combined raster data. The result is always in the CRS of the WorldPop
+        source rasters (WGS84, EPSG:4326), whatever the AoI's CRS. To reproject it,
+        use :func:`wp_warp` (with `resampling='sum'` for counts such as population).
 
         - For static products, dimensions are ``(y, x)``.
         - For multi-years products, dimensions are likewise ``(y, x)`` IF
@@ -267,7 +287,7 @@ def wp_raster(
         chunks = {'x': chunks, 'y': chunks}
 
     # --- Process the AoI ---
-    # The output 'aoi' variable holds either the original GeoDataFrame or the ISO codes.
+    # The output 'aoi' variable holds either a GeoDataFrame or the original ISO codes.
     aoi, iso3_codes, orig_aoi_type = _standardise_aoi(aoi)
 
     # --- Validate/Process pre_clip_bbox based on AoI type ---
@@ -284,8 +304,8 @@ def wp_raster(
         elif orig_aoi_type == 'gdf':
             pre_clip_bbox = None
             logger.warning(
-                'Ignoring `pre_clip_bbox` for GeoDataFrame AoI. Relying on '
-                "the GeoDataFrame's bounding box for automatic pre-clip instead."
+                'Ignoring `pre_clip_bbox` for geometry AoI. Relying on '
+                "the AoI's bounding box for automatic pre-clip instead."
             )
 
     # --- Default Naming ---
@@ -876,48 +896,121 @@ def bbox_from_location(centre, width_degrees=None, width_km=None):
 
 def _standardise_aoi(aoi):
     """
-    Parses various AoI input formats (Bounding Box, GeoDataFrame, or
-    country codes) into a standardised GeoDataFrame, a list of ISO3 codes,
-    and an indicator coding for the AoI type the user originally passed.
+    Parse the various AoI input formats.
+
+    Country codes are used as they are, without any geometry (WorldPop data
+    is organised by country anyway). Only geometry-like inputs are converted
+    into a GeoDataFrame, which is later used to clip the merged raster:
+
+    - a bounding box (min_lon, min_lat, max_lon, max_lat) in WGS84;
+    - a shapely geometry, assumed to be in WGS84 (it carries no CRS);
+    - a GeoSeries or GeoDataFrame in its own CRS; or
+    - the path to a vector file. A string counts as such a path unless it is
+      a three-letter country code.
+
+    Returns
+    -------
+    tuple
+        The AoI (a GeoDataFrame, or the original country codes), the sorted
+        list of ISO3 codes of the countries to fetch, and the type of AoI the
+        user passed ('iso', 'bbox' or 'gdf', where 'gdf' stands for all
+        geometry-like inputs other than a bounding box).
+
+    Raises
+    ------
+    ValueError
+        If the AoI is empty, has no CRS, or intersects no supported country.
+    BboxInvalidError
+        If a bounding box or shapely geometry has invalid WGS84 coordinates.
+    FileNotFoundError
+        If a path (or a string that is no country code) does not exist.
+    TypeError
+        If the AoI is of an unsupported type.
     """
-
-    orig_aoi_type = None
-
     if isinstance(aoi, (list, tuple)) and len(aoi) == 0:
-        raise ValueError(
-            "`aoi` is empty. Please pass one or more country codes, a bounding "
-            "box (min_lon, min_lat, max_lon, max_lat), or a GeoDataFrame."
-        )
+        raise ValueError(f"`aoi` is empty. {AOI_INPUT_HINT}")
 
+    # --- Country codes: used as they are ---
+    if _is_iso3_aoi(aoi):
+        return aoi, standardise_iso3_codes(aoi), 'iso'
+
+    # --- Geometry-like inputs: converted into a GeoDataFrame ---
+    orig_aoi_type = 'gdf'
     if isinstance(aoi, (list, tuple)):
-        if not isinstance(aoi[0], str):
-            # Case: apparent bounding box passed
-            validate_bbox_wgs84(aoi)
-            box_poly = box(*aoi)
-            aoi = gpd.GeoDataFrame(geometry=[box_poly], crs=WGS84_CRS)
-            orig_aoi_type = 'bbox'
+        validate_bbox_wgs84(aoi)
+        aoi = gpd.GeoDataFrame(geometry=[box(*aoi)], crs=WGS84_CRS)
+        orig_aoi_type = 'bbox'
+    elif isinstance(aoi, (str, Path)):
+        aoi = _read_aoi_file(aoi)
+    elif isinstance(aoi, BaseGeometry):
+        aoi = _wgs84_geometry_to_gdf(aoi)
+    elif isinstance(aoi, gpd.GeoSeries):
+        aoi = gpd.GeoDataFrame(geometry=aoi)
+    elif not isinstance(aoi, gpd.GeoDataFrame):
+        raise TypeError(f"Cannot parse `aoi` of type {type(aoi).__name__}. {AOI_INPUT_HINT}")
 
-    if isinstance(aoi, gpd.GeoDataFrame):
-        # Case: GeoDataFrame passed
-        iso3_codes = _iso3_codes_intersecting(aoi)
-        if orig_aoi_type is None:  # avoid over-writing existing 'bbox' type
-            orig_aoi_type = 'gdf'
+    return aoi, _iso3_codes_intersecting(aoi), orig_aoi_type
 
-    else:
-        if isinstance(aoi, str):
-            # Case: single apparent ISO-code passed
-            iso3_codes = standardise_iso3_codes(aoi)
-            orig_aoi_type = 'iso'
-        else:
-            if not isinstance(aoi[0], str):
-                raise ValueError(
-                    "Cannot parse 'aoi'. Please pass one or more country codes..."
-                )
-            # Case: several apparent ISO-codes passed
-            iso3_codes = standardise_iso3_codes(aoi)
-            orig_aoi_type = 'iso'
 
-    return aoi, iso3_codes, orig_aoi_type
+def _is_iso3_aoi(aoi):
+    """
+    Return True if the AoI is given as country codes: a single three-letter
+    string (any case, surrounding whitespace allowed), or a non-empty list or
+    tuple of strings.
+    """
+    if isinstance(aoi, str):
+        code = aoi.strip()
+        return len(code) == 3 and code.isalpha()
+    return isinstance(aoi, (list, tuple)) and isinstance(aoi[0], str)
+
+
+def _read_aoi_file(path):
+    """
+    Read an AoI from a vector file, in any format `geopandas.read_file`
+    supports.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the path does not exist.
+    """
+    path = Path(path).expanduser()
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Cannot find the AoI file '{path}'. (Any `aoi` string other than "
+            "a three-letter country code is read as the path to a vector file.)"
+        )
+    return gpd.read_file(path)
+
+
+def _wgs84_geometry_to_gdf(geom):
+    """
+    Wrap a shapely geometry in a GeoDataFrame. A shapely geometry carries no
+    CRS, so its coordinates are taken to be WGS84 longitude and latitude (as
+    for bounding boxes).
+
+    Raises
+    ------
+    ValueError
+        If the geometry is empty.
+    BboxInvalidError
+        If the geometry's bounds are not valid WGS84 coordinates (e.g., because
+        it uses a projected CRS).
+    """
+    if geom.is_empty:
+        raise ValueError("The AoI geometry is empty.")
+
+    try:
+        validate_bbox_wgs84(geom.bounds)
+    except BboxInvalidError as e:
+        raise BboxInvalidError(
+            "A shapely geometry AoI must use longitude/latitude coordinates (WGS84), "
+            f"but its bounds {geom.bounds} are invalid. If the geometry uses another "
+            "CRS, pass it as a GeoSeries with that CRS instead, e.g., "
+            "`geopandas.GeoSeries([geom], crs=...)`."
+        ) from e
+
+    return gpd.GeoDataFrame(geometry=[geom], crs=WGS84_CRS)
 
 
 def _iso3_codes_intersecting(aoi_gdf):
@@ -931,11 +1024,18 @@ def _iso3_codes_intersecting(aoi_gdf):
     Raises
     ------
     ValueError
-        If the AoI GeoDataFrame is empty, or if no AoI geometry intersects
-        any country.
+        If the AoI GeoDataFrame is empty, has no CRS, or if no AoI geometry
+        intersects any country.
     """
     if aoi_gdf.empty:
         raise ValueError("The AoI GeoDataFrame is empty (it contains no geometries).")
+    if aoi_gdf.crs is None:
+        raise ValueError(
+            "The AoI has no coordinate reference system (CRS). Please set one, e.g., "
+            "with `.set_crs('EPSG:4326')` for longitude/latitude coordinates. (For a "
+            "vector file without a CRS, read it with `geopandas.read_file`, set the "
+            "CRS, and pass the resulting GeoDataFrame.)"
+        )
 
     # Join only the border geometries and their codes, under a private
     # column name. This avoids name clashes with the user's own columns

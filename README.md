@@ -20,7 +20,7 @@ identifies the necessary country rasters, downloads them, and merges them into a
 
 ## Key Features
 
-* Fetch data for any region by passing GeoDataFrames, country codes, or bounding boxes.
+* Fetch data for any region by passing country codes, bounding boxes, GeoDataFrames, shapely geometries, or vector files.
 * Easy handling of time-series through integration with [`xarray`](https://docs.xarray.dev/en/stable/).
 * Built-in optimisations to help you handle massive country rasters.
 * Parallel data downloads with automatic retry logic, local caching, and dry-run support.
