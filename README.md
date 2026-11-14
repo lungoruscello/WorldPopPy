@@ -34,6 +34,12 @@ downloading, merging, and clipping country files by hand.
 pip install worldpoppy
 ```
 
+Or, in a project managed with [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv add worldpoppy
+```
+
 ## Quickstart
 ### Example 1: Merging Population Rasters for Several Countries 
 

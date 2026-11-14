@@ -1,3 +1,14 @@
+"""
+Build the worldpoppy distributions (sdist and wheel) for a release.
+
+The script first regenerates `readme_pypi.md` from `README.md` (with absolute
+URLs, so that images and links work on PyPI) and copies it to `docs/`. It then
+builds the distributions into `dist/` with `uv build`.
+
+Usage (from the repo root):
+
+    uv run scripts/make_dist.py
+"""
 import re
 import shutil
 import subprocess
@@ -66,11 +77,12 @@ def build():
     copy_readme_to_doc()
 
     print("🚀 Starting Build...")
-    subprocess.run(["python", "-m", "build"], check=True, cwd=ROOT)
+    subprocess.run(["uv", "build"], check=True, cwd=ROOT)
 
     print("\n------------------------------------------------")
-    print("Build Complete. Verification Step:")
-    print("Run: twine check dist/*")
+    print("Build Complete. Next steps:")
+    print("1. Check the distributions:  uvx twine check dist/*")
+    print("2. Upload them to PyPI:      uv publish")
     print("------------------------------------------------")
 
 

@@ -10,7 +10,7 @@ readme = "readme_pypi.md"
 requires-python = ">=3.10"
 license = "MPL-2.0"
 authors = [
-  { name="S. Langenbach", email="lungoruscello@gmail.com" }
+  { name="Sascha Langenbach", email="lungoruscello@gmail.com" }
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -43,24 +43,25 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "black"
-]
-build = [
-    "twine>=4.0.2",
-    "build",
-    "wheel"
-]
+# Only needed to rebuild the bundled country borders from scratch (requires system GDAL)
 gdal = [
     "gdal>=3"
+]
+
+# Dependencies for developing worldpoppy (PEP 735). These are not published
+# with the package. `uv sync` installs the `dev` group by default.
+[dependency-groups]
+test = [
+    "pytest>=7.0",
+]
+dev = [
+    { include-group = "test" },
+    "black",
 ]
 docs = [
     "sphinx",
     "sphinx-rtd-theme",
-    "sphinx-autodoc-typehints",
-    "sphinxcontrib-napoleon",
-    "myst-parser"
+    "myst-parser",
 ]
 
 [project.urls]
@@ -85,6 +86,14 @@ worldpoppy = [
 
 [tool.setuptools.dynamic]
 version = {attr = "worldpoppy.__version__"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: uses real data or bundled assets (may need internet or a filled cache)",
+    "e2e: full traversal of WorldPop's API (opt-in via WPY_RUN_HEAVY_TESTS=1)",
+    "performance: benchmarks (e.g., building lazy Dask graphs for many input files)",
+]
 
 [tool.black]
 target-version = ['py310']
