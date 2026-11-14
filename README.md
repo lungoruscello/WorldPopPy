@@ -272,8 +272,9 @@ wp_raster(
 
 ## Data Usage & Attribution
 
-**WorldPopPy** is a client for accessing data; it does not host or own the data. Please note the following points
-regarding data provenance and citation:
+**WorldPopPy** is a client for accessing data; it does not host or own the data. **WorldPopPy** is an independent
+project and is not affiliated with or endorsed by WorldPop. Please note the following points regarding data provenance
+and citation:
 
 1. **Curated "Product Names"**: The product names used by this library (e.g., `pop_g1_alt` or `pop_g2_alt`) are 
 specific to **WorldPopPy**; WorldPop does not use them. When citing data, please refer to WorldPop's official 

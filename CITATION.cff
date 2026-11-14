@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: >-
+  If you use WorldPopPy in your work, please cite it as below. This citation
+  covers the software only: WorldPopPy is a client and does not provide any
+  data. Please also cite the WorldPop datasets you use; their recommended
+  citations are given on each dataset's summary page (see the README).
+title: "WorldPopPy: A Python client for WorldPop data"
+type: software
+authors:
+  - family-names: Langenbach
+    given-names: Sascha
+license: MPL-2.0
+repository-code: "https://github.com/lungoruscello/WorldPopPy"
+url: "https://worldpoppy.readthedocs.io/"
+abstract: >-
+  WorldPopPy fetches, merges, and clips raster data from the WorldPop open data
+  archive for any area of interest, and returns it as an xarray.DataArray.
+  WorldPopPy does not host or provide any data itself; all data is created and
+  published by the WorldPop project. WorldPopPy is an independent project and
+  is not affiliated with or endorsed by WorldPop.
+keywords:
+  - WorldPop
+  - population
+  - raster
+  - geospatial
+  - xarray
