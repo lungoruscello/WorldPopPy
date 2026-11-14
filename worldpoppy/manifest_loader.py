@@ -1177,9 +1177,10 @@ def _validate_isos(iso3_codes):
     if unknown_isos := set(iso3_codes) - set(get_all_isos()):
         raise ValueError(
             f"Country code(s) not supported: {unknown_isos}. "
-            f'You can list all supported country codes as follows:\n\n'
-            f'>>> from worldpoppy import get_all_isos\n'
-            f'>>> print(get_all_isos())'
+            f'You can search supported country codes by (part of) a country '
+            f'name as follows:\n\n'
+            f'>>> from worldpoppy import find_country_code\n'
+            f">>> find_country_code('turk')"
         )
 
 

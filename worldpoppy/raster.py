@@ -18,6 +18,7 @@ Main methods
 
 """
 import logging
+import re
 import warnings
 from collections import defaultdict
 from datetime import datetime
@@ -39,6 +40,7 @@ from shapely.geometry.base import BaseGeometry
 from rioxarray.merge import merge_arrays
 from worldpoppy.borders import load_country_borders
 from worldpoppy.config import WGS84_CRS, get_cache_dir
+from worldpoppy.country_names import resolve_country_name
 from worldpoppy.download import WorldPopDownloader
 from worldpoppy.func_utils import (
     BboxInvalidError,
@@ -76,7 +78,7 @@ RESAMPLING_MAP = {
 
 # Appended to error messages about unusable `aoi` arguments
 AOI_INPUT_HINT = (
-    "Please pass one or more three-letter country codes, a bounding box "
+    "Please pass one or more three-letter country codes or country names, a bounding box "
     "(min_lon, min_lat, max_lon, max_lat), a GeoDataFrame, a GeoSeries, a "
     "shapely geometry, or the path to a vector file."
 )
@@ -136,18 +138,21 @@ def wp_raster(
         The area of interest (AoI) for which to obtain the raster data. Users can specify
         this area using:
 
-        - one or more three-letter country codes (alpha-3 IS0 codes);
+        - one or more three-letter country codes (alpha-3 IS0 codes) or country
+          names. A name is converted into its code (with a warning) only if it
+          matches exactly one country; use :func:`find_country_code` to look
+          up codes;
         - a bounding box of the format (min_lon, min_lat, max_lon, max_lat);
         - a GeoDataFrame or GeoSeries with one or more geometries (in any CRS);
         - a shapely geometry, whose coordinates are assumed to be longitude and
           latitude (WGS84), as for bounding boxes; or
         - the path to a vector file (e.g., GeoPackage, GeoJSON or Shapefile) that
-          `geopandas.read_file` can read. Any string other than a three-letter
-          country code is treated as such a path. To read a specific layer or a
-          subset of a file, read it with `geopandas.read_file` yourself and pass
-          the resulting GeoDataFrame.
+          `geopandas.read_file` can read. A string counts as a path if it contains
+          a path separator or ends in a file suffix (e.g., 'districts.gpkg'). To
+          read a specific layer or a subset of a file, read it with
+          `geopandas.read_file` yourself and pass the resulting GeoDataFrame.
 
-        Country codes are used as they are. For all other AoI types, WorldPop data
+        Country codes and names are used as they are. For all other AoI types, WorldPop data
         is first downloaded and merged for all countries that intersect the area of
         interest, regardless of how large this intersection is. Subsequently, the
         merged raster is then clipped using the AoI.
@@ -898,28 +903,32 @@ def _standardise_aoi(aoi):
     """
     Parse the various AoI input formats.
 
-    Country codes are used as they are, without any geometry (WorldPop data
-    is organised by country anyway). Only geometry-like inputs are converted
-    into a GeoDataFrame, which is later used to clip the merged raster:
+    Country codes and names are used as they are, without any geometry
+    (WorldPop data is organised by country anyway). Three-letter strings are
+    country codes; longer strings are resolved as country names, unless they
+    look like a file path. Only geometry-like inputs are converted into a
+    GeoDataFrame, which is later used to clip the merged raster:
 
     - a bounding box (min_lon, min_lat, max_lon, max_lat) in WGS84;
     - a shapely geometry, assumed to be in WGS84 (it carries no CRS);
     - a GeoSeries or GeoDataFrame in its own CRS; or
-    - the path to a vector file. A string counts as such a path unless it is
-      a three-letter country code.
+    - the path to a vector file (a `pathlib.Path`, or a string with a path
+      separator or a file suffix).
 
     Returns
     -------
     tuple
-        The AoI (a GeoDataFrame, or the original country codes), the sorted
+        The AoI (a GeoDataFrame, or the original country codes or names), the
         list of ISO3 codes of the countries to fetch, and the type of AoI the
-        user passed ('iso', 'bbox' or 'gdf', where 'gdf' stands for all
-        geometry-like inputs other than a bounding box).
+        user passed ('iso', 'bbox' or 'gdf', where 'iso' stands for country
+        codes and names, and 'gdf' for all geometry-like inputs other than a
+        bounding box).
 
     Raises
     ------
     ValueError
-        If the AoI is empty, has no CRS, or intersects no supported country.
+        If the AoI is empty, has no CRS, or intersects no supported country,
+        or if a country name is unknown or ambiguous.
     BboxInvalidError
         If a bounding box or shapely geometry has invalid WGS84 coordinates.
     FileNotFoundError
@@ -930,9 +939,9 @@ def _standardise_aoi(aoi):
     if isinstance(aoi, (list, tuple)) and len(aoi) == 0:
         raise ValueError(f"`aoi` is empty. {AOI_INPUT_HINT}")
 
-    # --- Country codes: used as they are ---
-    if _is_iso3_aoi(aoi):
-        return aoi, standardise_iso3_codes(aoi), 'iso'
+    # --- Country codes and names: used as they are ---
+    if _is_country_aoi(aoi):
+        return aoi, _country_codes_from_aoi(aoi), 'iso'
 
     # --- Geometry-like inputs: converted into a GeoDataFrame ---
     orig_aoi_type = 'gdf'
@@ -952,16 +961,47 @@ def _standardise_aoi(aoi):
     return aoi, _iso3_codes_intersecting(aoi), orig_aoi_type
 
 
-def _is_iso3_aoi(aoi):
+def _is_country_aoi(aoi):
     """
-    Return True if the AoI is given as country codes: a single three-letter
-    string (any case, surrounding whitespace allowed), or a non-empty list or
-    tuple of strings.
+    Return True if the AoI is given as country codes and/or names: a string
+    that does not look like a file path, or a non-empty list or tuple of
+    strings.
     """
     if isinstance(aoi, str):
-        code = aoi.strip()
-        return len(code) == 3 and code.isalpha()
+        return not _looks_like_path(aoi)
     return isinstance(aoi, (list, tuple)) and isinstance(aoi[0], str)
+
+
+def _looks_like_path(text):
+    """
+    Return True if a string looks like a file path rather than a country code
+    or name: it contains a path separator, or it ends in a file suffix (e.g.,
+    '.gpkg'). Country names with abbreviations (e.g., 'St. Lucia') do not.
+    """
+    return bool(re.search(r'[/\\]|\.[A-Za-z0-9_]+$', text.strip()))
+
+
+def _is_iso3_code(text):
+    """
+    Return True for a three-letter string (any case, surrounding whitespace
+    allowed).
+    """
+    if not isinstance(text, str):
+        return False
+    code = text.strip()
+    return len(code) == 3 and code.isalpha()
+
+
+def _country_codes_from_aoi(aoi):
+    """
+    Return the standardised country codes for an AoI given as one or more
+    country codes and/or names. Three-letter strings are taken to be country
+    codes; all other strings are resolved as country names (see
+    `country_names.resolve_country_name`).
+    """
+    entries = [aoi] if isinstance(aoi, str) else aoi
+    codes = [e if _is_iso3_code(e) else resolve_country_name(e) for e in entries]
+    return standardise_iso3_codes(codes)
 
 
 def _read_aoi_file(path):
@@ -977,8 +1017,8 @@ def _read_aoi_file(path):
     path = Path(path).expanduser()
     if not path.exists():
         raise FileNotFoundError(
-            f"Cannot find the AoI file '{path}'. (Any `aoi` string other than "
-            "a three-letter country code is read as the path to a vector file.)"
+            f"Cannot find the AoI file '{path}'. (`aoi` strings with a path "
+            "separator or a file suffix are read as paths to vector files.)"
         )
     return gpd.read_file(path)
 

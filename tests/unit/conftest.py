@@ -2,6 +2,26 @@ import socket
 
 import pytest
 
+# Synthetic country names (first name = display name). Real codes, but a
+# deliberately small set that contains the cases the name lookup must handle:
+# accents and punctuation, aliases, a name that is also an alias of another
+# country ('Congo'), names within other names ('Oman' in 'Romania', 'Guinea'
+# in 'Equatorial Guinea'), an abbreviation with a dot ('St. Lucia'), and a
+# name that only sorts correctly without its accent ('Åland Islands').
+SYNTHETIC_COUNTRY_NAMES = {
+    "ALA": ["Åland Islands"],
+    "CIV": ["Côte d'Ivoire", "Ivory Coast"],
+    "COD": ["Congo, The Democratic Republic of the", "Congo"],
+    "COG": ["Congo"],
+    "GIN": ["Guinea"],
+    "GNQ": ["Equatorial Guinea"],
+    "KEN": ["Kenya"],
+    "LCA": ["Saint Lucia", "St. Lucia"],
+    "OMN": ["Oman"],
+    "ROU": ["Romania"],
+    "TUR": ["Türkiye", "Turkey"],
+}
+
 
 # --- Fixtures ---
 
@@ -22,3 +42,15 @@ def no_network(monkeypatch):
 
     monkeypatch.setattr(socket, "getaddrinfo", _blocked)
     monkeypatch.setattr(socket.socket, "connect", _blocked)
+
+
+@pytest.fixture
+def synthetic_country_names(monkeypatch):
+    """
+    Fixture that replaces the real country names (from `pycountry`, the alias
+    table, and the data manifest) with SYNTHETIC_COUNTRY_NAMES.
+    """
+    import worldpoppy.country_names as country_names
+
+    table = country_names._build_name_table(SYNTHETIC_COUNTRY_NAMES)
+    monkeypatch.setattr(country_names, "_country_name_table", lambda: table)

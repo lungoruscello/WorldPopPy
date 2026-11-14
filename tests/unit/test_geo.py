@@ -249,19 +249,23 @@ def test_aoi_geometry_inputs(synthetic_borders, tmp_path, make_aoi):
     (Polygon(), ValueError, "geometry is empty"),
     (gpd.GeoSeries([KEN_INLAND_BOX]), ValueError, "no coordinate reference system"),
     (gpd.GeoDataFrame(geometry=[KEN_INLAND_BOX]), ValueError, "no coordinate reference system"),
-    ("Kenya", FileNotFoundError, "other than a three-letter country code"),
-    (Path("missing.gpkg"), FileNotFoundError, "Cannot find the AoI file"),
+    ("missing.gpkg", FileNotFoundError, "path separator or a file suffix"),
+    ("data/missing", FileNotFoundError, "Cannot find the AoI file"),
+    (Path("missing"), FileNotFoundError, "Cannot find the AoI file"),
+    ("Congo", ValueError, "'Congo' is ambiguous"),
+    (["KEN", "Atlantis"], ValueError, "neither a three-letter country code nor a known"),
     (42, TypeError, "Cannot parse `aoi` of type int"),
 ], ids=["shapely-projected", "shapely-empty", "geoseries-no-crs", "gdf-no-crs",
-        "str-no-code-no-file", "path-missing", "unsupported-type"])
-def test_aoi_unusable_geometry_inputs_raise_clear_errors(
-    synthetic_borders, monkeypatch, tmp_path, aoi, error, match
+        "str-suffix-missing", "str-separator-missing", "path-missing", "name-ambiguous",
+        "name-unknown-in-list", "unsupported-type"])
+def test_aoi_unusable_inputs_raise_clear_errors(
+    synthetic_borders, synthetic_country_names, monkeypatch, tmp_path, aoi, error, match
 ):
     """
-    Unusable geometry-like AoIs raise errors that say what is wrong. In
-    particular, a shapely geometry (which carries no CRS) must use WGS84
-    coordinates, and GeoSeries/GeoDataFrames must have a CRS (rather than
-    being silently taken to be WGS84).
+    Unusable AoIs raise errors that say what is wrong. In particular, a
+    shapely geometry (which carries no CRS) must use WGS84 coordinates,
+    GeoSeries/GeoDataFrames must have a CRS (rather than being silently taken
+    to be WGS84), and strings that look like paths are read as files.
     """
     from worldpoppy.raster import _standardise_aoi
 
@@ -273,12 +277,16 @@ def test_aoi_unusable_geometry_inputs_raise_clear_errors(
 @pytest.mark.parametrize("aoi, expected", [
     ("lux", ["LUX"]),
     ([" tha", "khm"], ["THA", "KHM"]),
+    ("Ivory Coast", ["CIV"]),
+    (("St. Lucia",), ["LCA"]),
+    (["Kenya", "tur"], ["KEN", "TUR"]),
 ])
-def test_aoi_iso3_codes_are_standardised(monkeypatch, aoi, expected):
+def test_aoi_country_codes_and_names(synthetic_country_names, monkeypatch, aoi, expected):
     """
-    Country codes are accepted in any case and with surrounding whitespace.
-    They are used as they are: no country borders are loaded and no geometry
-    is created (so the merged raster is not clipped).
+    Country codes are accepted in any case and with surrounding whitespace;
+    longer strings are resolved as country names, also within lists. Codes
+    and names are used as they are: no country borders are loaded and no
+    geometry is created (so the merged raster is not clipped).
     """
     import worldpoppy.raster
     from worldpoppy.raster import _standardise_aoi
@@ -295,19 +303,26 @@ def test_aoi_iso3_codes_are_standardised(monkeypatch, aoi, expected):
     assert orig_aoi_type == "iso"
 
 
-def test_aoi_country_code_takes_precedence_over_file(monkeypatch, tmp_path):
+@pytest.mark.parametrize("aoi, expected", [
+    ("ken", ["KEN"]),
+    ("Kenya", ["KEN"]),
+    ("St. Lucia", ["LCA"]),
+])
+def test_aoi_country_code_or_name_takes_precedence_over_file(
+    synthetic_country_names, monkeypatch, tmp_path, aoi, expected
+):
     """
-    A three-letter string is always a country code, even if a file of that
-    name exists in the working directory.
+    A string without a path separator or file suffix is always a country code
+    or name, even if a file of that name exists in the working directory.
     """
     from worldpoppy.raster import _standardise_aoi
 
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "ken").touch()
+    (tmp_path / aoi).touch()
 
-    _, iso3_codes, orig_aoi_type = _standardise_aoi("ken")
+    _, iso3_codes, orig_aoi_type = _standardise_aoi(aoi)
 
-    assert iso3_codes == ["KEN"]
+    assert iso3_codes == expected
     assert orig_aoi_type == "iso"
 
 

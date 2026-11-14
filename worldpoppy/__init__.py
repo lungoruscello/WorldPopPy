@@ -16,5 +16,6 @@ from .manifest_loader import (
 )
 from .raster import wp_raster, wp_warp, merge_rasters, bbox_from_location
 from .borders import load_country_borders
+from .country_names import find_country_code
 from .func_utils import geolocate_name
 from .plot_utils import *

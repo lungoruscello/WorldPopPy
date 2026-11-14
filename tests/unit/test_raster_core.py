@@ -87,7 +87,7 @@ def test_pre_clipping_optimisation(mock_raster_factory, mock_downloader):
     *immediately* (lazy shape inspection).
 
     Proof of Pre-Clipping:
-    We use `aoi=['MOCK']` (ISO codes), which results in `clipping_gdf=None`.
+    We use `aoi=['MCK']` (ISO codes), which results in `clipping_gdf=None`.
     Since `merge_rasters` only performs *post-clipping* if a GDF is present,
     any reduction in output shape MUST be due to the *pre-clipping* logic
     inside the loading loop.
@@ -107,13 +107,13 @@ def test_pre_clipping_optimisation(mock_raster_factory, mock_downloader):
 
     # --- Act 1: WITH Pre-Clipping ---
     result_optimised = wp_raster(
-        product_name="pop_g1", aoi=["MOCK"], pre_clip_bbox=tiny_box, chunks="auto"
+        product_name="pop_g1", aoi=["MCK"], pre_clip_bbox=tiny_box, chunks="auto"
     )
 
     # --- Act 2: WITHOUT Pre-Clipping (Control) ---
     result_full = wp_raster(
         product_name="pop_g1",
-        aoi=["MOCK"],
+        aoi=["MCK"],
         pre_clip_bbox=None,  # <--- The only difference
         chunks="auto",
     )
@@ -142,7 +142,7 @@ def test_wp_raster_clips_to_shapely_aoi(mock_raster_factory, mock_downloader, mo
     from worldpoppy import wp_raster
 
     # A synthetic world with one country that covers the whole mock raster
-    world = gpd.GeoDataFrame({"iso3": ["MOCK"]}, geometry=[box(0, 0, 100, 100)], crs="EPSG:4326")
+    world = gpd.GeoDataFrame({"iso3": ["MCK"]}, geometry=[box(0, 0, 100, 100)], crs="EPSG:4326")
     monkeypatch.setattr(worldpoppy.raster, "load_country_borders", lambda: world)
 
     path = mock_raster_factory("mock.tif", np.ones((100, 100)), origin=(0, 100))
@@ -194,7 +194,7 @@ def test_wp_raster_execution_modes(
     # --- Act ---
     result = wp_raster(
         product_name="pop_g1",
-        aoi=["MOCK"],
+        aoi=["MCK"],
         years=None,
         chunks=chunks_arg  # <--- Toggles Lazy vs Eager
     )
@@ -293,7 +293,7 @@ def test_wp_raster_skip_download_default(
     kwargs = dict(cache_downloads=cache_downloads)
     if skip_download_if_exists is not None:
         kwargs["skip_download_if_exists"] = skip_download_if_exists
-    wp_raster(product_name="pop_g1", aoi=["MOCK"], **kwargs)
+    wp_raster(product_name="pop_g1", aoi=["MCK"], **kwargs)
 
     # Bind the recorded call to the real signature, so that the test does not
     # depend on whether `wp_raster` passes the argument by position or keyword

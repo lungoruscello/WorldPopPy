@@ -37,6 +37,7 @@ dependencies = [
     "bottleneck",
     "geopandas<2",
     "geopy",
+    "pycountry",
     "pyproj",
     "shapely"
 ]
