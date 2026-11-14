@@ -27,20 +27,40 @@ in a given Coverage Index. Based on the **Sample Payload** returned by the API, 
 pattern of raster filenames and download URLs. That pattern can then be extended to all other countries 
 (or country-years) listed in the Coverage Index.
 
-## Further parsing & filtering
+The same strategy yields a link to each dataset's summary page on WorldPop. The Sample Payload contains 
+the summary URL of the sample dataset (e.g., `https://hub.worldpop.org/geodata/summary?id=1325`). Replacing 
+the sample's ID with a placeholder gives a URL template, which is then filled in with the ID of each entry 
+in the Coverage Index. For data series that group several years or bands under one entry per country (see 
+below), all datasets of a country therefore share one summary page.
 
-Further complexity arises from the way the WorldPop project organises multi-year datasets. Depending on 
-the conceptual data series, WorldPop uses either a flat or nested file structure. In the former case, 
-each country-year is listed as a distinct entry in the Coverage Index (e.g., the /pop/wpgp series).
-Each such entry is then associated with one raster file. In the latter case, all available years for 
-one country are "grouped" together under a single entry (e.g., the /covariates/G2_NT_lights series).
+**Download and summary URLs are thus inferred from a sample, not taken from a file listing for each dataset.** The test suite 
+spot-checks a random sample of both (in an opt-in, heavy test), but does not verify every URL.
 
-Our crawler infers this file-organisation scheme from the Sample Payload. When "grouped" multi-year 
-data is encountered, we always flattened this to ensure that our own data manifest always records 
-each country-year-specific dataset in one row.
+## File organisation schemes
 
-## Unsupported datasets
+WorldPop organises the files of a data series in one of three ways. Our crawler infers the scheme from 
+the Sample Payload:
 
-Unsupported data series are likewise identified and filtered through analysis of the Sample Payload. 
-Notably, `worldpoppy` does currently not support data that WorldPop hosts in formats other than 
-Geotiff. (e.g., 7z.)
+- **Flat:** Each country-year is listed as a distinct entry in the Coverage Index, and each entry is 
+  associated with one raster file (e.g., the /pop/wpgp series).
+- **Multi-year:** All available years for one country are grouped together under a single entry, with 
+  one raster file per year (e.g., the /covariates/G2_NT_lights series).
+- **Multi-band:** A single entry per country holds several raster files for the same year, one per 
+  thematic class or "band" (e.g., the distances to different land-cover classes in the 
+  /covariates/G2_DST_ESA_2015 series).
+
+Grouped data is always flattened, so that our data manifest records each dataset (one country-year, 
+or one country-year-band) in its own row.
+
+## Unsupported data series
+
+The crawler skips data series in the following cases:
+
+- The data is not stored as GeoTIFF files (e.g., as 7z archives). This is detected from the Sample Payload.
+- The data series covers the whole globe or a continent rather than individual countries, or uses an 
+  unrecognised country code. This is detected from the country code of the first entry in the Coverage 
+  Index (e.g., 'WCD' for global data).
+- The file organisation cannot be parsed reliably: multi-year files without a year in their names, or 
+  with duplicate or non-consecutive years, and multi-band files without identifiable bands.
+- The data series belongs to the `age_structures` branch of the API, which is skipped entirely because 
+  its filenames cannot yet be parsed into bands.

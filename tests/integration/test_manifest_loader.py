@@ -73,6 +73,25 @@ def augmented_raw_manifest(tmp_path, monkeypatch):
 
 @pytest.mark.integration
 @needs_raw_manifest
+def test_bundled_manifest_has_expected_schema():
+    """
+    The bundled raw manifest has exactly the columns that the manifest builder
+    writes, and every column except 'year' (empty for static products) and
+    'band' (empty for single-band datasets) is filled in for all datasets,
+    incl. the download and summary URLs.
+    """
+    from worldpoppy.config import BUNDLED_MANIFEST_PATH
+    from worldpoppy.manifest_builder import RAW_MANIFEST_COLUMNS
+
+    raw_mdf = pd.read_feather(BUNDLED_MANIFEST_PATH)
+    empty_counts = raw_mdf.drop(columns=["year", "band"]).isna().sum()
+
+    assert tuple(raw_mdf.columns) == RAW_MANIFEST_COLUMNS
+    assert not empty_counts.any(), f"Empty values per column:\n{empty_counts[empty_counts > 0]}"
+
+
+@pytest.mark.integration
+@needs_raw_manifest
 def test_warns_on_new_unmapped_dataset(augmented_raw_manifest, caplog):
     """
     Verify that warnings are raised when encountering new datasets in

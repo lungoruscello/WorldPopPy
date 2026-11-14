@@ -98,7 +98,15 @@ columns:
     The filename of the remote .tif file.
 
 - summary_url (str):
-    A sample URL to the WorldPop summary page associated with this dataset.
+    The URL of the WorldPop summary page for this dataset. For data series
+    with several years or bands per country, WorldPop lists one entry per
+    country, so all years or bands of a country share its summary page.
+
+Download and summary URLs are built from URL patterns that the manifest
+builder infers from one sample dataset per data series (see the
+'manifest_build_strategy.md' documentation file in the `docs/` folder).
+The download and summary URLs are only spot-checked and not verified
+individually.
 
 **Raw API Columns (for advanced use):**
 
@@ -150,6 +158,7 @@ from worldpoppy.config import (
     DEBUG)
 from worldpoppy.func_utils import log_info_context, standardise_iso3_codes
 from worldpoppy.manifest_builder import (
+    RAW_MANIFEST_COLUMNS,
     build_raw_manifest_from_api,
     _select_manifest,
     _warn_if_stale,
@@ -585,6 +594,7 @@ def _get_cleaned_manifest():
 
     # --- Ingest raw manifest ---
     mdf = _get_raw_manifest()
+    _validate_raw_manifest_columns(mdf)
 
     # Try to enforce correct, nullable data type
     try:
@@ -1103,6 +1113,21 @@ def _check_missing_config(mdf):
         missing_notes,
         "products without a description in 'product_notes'"
     )
+
+
+def _validate_raw_manifest_columns(mdf):
+    """
+    Raise a `ManifestValidationError` if the raw manifest lacks any of the
+    columns that the manifest builder writes (`RAW_MANIFEST_COLUMNS`).
+    (Without this check, a missing column would silently end up as an
+    all-empty column in the cleaned manifest.)
+    """
+    if missing := [col for col in RAW_MANIFEST_COLUMNS if col not in mdf.columns]:
+        raise ManifestValidationError(
+            f"Fatal: The data manifest at '{_get_active_manifest_info().path}' lacks "
+            f"the column(s) {missing}. It may have been built by an incompatible "
+            "version of worldpoppy."
+        )
 
 
 def _validate_manifest(mdf):

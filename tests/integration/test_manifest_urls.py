@@ -56,10 +56,13 @@ def test_random_summary_urls_valid():
 # --- Shared Helpers ---
 
 def _get_sample_urls(df, column, n):
-    """Safely extract a random sample of non-null URLs."""
+    """
+    Extract a random sample of non-null URLs. Fails if there are none: an
+    empty URL column is a manifest bug, not a reason to skip the check.
+    """
     valid_rows = df[df[column].notna()]
     if valid_rows.empty:
-        pytest.skip(f"No valid URLs found in column '{column}'")
+        pytest.fail(f"No valid URLs found in column '{column}'")
 
     # Do not try to sample more than we have
     n_safe = min(n, len(valid_rows))

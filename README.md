@@ -281,7 +281,11 @@ dataset titles (see `api_entry_title` below).
 
 2. **Know Your Data:** While this library makes downloading and pre-processing easy, we strongly encourage you 
 to understand what you are downloading. WorldPop datasets are often the result of complex modelling. Always check 
-the `summary_url` provided in the manifest for details and further notes.
+the `summary_url` provided in the manifest for details and further notes. To keep the load on WorldPop's servers 
+low, **WorldPopPy** does not request the file listing of every raster dataset when building the manifest. Instead, 
+we infer download and summary URLs from URL patterns, based on one sample dataset per data series, and only spot-check 
+the results. If a summary link does not work, the official dataset title (`api_entry_title`) helps to find the page 
+on WorldPop's website.
 
 ```python
 from worldpoppy import wp_manifest

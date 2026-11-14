@@ -556,6 +556,24 @@ def test_rebuild_refreshes_the_loaded_manifest(monkeypatch, isolated_manifest_as
     assert list(manifest_loader._get_raw_manifest()["api_path"]) == ["pop/ok"]
 
 
+def test_loader_rejects_manifest_with_missing_column(isolated_manifest_assets):
+    """
+    A manifest that lacks a column the builder writes (here: the summary
+    URLs) is rejected with a clear error, rather than loaded with that column
+    silently left empty.
+    """
+    from worldpoppy import manifest_loader
+    from worldpoppy.manifest_builder import RAW_MANIFEST_COLUMNS
+    from worldpoppy.manifest_loader import ManifestValidationError
+
+    columns = [col for col in RAW_MANIFEST_COLUMNS if col != "summary_url"]
+    mdf = pd.DataFrame({col: ["x"] for col in columns})
+    _write_manifest(mdf, manifest_builder.BUNDLED_MANIFEST_PATH, built_at=datetime.now(), version=__version__)
+
+    with pytest.raises(ManifestValidationError, match=r"lacks the column\(s\) \['summary_url'\]"):
+        manifest_loader._get_cleaned_manifest()
+
+
 def test_clear_manifest_caches_covers_all_cached_loader_functions(isolated_manifest_assets):
     """
     Every in-memory cache in the loader is cleared, so that a cached function

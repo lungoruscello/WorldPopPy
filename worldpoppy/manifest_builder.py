@@ -65,6 +65,25 @@ from worldpoppy.tracking import api_query_log
 
 logger = logging.getLogger(__name__)
 
+# Columns of the raw manifest, i.e., the keys of each record created by
+# `_build_dataset_record`. The manifest loader requires all of them.
+RAW_MANIFEST_COLUMNS = (
+    "wpy_id",
+    "iso3",
+    "dataset_name",
+    "remote_path",
+    "api_entry_title",
+    "api_path",
+    "year",
+    "band",
+    "remote_name",
+    "api_project",
+    "api_series_desc",
+    "api_series_category",
+    "api_source",
+    "summary_url",
+)
+
 
 class APIRequestError(Exception):
     """Raised when an API request fails permanently or after all retries."""
@@ -1214,6 +1233,7 @@ def _build_dataset_record(
     This function takes a (potentially synthetic) coverage entry,
     the inferred URL templates, and series metadata and formats the
     final dictionary that will become a row in the `raw_mdf` DataFrame.
+    Its keys must match `RAW_MANIFEST_COLUMNS`.
     """
     try:
         iso_code = coverage_entry["iso3"]

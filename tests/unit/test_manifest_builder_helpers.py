@@ -28,6 +28,27 @@ def test_validate_url_template_raises_on_missing_placeholder():
     with pytest.raises(ValueError, match="missing required placeholder"):
         _validate_download_url_template('2020/{iso3_upper}/{iso3_lower}.tif', 'pop/x', ['{year}'])
 
+
+def test_dataset_record_has_raw_manifest_columns():
+    """
+    Each manifest record has exactly the columns that the manifest loader
+    requires (`RAW_MANIFEST_COLUMNS`), incl. a filled-in summary URL.
+    """
+    from worldpoppy.manifest_builder import RAW_MANIFEST_COLUMNS, _build_dataset_record
+
+    record = _build_dataset_record(
+        coverage_entry={"id": "7", "iso3": "AFG", "popyear": "2020", "title": "Population 2020"},
+        download_url_template="https://data.example/{year}/{iso3_lower}_ppp_{year}.tif",
+        summary_url_template="https://hub.example/summary?id={id}",
+        id_for_summary="42",  # e.g., the country-level entry of a multi-year series
+        api_path="pop/wpgp",
+        series_metadata={},
+        node_name="Unconstrained",
+    )
+
+    assert tuple(record) == RAW_MANIFEST_COLUMNS
+    assert record["summary_url"] == "https://hub.example/summary?id=42"
+
 def test_extract_year_from_filename():
     from worldpoppy.manifest_utils import extract_year_from_filename
 
