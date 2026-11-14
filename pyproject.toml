@@ -62,6 +62,7 @@ gdal = [
 test = [
     "netcdf4>=1.7.3",
     "pytest>=7.0",
+    "pytest-cov>=7.1.0",
 ]
 dev = [
     { include-group = "test" },
