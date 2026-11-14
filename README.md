@@ -90,7 +90,12 @@ plt.show()
 
 ## Finding Data
 
-Use `show_supported_data_products` for a quick overview of what is supported by **WorldPopPy**:
+To simplify data discovery, **WorldPopPy** organises WorldPop's thousands of raw files into curated data products
+with a consistent naming scheme. For example, `pop_g2_r25a` denotes population counts (`pop`) from WorldPop's
+Global 2 series (`g2`), 2025 alpha release (`r25a`). Products cover population counts, night lights, 
+elevation, land cover, and climate variables, among others, and many are available for several years. Use
+`show_supported_data_products` for an overview, with a short description, the spatial resolution, and whether a
+data product covers several years or is static. The overview can be filtered by keyword, country, or year:
 
 ```python
 from worldpoppy import show_supported_data_products
@@ -110,6 +115,20 @@ from worldpoppy import wp_manifest
 mdf = wp_manifest()
 mdf.head()
 ```
+
+WorldPop organises its data by country, and **WorldPopPy** identifies countries by their three-letter ISO codes
+(ISO 3166-1 alpha-3, e.g., "KEN" for Kenya). These codes select countries in `wp_raster`, `wp_manifest`,
+`show_supported_data_products`, and `plot_country_borders`. To look up a country's code, search for (part of) its name:
+
+```python
+from worldpoppy import find_country_code
+
+find_country_code("ivory")  # -> CIV (Côte d'Ivoire)
+```
+
+`wp_raster` also accepts country names (e.g., `aoi="Kenya"`) if they match exactly one country, and reports the code 
+it used. Ambiguous names such as "Congo" raise an error that lists the candidates.
+
 ## Documentation
 
 * **API Reference:** https://worldpoppy.readthedocs.io/
@@ -234,9 +253,9 @@ wp_raster(
 **WorldPopPy** is a client for accessing data; it does not host or own the data. Please note the following points
 regarding data provenance and citation:
 
-1. **Curated "Product Names"**: To simplify data discovery, this library organises WorldPop's thousands of 
-raw files into curated "Data Products" with a consistent naming scheme (e.g., `pop_g1_alt` or `pop_g2_alt`). 
-These product names are specific to **WorldPopPy**.
+1. **Curated "Product Names"**: The product names used by this library (e.g., `pop_g1_alt` or `pop_g2_alt`) are 
+specific to **WorldPopPy**; WorldPop does not use them. When citing data, please refer to WorldPop's official 
+dataset titles (see `api_entry_title` below).
 
 2. **Know Your Data:** While this library makes downloading and pre-processing easy, we strongly encourage you 
 to understand what you are downloading. WorldPop datasets are often the result of complex modelling. Always check 
