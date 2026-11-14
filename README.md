@@ -14,7 +14,9 @@ Keywords: WorldPop Python package, download and combine WorldPop datasets, globa
 WorldPop offers global, gridded datasets on population dynamics, night-light emissions, topography, and much more. 
 These datasets are typically distributed as individual files per country. **WorldPopPy** abstracts the process of
 data discovery, retrieval, and preprocessing. Users query data by Area of Interest (AOI). The library automatically 
-identifies the necessary country rasters, downloads them, and merges them into a unified dataset.
+identifies the necessary country rasters, downloads them, and merges them into a unified dataset. For an area that
+spans several countries, such as a river basin or a border region, a single call to `wp_raster` replaces finding,
+downloading, merging, and clipping country files by hand.
 
 (See the [Example Gallery](#example-gallery) below for a visual overview of the library's capabilities).
 
@@ -87,6 +89,26 @@ clean_axes(p)
 plt.show()
 ```
 <img src="worldpoppy/assets/gallery/quick02_sihanoukville.png" alt="Night lights in Sihanoukville, 2015-2023" width="550"/>
+
+## Working with Results
+
+`wp_raster` returns an `xarray.DataArray` with geospatial metadata (handled by
+[`rioxarray`](https://corteva.github.io/rioxarray/)). Results can therefore be analysed with xarray and saved as a
+GeoTIFF:
+
+```python
+pop_data.rio.to_raster("mekong_pop_2024.tif")
+```
+
+Results are always in the coordinate reference system of WorldPop's source rasters (WGS84, EPSG:4326), whatever the
+CRS of the area of interest. To reproject a result, use `wp_warp`. For counts such as population, use
+`resampling='sum'` to approximately preserve totals:
+
+```python
+from worldpoppy import wp_warp
+
+pop_warped = wp_warp(pop_data, to_crs="EPSG:32647", res=1_000, resampling="sum")
+```
 
 ## Finding Data
 
