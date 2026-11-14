@@ -10,6 +10,7 @@ GitHub: https://github.com/lungoruscello/WorldPopPy
 
    readme_pypi.md
    worldpoppy
+   manifest_build_strategy.md
 
 Indices and tables
 ==================

@@ -140,7 +140,8 @@ def wp_raster(
 
         - one or more three-letter country codes (alpha-3 IS0 codes) or country
           names. A name is converted into its code (with a warning) only if it
-          matches exactly one country; use :func:`find_country_code` to look
+          matches exactly one country; use
+          :func:`~worldpoppy.country_names.find_country_code` to look
           up codes;
         - a bounding box of the format (min_lon, min_lat, max_lon, max_lat);
         - a GeoDataFrame or GeoSeries with one or more geometries (in any CRS);

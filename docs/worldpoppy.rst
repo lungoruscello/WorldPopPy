@@ -19,7 +19,6 @@ worldpoppy.manifest_builder
 
 .. automodule:: worldpoppy.manifest_builder
    :members:
-   :undoc-members:
    :show-inheritance:
 
 worldpoppy.manifest_loader
@@ -28,6 +27,13 @@ worldpoppy.manifest_loader
 .. automodule:: worldpoppy.manifest_loader
    :members:
    :undoc-members:
+   :show-inheritance:
+
+worldpoppy.country_names module
+===============================
+
+.. automodule:: worldpoppy.country_names
+   :members:
    :show-inheritance:
 
 worldpoppy.borders module

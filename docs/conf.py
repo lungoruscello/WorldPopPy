@@ -17,6 +17,10 @@ extensions = [
     'myst_parser',  # support .md files
 ]
 
+# Generate anchors for level-1 and level-2 headings, so that in-page
+# Markdown links (e.g., to '#example-gallery') resolve
+myst_heading_anchors = 2
+
 templates_path = ['_templates']
 exclude_patterns = []
 
