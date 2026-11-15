@@ -36,6 +36,13 @@ worldpoppy.country_names module
    :members:
    :show-inheritance:
 
+worldpoppy.mosaic module
+========================
+
+.. automodule:: worldpoppy.mosaic
+   :members:
+   :show-inheritance:
+
 worldpoppy.borders module
 =========================
 

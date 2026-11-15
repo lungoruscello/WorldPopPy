@@ -44,6 +44,20 @@ def no_network(monkeypatch):
     monkeypatch.setattr(socket.socket, "connect", _blocked)
 
 
+@pytest.fixture(autouse=True)
+def no_user_cache(monkeypatch, tmp_path):
+    """
+    Fixture that points the cache directory to an empty temporary directory
+    in unit tests.
+
+    Unit tests must never read from or write to the user's cache (e.g., lazy
+    merges write VRT files there). Fixtures that need a cache of their own
+    (e.g., `isolated_raster_cache`) set the variable again, which takes
+    precedence.
+    """
+    monkeypatch.setenv("WORLDPOPPY_CACHE_DIR", str(tmp_path / "unit_test_cache"))
+
+
 @pytest.fixture
 def synthetic_country_names(monkeypatch):
     """

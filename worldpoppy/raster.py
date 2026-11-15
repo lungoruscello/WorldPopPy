@@ -17,6 +17,7 @@ Main methods
         The result can be used to specify the AoI for `wp_raster`.
 
 """
+import hashlib
 import logging
 import re
 import warnings
@@ -43,7 +44,7 @@ from rioxarray.merge import merge_arrays
 from worldpoppy.borders import load_country_borders
 from worldpoppy.config import WGS84_CRS, get_cache_dir
 from worldpoppy.country_names import resolve_country_name
-from worldpoppy.download import WorldPopDownloader
+from worldpoppy.download import WorldPopDownloader, _create_unique_temp_file
 from worldpoppy.func_utils import (
     BboxInvalidError,
     geolocate_name,
@@ -53,6 +54,7 @@ from worldpoppy.func_utils import (
     get_buffered_bounds,
 )
 from worldpoppy.manifest_loader import _get_active_manifest_info, resolve_product_years
+from worldpoppy.mosaic import VRT_FORMAT_VERSION, write_vrt
 from worldpoppy import __url__ as wpy_url, __version__ as wpy_version
 
 logger = logging.getLogger(__name__)
@@ -77,6 +79,9 @@ RESAMPLING_MAP = {
     'bilinear': Resampling.bilinear,
     'cubic': Resampling.cubic
 }
+
+# Subfolder of the cache directory for the VRT files of lazy merges
+MOSAIC_DIRNAME = 'mosaics'
 
 # --- Metadata of results (see docs/metadata.md) ---
 # Fixed attribute values. The creator of the data is WorldPop; WorldPopPy
@@ -207,6 +212,8 @@ def wp_raster(
         - If dict (e.g., {'x': 1024, 'y': 1024}), that specific chunking is used.
 
         Lazy reading requires `masked=True` and `cache_downloads=True`.
+        Several country rasters are merged lazily as one virtual mosaic (see
+        the Notes of `merge_rasters`, also on memory use).
     pre_clip_bbox : Tuple[float, float, float, float], optional
         A bounding box (min_lon, min_lat, max_lon, max_lat) to which
         input rasters will *immediately* be clipped after loading them
@@ -313,6 +320,10 @@ def wp_raster(
         (This function thus trusts `rioxarray` to correctly normalise
          masked input rasters, even if the underlying source files have
          different `_FillValue`, `scale_factor` or `add_offset` attributes.)
+
+        With `chunks`, also if the rasters cannot be combined into a virtual
+        mosaic (see `worldpoppy.mosaic.build_vrt`), e.g. because their
+        resolutions differ.
     """
 
     # --- Resolve read settings ---
@@ -687,17 +698,23 @@ def merge_rasters(
          masked input rasters, even if the underlying source files have
          different `_FillValue`, `scale_factor` or `add_offset` attributes.)
 
+        With `chunks`, also if the rasters cannot be combined into a virtual
+        mosaic (see `worldpoppy.mosaic.build_vrt`), e.g. because their
+        resolutions differ.
+
     Notes
     -----
-    **Performance Warning:**
-    With `chunks`, this function merges rasters lazily, pairwise with
-    `xarray.combine_first`. While this preserves memory, it builds a Dask
-    task graph that grows with the number of input files (its depth grows
-    logarithmically, thanks to the pairwise merging).
+    With `chunks`, several rasters are merged lazily as one virtual mosaic: a
+    small VRT file in the subfolder 'mosaics' of the cache directory (see
+    `get_cache_dir`), which `purge_cache` removes. Dask reads the mosaic chunk
+    by chunk, so that merging needs little more memory than reading the
+    rasters. Where rasters overlap, the first raster wins, as in eager merges.
 
-    Merging a large number of files may still cause significant overhead
-    during graph construction. If you are processing a large number of
-    raster tiles, consider merging them in smaller batches first.
+    Two settings affect the remaining memory use: GDAL's block cache (the
+    environment variable `GDAL_CACHEMAX`, by default 5% of the computer's
+    memory; e.g., `GDAL_CACHEMAX=64` limits it to 64 MB), and the chunk size
+    (larger chunks need more memory per Dask thread; before a `coarsen`,
+    chunk sizes that are a multiple of its window avoid re-chunking).
     """
 
     masked, mask_and_scale = _resolve_read_settings(masked, mask_and_scale, chunks, other_read_kwargs)
@@ -866,7 +883,6 @@ def _merge_rasters(
             da = da.assign_coords({"x": da.x.round(5), "y": da.y.round(5)})
 
             # Assign fixed variable name for mosaicking
-            # (needed by _lazy_merge_helper)
             da.name = "wpy_data"
 
             rasters_to_merge.append(da)
@@ -884,13 +900,17 @@ def _merge_rasters(
         )
 
     # --- Merge! ---
-    if use_dask:
-        # We use a custom helper function to ensure
-        # that merging different input rasters does *not*
-        # trigger execution of the Dask graph.
-        da = _lazy_merge_helper(rasters_to_merge)
-    else:
+    if not use_dask:
         da = merge_arrays(rasters_to_merge)
+    elif len(rasters_to_merge) == 1:
+        da = rasters_to_merge[0]
+    else:
+        # Several rasters are read lazily as one virtual mosaic, which Dask
+        # reads chunk by chunk. (The arrays opened above only served to find
+        # the rasters that overlap the pre-clip box.)
+        da = _open_lazy_mosaic(
+            used_paths, read_options, masked, mask_and_scale, processing_clip_box
+        )
 
     # --- Final Precise Clipping ---
     if clipping_gdf is not None:
@@ -1609,87 +1629,50 @@ def _concat_restoring_nodata(objs, **kwargs):
     return da
 
 
-def _lazy_merge_helper(das):
+def _open_lazy_mosaic(raster_fpaths, read_options, masked, mask_and_scale, clip_box):
     """
-    Lazily merge a list of DataArrays using a 'Painter's Algorithm' with
-    Tree Reduction to minimise Dask graph depth.
+    Open several rasters lazily as one virtual mosaic (a VRT file, see
+    `worldpoppy.mosaic`). Dask reads the mosaic chunk by chunk, so that merging
+    takes little more memory than reading the rasters. Where rasters overlap,
+    the first raster wins, as in eager merges with `rioxarray.merge.merge_arrays`.
 
-    Strategy:
-        Instead of merging linearly (A+B)+C+D... which creates a deep graph (Depth ~N),
-        we merge pairwise ((A+B) + (C+D))... which creates a shallower tree (Depth ~log2 N).
-        This is helps avoid recursion errors during graph construction for continental-scale
-        merges (e.g., 50+ countries).
-
-    Where rasters overlap, the first raster wins, as in eager merges with
-    `rioxarray.merge.merge_arrays`.
-
-    Note:
-        This helper is ONLY used when lazy loading (via Dask) is active
-        (i.e., `chunks` is not None), which requires masked data: missing
-        values are NaN, since `combine_first` only fills NaN. It is NOT the
-        default merge path for eager execution (which uses
-        `rioxarray.merge.merge_arrays` instead).
+    The VRT file is kept in the cache directory (see `_mosaic_vrt_path`), since
+    a lazy result reads it only when computed. `clip_box` (the pre-clip box, or
+    None) is applied to the mosaic.
     """
-    if not das:
-        raise ValueError("Cannot merge empty list of rasters.")
+    vrt_fpath = _mosaic_vrt_path(raster_fpaths)
+    if not vrt_fpath.is_file():
+        vrt_fpath.parent.mkdir(parents=True, exist_ok=True)
+        # Written under a unique temporary name first, so that parallel runs
+        # never read a half-written file (`replace` is atomic)
+        tmp_fpath = _create_unique_temp_file(vrt_fpath)
+        try:
+            write_vrt(raster_fpaths, tmp_fpath)
+            tmp_fpath.replace(vrt_fpath)
+        except ValueError as e:
+            raise IncompatibleRasterError(f"Cannot merge the rasters lazily: {e}") from e
+        finally:
+            tmp_fpath.unlink(missing_ok=True)
 
-    # --- No-op Check ---
-    if len(das) == 1:
-        return das[0]
+    da = rioxarray.open_rasterio(vrt_fpath, **read_options)
+    da = _standardise_rio_nodata_meta(da, masked, mask_and_scale)
+    if clip_box is not None:
+        da = da.rio.clip_box(*clip_box, allow_one_dimensional_raster=True)
+    da.name = "wpy_data"
+    return da
 
-    # --- WARNING ---
-    warnings.warn(
-        "Merging multiple country rasters lazily via Dask is an "
-        "experimental feature. You should only use lazy merging "
-        "if eager merging (via rioxarray) is impossible due to "
-        "memory constraints. Also, please inspect your results carefully.",
-        UserWarning,
-        stacklevel=2
+
+def _mosaic_vrt_path(raster_fpaths):
+    """
+    Return the path of the VRT file for a mosaic of `raster_fpaths`, in the
+    subfolder MOSAIC_DIRNAME of the cache directory (so that `purge_cache`
+    removes it). The name is a hash of the rasters' paths, in their order (which
+    sets the priority), of their modification times and sizes, and of the VRT
+    format version, so that the same rasters reuse one file, and a replaced
+    raster or a new format gets a new one.
+    """
+    key = f"VRT format {VRT_FORMAT_VERSION}\n" + "\n".join(
+        f"{Path(p).resolve()} {_file_state(p)}" for p in raster_fpaths
     )
-
-    # --- Establish Z-order ---
-    # The first element in 'current_layer' stays on top, since `combine_first`
-    # prioritises the caller (self) and the pairwise merging keeps the order.
-    current_layer = list(das)
-
-    # --- Pairwise Merging ---
-    # Iterative Tree Reduction
-    # We loop until only one merged array remains.
-    while len(current_layer) > 1:
-        next_layer = []
-
-        # Step through the list in pairs
-        for i in range(0, len(current_layer), 2):
-            left = current_layer[i]
-
-            # If there is a right partner, merge them
-            if i + 1 < len(current_layer):
-                right = current_layer[i + 1]
-                # 'left' is strictly above 'right' in Z-order list
-                merged = left.combine_first(right)
-                next_layer.append(merged)
-            else:
-                # Orphan element at the end, carry it over to the next round
-                next_layer.append(left)
-
-        current_layer = next_layer
-
-    combined = current_layer[0]
-
-    # --- Fix Coordinate Flip ---
-    # Check if y coordinate is ascending (increasing)
-    if combined.y[-1] > combined.y[0]:
-        # Flip it to match standard Rasterio/GDAL convention (Top-Left origin)
-        combined = combined.sortby("y", ascending=False)
-
-    # --- Clean the Metadata ---
-    # Masked data is floating point with NaN as nodata, which `combine_first`
-    # does not keep in the metadata
-    combined.rio.write_nodata(np.nan, encoded=True, inplace=True)
-
-    # Recover CRS & name
-    combined.rio.write_crs(das[0].rio.crs, inplace=True)
-    if das[0].name:
-        combined.name = das[0].name
-
-    return combined
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:20]
+    return get_cache_dir() / MOSAIC_DIRNAME / f"{digest}.vrt"

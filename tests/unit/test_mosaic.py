@@ -143,6 +143,28 @@ def test_lazy_read_equals_eager_read(mock_raster_factory, tmp_path):
     assert np.isnan(eager.values).any()
 
 
+def test_mosaic_has_the_data_type_of_the_first_raster(mock_raster_factory, tmp_path):
+    """
+    Rasters of different data types are accepted: the mosaic has the data type
+    of the first raster, and the values of the others are converted to it, as
+    in `rioxarray.merge.merge_arrays`. (Fractional values converted to integers
+    are rounded by GDAL, whereas `merge_arrays` truncates them.)
+    """
+    int_data = np.ones((3, 3), dtype="int16")
+    float_data = np.array([[2.0, 2.4, 2.6]] * 3)  # float64
+    a = mock_raster_factory("a.tif", int_data, origin=(0, 3), nodata=NODATA)
+    b = mock_raster_factory("b.tif", float_data, origin=(3, 3), nodata=NODATA)
+
+    vrt = write_vrt([a, b], tmp_path / "m.vrt")
+    with rasterio.open(vrt) as src:
+        dtype, values = src.dtypes[0], src.read(1)
+    eager = merge_arrays([rioxarray.open_rasterio(p) for p in (a, b)]).squeeze("band")
+
+    assert dtype == eager.dtype == "int16"
+    np.testing.assert_array_equal(values[:, :4], eager.values[:, :4])  # whole values
+    np.testing.assert_array_equal(values[0, 4:], [2, 3])  # 2.4 and 2.6, rounded
+
+
 # --- Tests: Files and Paths ---
 
 def test_write_vrt_handles_non_ascii_paths(mock_raster_factory, tmp_path):
@@ -171,7 +193,33 @@ def test_build_vrt_returns_xml_with_absolute_paths(mock_raster_factory):
     assert f'relativeToVRT="0">{a.resolve()}<' in xml
 
 
+def test_resolution_noise_is_accepted(mock_raster_factory, tmp_path):
+    """
+    Pixel sizes that differ by floating-point noise (as in real WorldPop files)
+    count as the same resolution, and the mosaic uses the first raster's.
+    """
+    a = mock_raster_factory("a.tif", _filled(1.0), origin=(0, 3), nodata=NODATA)
+    b = mock_raster_factory("b.tif", _filled(2.0), origin=(3, 3), res=1 + 1e-7, nodata=NODATA)
+
+    values, transform, _ = _read_mosaic(write_vrt([a, b], tmp_path / "m.vrt"))
+
+    assert transform.a == 1.0
+    np.testing.assert_array_equal(values[:, 3:], 2.0)
+
+
 # --- Tests: Rejected Inputs ---
+
+def test_resolution_drift_across_the_mosaic_is_rejected(mock_raster_factory):
+    """
+    A difference in pixel size that is tiny in relative terms is still rejected
+    if it adds up to more than MAX_RESOLUTION_DRIFT pixels across the mosaic
+    (here: 1e-4 over 1,000 pixels = 0.1 pixels).
+    """
+    a = mock_raster_factory("a.tif", _filled(1.0), origin=(0, 3), nodata=NODATA)
+    b = mock_raster_factory("b.tif", _filled(2.0), origin=(997, 3), res=1 + 1e-4, nodata=NODATA)
+
+    with pytest.raises(ValueError, match="b.tif has a different resolution"):
+        build_vrt([a, b])
 
 def test_empty_list_raises():
     with pytest.raises(ValueError, match="empty"):
@@ -184,18 +232,14 @@ def test_empty_list_raises():
     (dict(nodata=-1.0), "different nodata value"),
     (dict(nodata=np.nan), "different nodata value"),
     (dict(nodata=None), "different nodata value"),
-    (dict(dtype="float64"), "different data type"),
 ])
 def test_incompatible_rasters_raise(mock_raster_factory, change, message):
     """
-    Rasters that differ from the first one in CRS, resolution, nodata value or
-    data type are rejected, naming the raster.
+    Rasters that differ from the first one in CRS, resolution or nodata value
+    are rejected, naming the raster.
     """
     a = mock_raster_factory("a.tif", _filled(1.0), origin=(0, 3), nodata=NODATA)
-    kwargs = dict(origin=(3, 3), nodata=NODATA)
-    kwargs.update({k: v for k, v in change.items() if k != "dtype"})
-    data = _filled(2.0).astype(change.get("dtype", "float32"))
-    b = mock_raster_factory("b.tif", data, **kwargs)
+    b = mock_raster_factory("b.tif", _filled(2.0), **{"origin": (3, 3), "nodata": NODATA, **change})
 
     with pytest.raises(ValueError, match=f"b.tif has a {message}"):
         build_vrt([a, b])

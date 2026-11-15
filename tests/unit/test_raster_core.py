@@ -43,7 +43,6 @@ def test_merge_preserves_count(mock_raster_factory):
     assert np.isclose(total_mass, 300.0)
 
 
-@pytest.mark.filterwarnings("ignore:Merging multiple country rasters lazily")
 @pytest.mark.parametrize("res", [1.0, 1 / 1200], ids=["1-degree", "3-arcsecond"])
 @pytest.mark.parametrize("chunks", [None, "auto"], ids=["eager", "lazy"])
 def test_merge_places_every_cell_exactly(mock_raster_factory, chunks, res):
@@ -222,7 +221,6 @@ def test_automatic_pre_clipping_does_not_change_results(
         np.testing.assert_allclose(pre_clipped[dim], not_pre_clipped[dim], rtol=0, atol=1e-9)
 
 
-@pytest.mark.filterwarnings("ignore:Merging multiple country rasters lazily")
 @pytest.mark.parametrize("chunks", [None, "auto"], ids=["eager", "lazy"])
 def test_pre_clip_keeps_a_narrow_overlap(mock_raster_factory, chunks):
     """
@@ -498,7 +496,6 @@ def test_wp_raster_execution_modes(
         assert result.chunks is None
 
 
-@pytest.mark.filterwarnings("ignore:Merging multiple country rasters lazily")
 def test_lazy_and_eager_merges_agree_where_rasters_overlap(mock_raster_factory):
     """
     Lazy and eager merges give identical results. Where the valid data of
