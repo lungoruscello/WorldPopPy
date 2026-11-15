@@ -130,6 +130,7 @@ def test_lazy_merge_reads_a_mosaic_file_in_the_cache(mock_raster_factory, recwar
     eager = merge_rasters([a, b])
 
     assert len(_mosaic_files()) == 1
+    assert lazy.chunks is not None, "The lazy merge returned a computed (not chunked) array."
     np.testing.assert_array_equal(lazy.compute().values, eager.values)
     assert not [w for w in recwarn if "experimental" in str(w.message)]
 
@@ -185,6 +186,27 @@ def test_lazy_merge_of_different_resolutions_raises(mock_raster_factory):
 
     with pytest.raises(IncompatibleRasterError, match="b.tif has a different resolution"):
         merge_rasters([a, b], chunks=2)
+
+
+def test_read_only_cache_gives_a_clear_error(mock_raster_factory):
+    """
+    If the cache directory is not writable, a lazy merge of several rasters
+    raises an OSError that says why the cache is written and how to avoid it.
+    """
+    from worldpoppy.config import get_cache_dir
+    from worldpoppy.raster import MOSAIC_DIRNAME
+
+    data = np.ones((3, 3), dtype="float32")
+    a = mock_raster_factory("a.tif", data, origin=(0, 3))
+    b = mock_raster_factory("b.tif", data, origin=(3, 3))
+    mosaic_dir = get_cache_dir() / MOSAIC_DIRNAME
+    mosaic_dir.mkdir(parents=True)
+    mosaic_dir.chmod(0o555)  # read-only
+    try:
+        with pytest.raises(OSError, match="not writable.*WORLDPOPPY_CACHE_DIR"):
+            merge_rasters([a, b], chunks=2)
+    finally:
+        mosaic_dir.chmod(0o755)
 
 
 def test_purge_cache_removes_mosaic_files(mock_raster_factory):

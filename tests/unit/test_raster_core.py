@@ -245,6 +245,25 @@ def test_pre_clip_keeps_a_narrow_overlap(mock_raster_factory, chunks):
     np.testing.assert_array_equal(result.x.values, [9.5, 10.5, 11.5])
 
 
+@pytest.mark.parametrize("chunks", [None, "auto"], ids=["eager", "lazy"])
+def test_pre_clip_box_thinner_than_a_pixel_spans_two_rasters(mock_raster_factory, chunks):
+    """
+    A pre-clip box less than one pixel high that spans two rasters keeps one
+    row with the cells of both. (Lazy merges apply the box to the mosaic of
+    both rasters, which must accept a result only one row high.)
+    """
+    from worldpoppy import merge_rasters
+
+    path_a = mock_raster_factory("A.tif", np.full((10, 10), 1.0, dtype="float32"), origin=(0, 10))
+    path_b = mock_raster_factory("B.tif", np.full((10, 10), 2.0, dtype="float32"), origin=(10, 10))
+
+    result = merge_rasters([path_a, path_b], pre_clip_bbox=(8, 5.2, 12, 5.8), chunks=chunks)
+    result = result.squeeze("band").compute()
+
+    np.testing.assert_array_equal(result.y.values, [5.5])
+    np.testing.assert_array_equal(result.values.ravel(), [1.0, 1.0, 2.0, 2.0])
+
+
 @pytest.mark.parametrize(
     "bad_box", [(12, 2, 9, 8), (9, 2, float("nan"), 8)], ids=["inverted", "nan"]
 )

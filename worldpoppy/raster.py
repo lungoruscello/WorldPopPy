@@ -310,6 +310,10 @@ def wp_raster(
         If reading an input raster fails, or if `pre_clip_bbox` cannot be applied
         to it.
 
+    OSError
+        With `chunks`, if the VRT file of a lazy merge of several rasters cannot
+        be written to the cache directory.
+
     IncompatibleRasterError
         This function validates input-raster attributes before merging.
 
@@ -687,6 +691,10 @@ def merge_rasters(
         If reading an input raster fails, or if `pre_clip_bbox` cannot be applied
         to it.
 
+    OSError
+        With `chunks`, if the VRT file of a lazy merge of several rasters cannot
+        be written to the cache directory.
+
     IncompatibleRasterError
         This function validates input-raster attributes before merging.
 
@@ -715,6 +723,11 @@ def merge_rasters(
     memory; e.g., `GDAL_CACHEMAX=64` limits it to 64 MB), and the chunk size
     (larger chunks need more memory per Dask thread; before a `coarsen`,
     chunk sizes that are a multiple of its window avoid re-chunking).
+
+    Because of the VRT file, lazy merges of several rasters need a writable
+    cache directory. A lazy result reads the VRT file and the input rasters
+    only when it is computed: after `purge_cache`, or after an input raster
+    was replaced, create the result anew.
     """
 
     masked, mask_and_scale = _resolve_read_settings(masked, mask_and_scale, chunks, other_read_kwargs)
@@ -1637,15 +1650,23 @@ def _open_lazy_mosaic(raster_fpaths, read_options, masked, mask_and_scale, clip_
     the first raster wins, as in eager merges with `rioxarray.merge.merge_arrays`.
 
     The VRT file is kept in the cache directory (see `_mosaic_vrt_path`), since
-    a lazy result reads it only when computed. `clip_box` (the pre-clip box, or
-    None) is applied to the mosaic.
+    a lazy result reads it only when computed. Writing it needs a writable cache
+    directory; a VRT file that already exists is reused without writing.
+    `clip_box` (the pre-clip box, or None) is applied to the mosaic.
     """
     vrt_fpath = _mosaic_vrt_path(raster_fpaths)
     if not vrt_fpath.is_file():
-        vrt_fpath.parent.mkdir(parents=True, exist_ok=True)
         # Written under a unique temporary name first, so that parallel runs
         # never read a half-written file (`replace` is atomic)
-        tmp_fpath = _create_unique_temp_file(vrt_fpath)
+        try:
+            vrt_fpath.parent.mkdir(parents=True, exist_ok=True)
+            tmp_fpath = _create_unique_temp_file(vrt_fpath)
+        except OSError as e:
+            raise OSError(
+                f"Lazy merges write a small VRT file to the cache directory, but "
+                f"{vrt_fpath.parent} is not writable ({e}). Set WORLDPOPPY_CACHE_DIR to "
+                f"a writable directory, or read eagerly (chunks=None)."
+            ) from e
         try:
             write_vrt(raster_fpaths, tmp_fpath)
             tmp_fpath.replace(vrt_fpath)
