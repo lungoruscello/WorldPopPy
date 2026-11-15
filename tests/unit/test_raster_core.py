@@ -711,6 +711,35 @@ def test_read_settings_in_other_read_kwargs_are_rejected(mock_downloader, func, 
     mock_downloader.download.assert_not_called()
 
 
+@pytest.mark.parametrize("func", ["wp_raster", "merge_rasters"])
+def test_band_as_variable_is_rejected(mock_downloader, func):
+    """
+    `band_as_variable=True` in `other_read_kwargs` raises a clear `ValueError`
+    before anything is downloaded or read (bug 1.28: it was documented as an
+    example, but always failed with a misleading "Failed to read <file>").
+    """
+    import worldpoppy
+
+    kwargs = dict(other_read_kwargs={"band_as_variable": True})
+    with pytest.raises(ValueError, match=re.escape("`band_as_variable` is not supported")):
+        if func == "wp_raster":
+            worldpoppy.wp_raster("pop_g1", aoi=["MCK"], **kwargs)
+        else:
+            worldpoppy.merge_rasters(["does_not_exist.tif"], **kwargs)
+    mock_downloader.download.assert_not_called()
+
+
+def test_merge_rasters_rejects_an_empty_list_of_files():
+    """
+    `merge_rasters([])` raises a clear `ValueError` (bug 1.31: it raised an
+    `IndexError` deep inside the attribute validation).
+    """
+    from worldpoppy import merge_rasters
+
+    with pytest.raises(ValueError, match=re.escape("`raster_fpaths` is empty")):
+        merge_rasters([])
+
+
 def test_masked_false_alone_reads_raw_values(mock_raster_factory):
     """
     `mask_and_scale` follows `masked` unless given, so `masked=False` alone

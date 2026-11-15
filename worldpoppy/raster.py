@@ -242,10 +242,11 @@ def wp_raster(
     other_read_kwargs : dict, optional
         Dictionary with additional keyword arguments that are passed to
         `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
-        when reading input rasters (e.g., `lock` or `band_as_variable`).
+        when reading input rasters (e.g., `lock`).
         Note that `chunks` passed here will be ignored in favour of the
         explicit `chunks` argument. The read settings (`masked`,
-        `mask_and_scale`) cannot be passed here.
+        `mask_and_scale`) cannot be passed here, and `band_as_variable` is not
+        supported.
     suppress_pre_clip : bool, optional, default=False
         If True, no **automatic** or **manual** pre-clipping is ever applied when
         loading input rasters. Mutually exclusive with `pre_clip_bbox`.
@@ -283,7 +284,8 @@ def wp_raster(
     ValueError
         If `mask_and_scale` is given and differs from `masked`, if `chunks`
         is combined with `masked=False` or `cache_downloads=False`, or if
-        `other_read_kwargs` contains `masked` or `mask_and_scale`.
+        `other_read_kwargs` contains `masked`, `mask_and_scale` or
+        `band_as_variable=True`.
 
     BboxInvalidError
         If `pre_clip_bbox` (or a bounding-box AoI) is not a valid longitude/latitude
@@ -626,10 +628,10 @@ def merge_rasters(
     other_read_kwargs : dict, optional
         Dictionary with additional keyword arguments that are passed to
         `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
-        when reading input rasters (e.g., `lock`
-        or `band_as_variable`). Note that `chunks` passed here will be ignored
-        in favour of the explicit `chunks` argument. The read settings
-        (`masked`, `mask_and_scale`) cannot be passed here.
+        when reading input rasters (e.g., `lock`). Note that `chunks` passed
+        here will be ignored in favour of the explicit `chunks` argument. The
+        read settings (`masked`, `mask_and_scale`) cannot be passed here, and
+        `band_as_variable` is not supported.
     pre_clip_bbox : Tuple[float, float, float, float], optional
         An explicit bounding box to use for pre-clipping the input rasters.
         If provided, this overrides the default buffered pre-clipping.
@@ -651,9 +653,10 @@ def merge_rasters(
     Raises
     ------
     ValueError
-        If `mask_and_scale` is given and differs from `masked`, if `chunks`
-        is combined with `masked=False`, or if `other_read_kwargs` contains
-        `masked` or `mask_and_scale`.
+        If `raster_fpaths` is empty, if `mask_and_scale` is given and differs
+        from `masked`, if `chunks` is combined with `masked=False`, or if
+        `other_read_kwargs` contains `masked`, `mask_and_scale` or
+        `band_as_variable=True`.
 
     BboxInvalidError
         If `pre_clip_bbox` is not four finite numbers with each minimum not
@@ -688,6 +691,8 @@ def merge_rasters(
     """
 
     masked, mask_and_scale = _resolve_read_settings(masked, mask_and_scale, chunks, other_read_kwargs)
+    if not raster_fpaths:
+        raise ValueError("`raster_fpaths` is empty: pass at least one raster file.")
     if pre_clip_bbox is not None:
         validate_bbox(pre_clip_bbox)  # in the CRS of the rasters (any CRS)
 
@@ -988,13 +993,19 @@ def _resolve_read_settings(masked, mask_and_scale, chunks, other_read_kwargs):
         If `mask_and_scale` is given and differs from `masked` (masked but
         unscaled reads are not supported), if lazy reading (`chunks`) is
         requested for raw data (the lazy merge marks missing data with NaN),
-        or if `other_read_kwargs` contains a read setting (which would bypass
-        these checks).
+        if `other_read_kwargs` contains a read setting (which would bypass
+        these checks), or if it asks for `band_as_variable` (which returns a
+        Dataset instead of a DataArray).
     """
     if other_read_kwargs and {'masked', 'mask_and_scale'} & set(other_read_kwargs):
         raise ValueError(
             "`other_read_kwargs` must not contain `masked` or `mask_and_scale`. "
             "Use the `masked` argument instead."
+        )
+    if other_read_kwargs and other_read_kwargs.get('band_as_variable'):
+        raise ValueError(
+            "`band_as_variable` is not supported: worldpoppy works with single-band "
+            "rasters as DataArrays."
         )
 
     masked = bool(masked)
