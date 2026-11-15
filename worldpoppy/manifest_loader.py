@@ -150,6 +150,7 @@ from functools import lru_cache
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+from pandas.api.extensions import take
 
 from worldpoppy.config import (
     PRODUCT_BASE_NAME_MAP,
@@ -660,9 +661,11 @@ def _get_cleaned_manifest():
 
     # --- Infer data series and apparent raster resolution ---
     mdf["data_series"] = mdf.remote_path.apply(infer_data_series)
-    # The resolution is parsed once per description (a few dozen), not per row
-    descs = mdf.api_series_desc
-    mdf['arcsecs'] = descs.map({d: infer_resolution_from_description(d) for d in descs.unique()})
+    # The resolution is parsed once per distinct description (a few dozen), not
+    # per row; factorising avoids converting every description to a Python string
+    desc_codes, unique_descs = pd.factorize(mdf.api_series_desc)
+    res_by_desc = np.array([infer_resolution_from_description(d) for d in unique_descs])
+    mdf['arcsecs'] = take(res_by_desc, desc_codes, allow_fill=True)
 
     # --- Validate & clean-up ---
     # Check remaining manifest data
