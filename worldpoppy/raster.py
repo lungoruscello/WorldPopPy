@@ -489,14 +489,20 @@ def wp_warp(
     -------
     xarray.DataArray
         The warped raster.
+
+    Raises
+    ------
+    ValueError
+        If neither `to_crs` nor `res` is given (nothing to do), if `resampling`
+        is an unknown name, or if the input has no CRS and `to_crs` is not given.
     """
 
-    # --- No-op Check ---
+    # --- Check that there is something to do ---
     if to_crs is None and res is None:
-        logger.debug(
-            "wp_warp: No CRS or Resolution change requested. Returning original array."
+        raise ValueError(
+            "`wp_warp` has nothing to do: pass `to_crs` (to reproject) and/or `res` "
+            "(to resample)."
         )
-        return da
 
     # --- Resolve Resampling ---
     if resampling is None:

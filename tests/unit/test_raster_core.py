@@ -117,6 +117,21 @@ def test_warp_preserves_count(mock_raster_factory):
     assert discrepancy_ratio < 0.005
 
 
+@pytest.mark.parametrize("kwargs", [{}, {"resampling": "sum"}], ids=["no-arguments", "resampling-only"])
+def test_wp_warp_without_crs_or_resolution_raises(mock_raster_factory, kwargs):
+    """
+    `wp_warp` without `to_crs` and `res` has nothing to do and raises a
+    `ValueError` (bug 1.32: it returned its input object, without a history
+    line, and silently ignored `resampling`).
+    """
+    from worldpoppy import merge_rasters, wp_warp
+
+    da = merge_rasters([mock_raster_factory("A.tif", np.ones((5, 5)))])
+
+    with pytest.raises(ValueError, match=re.escape("`wp_warp` has nothing to do")):
+        wp_warp(da, **kwargs)
+
+
 def test_pre_clipping_optimisation(mock_raster_factory, mock_downloader):
     """
     Verify that providing `pre_clip_bbox` restricts the resulting array shape
