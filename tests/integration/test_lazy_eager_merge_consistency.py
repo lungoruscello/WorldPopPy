@@ -19,10 +19,12 @@ import pytest
 
 from tests.helpers import needs_internet_or_cache
 
-# Largest coordinate difference allowed between the eager and the lazy grid, as
-# a fraction of a pixel. Both grids are computed from the same source files, but
-# in different ways, so they differ by floating-point drift (observed on
-# 2026-11-15: at most 0.05 pixels, i.e. about 4 m for 3-arcsecond data).
+# Largest coordinate difference allowed between the eager and the lazy grid, in
+# pixels. The two grids are computed in different ways from the same files and
+# differ by floating-point drift. WorldPop rasters use 3 or 30 arcseconds (about
+# 90 m or 900 m at the equator), so 0.1 pixels is about 9 m or 90 m. In the
+# 3-arcsecond data used here (`pop_g1`), the largest actual difference was
+# 0.05 pixels (about 4 m; measured on 2026-11-15).
 MAX_COORD_DIFF_PIXELS = 0.1
 
 

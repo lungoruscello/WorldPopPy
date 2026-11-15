@@ -55,6 +55,10 @@ AEQA_CAUC = CRS(
     "+datum=WGS84 +units=m +no_defs"
 )
 
+# Largest relative change in the total population allowed after merging and
+# warping. This is a relaxed limit, since the test cases are hard ones.
+MAX_DISCREPANCY = 0.02
+
 
 @pytest.mark.integration
 @needs_internet_or_cache
@@ -129,9 +133,7 @@ def test_mass_conservation_eager(case_name, iso_codes, target_crs):
     print(f"Processed: {processed_total:,.0f}")
     print(f"Discrepancy: {discrepancy_ratio:.4%}")
 
-    # Assert that the error is less than 2%
-    # This is a relaxed tolerance, but we are testing hard cases.
-    assert discrepancy_ratio < 0.02, (
+    assert discrepancy_ratio < MAX_DISCREPANCY, (
         f"Significant mass loss detected for {case_name}! "
-        f"Discrepancy: {discrepancy_ratio:.2%} (Limit: 1.5%)"
+        f"Discrepancy: {discrepancy_ratio:.2%} (Limit: {MAX_DISCREPANCY:.1%})"
     )
