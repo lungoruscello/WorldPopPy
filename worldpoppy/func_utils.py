@@ -5,6 +5,7 @@ Note: Plotting utilities are located in a separate module.
 """
 import io
 import logging
+import math
 import threading
 import time
 from contextlib import contextmanager, redirect_stdout
@@ -32,6 +33,7 @@ __all__ = [
     "standardise_iso3_codes",
     "module_available",
     "log_info_context",
+    "validate_bbox",
     "validate_bbox_wgs84",
     "get_buffered_bounds"
 ]
@@ -313,6 +315,28 @@ def log_info_context(logger):
             pass  # nothing to clean up
 
 
+def validate_bbox(bounds):
+    """
+    Validate a bounding box in the format (min_x, min_y, max_x, max_y), in
+    any CRS: four finite numbers, with each minimum not above its maximum.
+    For longitude/latitude boxes, use `validate_bbox_wgs84`, which also
+    checks the coordinate ranges.
+
+    Raises
+    ------
+    BboxInvalidError
+        If the bounding box is invalid.
+    """
+    _check_bbox_numbers(bounds)
+
+    min_x, min_y, max_x, max_y = bounds
+    if min_x > max_x or min_y > max_y:
+        raise BboxInvalidError(
+            f"Invalid bounding box {tuple(bounds)}: each minimum must not exceed its "
+            "maximum (min_x, min_y, max_x, max_y)."
+        )
+
+
 def validate_bbox_wgs84(bounds):
     """
     Validate a bounding box in the format (min_lon, min_lat, max_lon, max_lat).
@@ -323,18 +347,7 @@ def validate_bbox_wgs84(bounds):
         If the bounding box is invalid.
     """
     # --- Input Type & Format Checks ---
-    if not isinstance(bounds, (list, tuple)):
-        raise BboxInvalidError(
-            f"Bounding box must be a list or tuple, got {type(bounds)}."
-        )
-
-    if len(bounds) != 4:
-        raise BboxInvalidError(
-            f"Bounding box must contain exactly four values, got {len(bounds)}."
-        )
-
-    if not all(isinstance(x, (int, float)) for x in bounds):
-        raise BboxInvalidError("Bounding box values must be numeric.")
+    _check_bbox_numbers(bounds)
 
     min_lon, min_lat, max_lon, max_lat = bounds
 
@@ -369,6 +382,33 @@ def validate_bbox_wgs84(bounds):
             f"max_lon ({max_lon}). This could indicate a crossing of the "
             f"Anti-Meridian (Date Line)."
         )
+
+
+def _check_bbox_numbers(bounds):
+    """
+    Check that a bounding box is a list or tuple of four finite numbers.
+
+    Raises
+    ------
+    BboxInvalidError
+        If it is not.
+    """
+    if not isinstance(bounds, (list, tuple)):
+        raise BboxInvalidError(
+            f"Bounding box must be a list or tuple, got {type(bounds)}."
+        )
+
+    if len(bounds) != 4:
+        raise BboxInvalidError(
+            f"Bounding box must contain exactly four values, got {len(bounds)}."
+        )
+
+    if not all(isinstance(x, (int, float)) for x in bounds):
+        raise BboxInvalidError("Bounding box values must be numeric.")
+
+    # Comparisons with NaN are always false, so NaN would pass all later checks
+    if not all(math.isfinite(x) for x in bounds):
+        raise BboxInvalidError(f"Bounding box values must be finite, got {tuple(bounds)}.")
 
 
 def get_buffered_bounds(clipping_gdf, raster_crs, buffer_deg):

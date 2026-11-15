@@ -232,6 +232,79 @@ def test_pre_clip_keeps_a_narrow_overlap(mock_raster_factory, chunks):
     np.testing.assert_array_equal(result.x.values, [9.5, 10.5, 11.5])
 
 
+@pytest.mark.parametrize(
+    "bad_box", [(12, 2, 9, 8), (9, 2, float("nan"), 8)], ids=["inverted", "nan"]
+)
+@pytest.mark.parametrize("func", ["wp_raster", "merge_rasters"])
+def test_invalid_pre_clip_boxes_are_rejected(mock_downloader, func, bad_box):
+    """
+    An invalid `pre_clip_bbox` is rejected before anything is downloaded or
+    read (bug 1.25: such boxes made the pre-clip fail, so the full rasters
+    were used while the history claimed a pre-clip).
+    """
+    import worldpoppy
+    from worldpoppy.func_utils import BboxInvalidError
+
+    with pytest.raises(BboxInvalidError):
+        if func == "wp_raster":
+            worldpoppy.wp_raster("pop_g1", aoi=["MCK"], pre_clip_bbox=bad_box)
+        else:
+            worldpoppy.merge_rasters(["does_not_exist.tif"], pre_clip_bbox=bad_box)
+    mock_downloader.download.assert_not_called()
+
+
+def test_failing_pre_clip_box_raises_instead_of_loading_everything(mock_raster_factory, monkeypatch):
+    """
+    If a user-provided `pre_clip_bbox` cannot be applied to a raster, the call
+    fails, instead of silently using the full raster while the history claims
+    a pre-clip (bug 1.25).
+    """
+    from rioxarray.raster_array import RasterArray
+    from worldpoppy import merge_rasters
+    from worldpoppy.raster import RasterReadError
+
+    def failing_clip_box(self, *args, **kwargs):
+        raise RuntimeError("simulated failure")
+
+    monkeypatch.setattr(RasterArray, "clip_box", failing_clip_box)
+    path = mock_raster_factory("A.tif", np.ones((10, 10)), origin=(0, 10))
+
+    with pytest.raises(RasterReadError, match=r"^Failed to apply `pre_clip_bbox`.*A\.tif.*simulated failure"):
+        merge_rasters([path], pre_clip_bbox=(2, 2, 8, 8))
+
+
+def test_failing_automatic_pre_clip_falls_back_to_the_full_raster(
+    mock_raster_factory, mock_downloader, monkeypatch, caplog
+):
+    """
+    The automatic pre-clip (bbox and geometry AoIs) only saves memory: if it
+    fails, the full raster is used with a warning, and the final clip to the
+    AoI still gives the correct result.
+    """
+    import geopandas as gpd
+    import worldpoppy.raster
+    from rioxarray.raster_array import RasterArray
+    from shapely.geometry import box
+    from worldpoppy import wp_raster
+
+    world = gpd.GeoDataFrame({"iso3": ["MCK"]}, geometry=[box(0, 0, 10, 10)], crs="EPSG:4326")
+    monkeypatch.setattr(worldpoppy.raster, "load_country_borders", lambda: world)
+    data = np.arange(100, dtype="float32").reshape(10, 10)
+    path = mock_raster_factory("A.tif", data, origin=(0, 10))
+    mock_downloader.download.return_value = ([path], fake_manifest_rows([("MCK", None)]))
+
+    expected = wp_raster(product_name="pop_g1", aoi=(2.5, 2.5, 6.5, 6.5))
+
+    def failing_clip_box(self, *args, **kwargs):
+        raise RuntimeError("simulated failure")
+
+    monkeypatch.setattr(RasterArray, "clip_box", failing_clip_box)
+    result = wp_raster(product_name="pop_g1", aoi=(2.5, 2.5, 6.5, 6.5))
+
+    xr.testing.assert_equal(result, expected)
+    assert "Proceeding with full raster load" in caplog.text
+
+
 def test_wp_raster_clips_to_shapely_aoi(mock_raster_factory, mock_downloader, monkeypatch):
     """
     A shapely geometry AoI clips the merged raster exactly like the

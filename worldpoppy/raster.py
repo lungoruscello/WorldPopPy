@@ -49,6 +49,7 @@ from worldpoppy.func_utils import (
     module_available,
     geolocate_name,
     standardise_iso3_codes,
+    validate_bbox,
     validate_bbox_wgs84,
     get_buffered_bounds,
 )
@@ -282,8 +283,13 @@ def wp_raster(
         is combined with `masked=False`, or if `other_read_kwargs` contains
         `masked` or `mask_and_scale`.
 
+    BboxInvalidError
+        If `pre_clip_bbox` (or a bounding-box AoI) is not a valid longitude/latitude
+        box, e.g. because a value is not finite or a minimum exceeds its maximum.
+
     RasterReadError
-        If reading an input raster fails.
+        If reading an input raster fails, or if `pre_clip_bbox` cannot be applied
+        to it.
 
     IncompatibleRasterError
         This function validates input-raster attributes before merging.
@@ -635,8 +641,13 @@ def merge_rasters(
         is combined with `masked=False`, or if `other_read_kwargs` contains
         `masked` or `mask_and_scale`.
 
+    BboxInvalidError
+        If `pre_clip_bbox` is not four finite numbers with each minimum not
+        above its maximum.
+
     RasterReadError
-        If reading an input raster fails.
+        If reading an input raster fails, or if `pre_clip_bbox` cannot be applied
+        to it.
 
     IncompatibleRasterError
         This function validates input-raster attributes before merging.
@@ -663,6 +674,8 @@ def merge_rasters(
     """
 
     masked, mask_and_scale = _resolve_read_settings(masked, mask_and_scale, chunks, other_read_kwargs)
+    if pre_clip_bbox is not None:
+        validate_bbox(pre_clip_bbox)  # in the CRS of the rasters (any CRS)
 
     da, used_paths, safe_attrs = _merge_rasters(
         raster_fpaths,
@@ -801,6 +814,14 @@ def _merge_rasters(
                     # nothing (rather than the full raster being used)
                     da = None
                 except Exception as e:
+                    if pre_clip_bbox is not None:
+                        # A user-provided box is applied or the call fails, so
+                        # that the result agrees with its history
+                        raise RasterReadError(
+                            f"Failed to apply `pre_clip_bbox` {tuple(pre_clip_bbox)} to "
+                            f"{Path(path).name}: {e}"
+                        ) from e
+                    # The automatic pre-clip only saves memory: fall back
                     logger.warning(
                         f"Pre-clipping optimization failed for {Path(path).name}. "
                         f"Proceeding with full raster load. Reason: {e}"
@@ -821,6 +842,8 @@ def _merge_rasters(
             rasters_to_merge.append(da)
             used_paths.append(path)
 
+        except RasterReadError:
+            raise
         except Exception as e:
             raise RasterReadError(f"Failed to read {path}: {e}")
 

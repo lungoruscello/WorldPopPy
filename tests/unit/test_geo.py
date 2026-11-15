@@ -114,6 +114,35 @@ def test_bbox_pole_crash_latitude():
             bbox_from_location((lon, 89.0), width_degrees=4.0)
 
 
+@pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), -float("inf")])
+@pytest.mark.parametrize("position", range(4))
+@pytest.mark.parametrize("validator", ["validate_bbox", "validate_bbox_wgs84"])
+def test_bbox_validation_rejects_non_finite_values(validator, position, bad_value):
+    """
+    Bounding boxes with NaN or infinite values are rejected (bug 1.25: NaN
+    passed `validate_bbox_wgs84`, since every comparison with NaN is false).
+    """
+    import worldpoppy.func_utils
+
+    bounds = [1.0, 2.0, 3.0, 4.0]
+    bounds[position] = bad_value
+    with pytest.raises(BboxInvalidError, match="finite"):
+        getattr(worldpoppy.func_utils, validator)(tuple(bounds))
+
+
+def test_bbox_validation_in_any_crs():
+    """
+    `validate_bbox` accepts boxes in any CRS (e.g., metres), but rejects
+    boxes whose minimum exceeds the maximum on either axis.
+    """
+    from worldpoppy.func_utils import validate_bbox
+
+    validate_bbox((500_000, 5_500_000, 600_000, 5_600_000))
+    for inverted in [(3.0, 2.0, 1.0, 4.0), (1.0, 4.0, 3.0, 2.0)]:
+        with pytest.raises(BboxInvalidError, match="minimum"):
+            validate_bbox(inverted)
+
+
 def test_aoi_at_sea_raises_clear_error(synthetic_borders):
     """
     An AoI that intersects no country raises a clear ValueError, rather than
