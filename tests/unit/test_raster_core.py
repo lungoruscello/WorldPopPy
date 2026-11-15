@@ -43,6 +43,40 @@ def test_merge_preserves_count(mock_raster_factory):
     assert np.isclose(total_mass, 300.0)
 
 
+@pytest.mark.filterwarnings("ignore:Merging multiple country rasters lazily")
+@pytest.mark.parametrize("res", [1.0, 1 / 1200], ids=["1-degree", "3-arcsecond"])
+@pytest.mark.parametrize("chunks", [None, "auto"], ids=["eager", "lazy"])
+def test_merge_places_every_cell_exactly(mock_raster_factory, chunks, res):
+    """
+    Merging puts every source cell at its own location, with NaN where no
+    raster has data: the merged array equals one assembled by hand, cell by
+    cell, and its coordinates are the expected pixel centres. At WorldPop's
+    resolution of 3 arcseconds, coordinates may differ by at most 1e-5
+    degrees (about 1 m), well below a pixel (about 90 m).
+    """
+    from worldpoppy import merge_rasters
+
+    # In pixels: A covers x 0-4, y 0-3; B covers x 4-8, y -1-2 (one row lower),
+    # both offset from lon 40, lat 41. Every cell holds a distinct value, so
+    # that any misplacement shows.
+    data_a = np.arange(1, 13, dtype="float32").reshape(3, 4)
+    data_b = np.arange(101, 113, dtype="float32").reshape(3, 4)
+    path_a = mock_raster_factory("A.tif", data_a, origin=(40, 41 + 3 * res), res=res)
+    path_b = mock_raster_factory("B.tif", data_b, origin=(40 + 4 * res, 41 + 2 * res), res=res)
+
+    expected = np.full((4, 8), np.nan, dtype="float32")
+    expected[0:3, 0:4] = data_a
+    expected[1:4, 4:8] = data_b
+
+    merged = merge_rasters([path_a, path_b], chunks=chunks).squeeze("band").compute()
+
+    np.testing.assert_array_equal(merged.values, expected)
+    np.testing.assert_allclose(merged.x.values, 40 + (np.arange(8) + 0.5) * res, rtol=0, atol=1e-5)
+    np.testing.assert_allclose(
+        merged.y.values, 41 + np.array([2.5, 1.5, 0.5, -0.5]) * res, rtol=0, atol=1e-5
+    )
+
+
 def test_warp_preserves_count(mock_raster_factory):
     """
     Verify that reprojecting (warping) a raster using 'sum' resampling
@@ -133,6 +167,46 @@ def test_pre_clipping_optimisation(mock_raster_factory, mock_downloader):
     assert w_full == 100
 
 
+@pytest.mark.parametrize("aoi_kind", ["bbox", "geometry"])
+def test_automatic_pre_clipping_does_not_change_results(
+    mock_raster_factory, mock_downloader, monkeypatch, aoi_kind
+):
+    """
+    The automatic pre-clipping for bbox and geometry AoIs only saves memory:
+    results are identical to those without any pre-clipping. (The AoI spans
+    two rasters and does not align with their grid; as for real data, the
+    pixels are much smaller than the pre-clip buffer of 0.1 degrees.)
+    """
+    import geopandas as gpd
+    import worldpoppy.raster
+    from shapely.geometry import Polygon, box
+    from worldpoppy import wp_raster
+
+    world = gpd.GeoDataFrame({"iso3": ["MCK"]}, geometry=[box(0, 0, 4, 2)], crs="EPSG:4326")
+    monkeypatch.setattr(worldpoppy.raster, "load_country_borders", lambda: world)
+
+    # Two adjacent rasters (x 0-2 and x 2-4, y 0-2) with 0.01-degree pixels
+    data = np.arange(200 * 200, dtype="float32").reshape(200, 200)
+    path_a = mock_raster_factory("A.tif", data, origin=(0, 2), res=0.01)
+    path_b = mock_raster_factory("B.tif", data + 1e5, origin=(2, 2), res=0.01)
+    mock_downloader.download.return_value = (
+        [path_a, path_b], fake_manifest_rows([("MCK", None), ("MCK", None)])
+    )
+
+    aoi = {
+        "bbox": (1.234, 0.567, 2.891, 1.789),
+        "geometry": Polygon([(1.234, 0.567), (2.891, 0.712), (2.013, 1.789)]),
+    }[aoi_kind]
+
+    pre_clipped = wp_raster(product_name="pop_g1", aoi=aoi)
+    not_pre_clipped = wp_raster(product_name="pop_g1", aoi=aoi, suppress_pre_clip=True)
+
+    # Identical values; coordinates equal up to floating-point rounding
+    np.testing.assert_array_equal(pre_clipped.values, not_pre_clipped.values)
+    for dim in ["x", "y"]:
+        np.testing.assert_allclose(pre_clipped[dim], not_pre_clipped[dim], rtol=0, atol=1e-9)
+
+
 def test_wp_raster_clips_to_shapely_aoi(mock_raster_factory, mock_downloader, monkeypatch):
     """
     A shapely geometry AoI clips the merged raster exactly like the
@@ -159,6 +233,59 @@ def test_wp_raster_clips_to_shapely_aoi(mock_raster_factory, mock_downloader, mo
     xr.testing.assert_equal(from_shapely, from_gdf)
     assert max(from_gdf.shape) < 100  # clipped to the triangle's bounding box ...
     assert from_gdf.isnull().any()  # ... and masked outside the triangle
+
+
+@pytest.mark.parametrize("suppress_pre_clip", [False, True], ids=["pre-clipped", "not-pre-clipped"])
+def test_clip_keeps_exactly_the_cells_the_aoi_touches(
+    mock_raster_factory, mock_downloader, monkeypatch, suppress_pre_clip
+):
+    """
+    Clipping to a geometry AoI keeps exactly the cells that the AoI touches
+    (`all_touched=True`), with their source values, sets all other cells to
+    NaN, and crops the result to the rows and columns with kept cells. The
+    expected cells are computed independently with shapely. (Without the
+    automatic pre-clip, the final clip alone must produce this extent.)
+    """
+    import geopandas as gpd
+    import worldpoppy.raster
+    from shapely.geometry import Polygon, box
+    from worldpoppy import wp_raster
+
+    world = gpd.GeoDataFrame({"iso3": ["MCK"]}, geometry=[box(0, 0, 10, 10)], crs="EPSG:4326")
+    monkeypatch.setattr(worldpoppy.raster, "load_country_borders", lambda: world)
+
+    # 10 x 10 cells of 1 degree (x 0-10, y 0-10); the value encodes the cell:
+    # row * 10 + column (row 0 at the top)
+    data = np.arange(100, dtype="float32").reshape(10, 10)
+    path = mock_raster_factory("mock.tif", data, origin=(0, 10))
+    mock_downloader.download.return_value = ([path], fake_manifest_rows([("MCK", None)]))
+
+    # Corners off the cell edges, and no edge passes within 0.02 degrees of a
+    # cell corner, so that no cell is a borderline case
+    triangle = Polygon([(1.3, 1.6), (8.7, 2.45), (4.2, 8.8)])
+    expected = {
+        (row, col)
+        for row in range(10) for col in range(10)
+        if triangle.intersection(box(col, 9 - row, col + 1, 10 - row)).area > 0
+    }
+
+    result = wp_raster(product_name="pop_g1", aoi=triangle, suppress_pre_clip=suppress_pre_clip)
+
+    rows = (10 - result.y.values - 0.5).round().astype(int)
+    cols = (result.x.values - 0.5).round().astype(int)
+    kept = {
+        (rows[i], cols[j])
+        for i, j in zip(*np.where(np.isfinite(result.values)))
+    }
+    assert kept == expected
+    for i, j in zip(*np.where(np.isfinite(result.values))):
+        assert result.values[i, j] == rows[i] * 10 + cols[j], f"wrong value in cell {(rows[i], cols[j])}"
+
+    # The result is cropped to exactly the rows and columns with kept cells
+    expected_rows = [row for row, _ in expected]
+    expected_cols = [col for _, col in expected]
+    assert list(rows) == list(range(min(expected_rows), max(expected_rows) + 1))
+    assert list(cols) == list(range(min(expected_cols), max(expected_cols) + 1))
 
 
 @pytest.mark.parametrize(
@@ -241,6 +368,33 @@ def test_lazy_and_eager_merges_agree_where_rasters_overlap(mock_raster_factory):
 
     xr.testing.assert_equal(lazy, eager)
     assert float(eager.sel(x=7.5, y=5.5).squeeze()) == 1.0
+
+
+def test_multi_year_bands_hold_their_own_years_values(mock_raster_factory, mock_downloader):
+    """
+    Each band of a multi-year result holds the data of its own year, also if
+    the manifest lists the years in descending order.
+    """
+    from worldpoppy import wp_raster
+
+    # Every file holds its year as value; manifest rows (and paths) in
+    # descending year order
+    years = [2020, 2015]
+    paths = [
+        mock_raster_factory(f"MCK_{year}.tif", np.full((5, 5), float(year)), origin=(0, 5))
+        for year in years
+    ]
+    mdf = fake_manifest_rows([("MCK", year) for year in years], multi_year=True)
+    mock_downloader.download.return_value = (paths, mdf)
+
+    result = wp_raster(product_name="pop_test", aoi=["MCK"], years=[2015, 2020])
+
+    assert sorted(result.year.values.tolist()) == [2015, 2020]
+    for year in [2015, 2020]:
+        np.testing.assert_array_equal(result.sel(year=year).values, float(year))
+
+    # The band descriptions (written to GeoTIFFs) name the year of each band
+    assert result.attrs["long_name"] == tuple(str(year) for year in result.year.values)
 
 
 @pytest.mark.parametrize(

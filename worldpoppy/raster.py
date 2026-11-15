@@ -174,7 +174,9 @@ def wp_raster(
         Country codes and names are used as they are. For all other AoI types, WorldPop data
         is first downloaded and merged for all countries that intersect the area of
         interest, regardless of how large this intersection is. Subsequently, the
-        merged raster is then clipped using the AoI.
+        merged raster is then clipped using the AoI. Every cell that the AoI touches
+        is kept in full (`all_touched=True` in `rioxarray.clip`), including cells on
+        its boundary.
 
         The AoI's CRS does not affect the CRS of the result (see Returns).
     name : str, optional
@@ -610,7 +612,8 @@ def merge_rasters(
         If provided, this overrides the default buffered pre-clipping.
     clipping_gdf : geopandas.GeoDataFrame, optional
         GeoDataFrame with geometries used to clip the merged raster. This is
-        used for the **final precise clip**.
+        used for the **final precise clip**, which keeps every cell that the
+        geometries touch (`all_touched=True` in `rioxarray.clip`).
     suppress_pre_clip : bool, optional, default=False
         If True, disables all pre-clipping optimisations.
 
