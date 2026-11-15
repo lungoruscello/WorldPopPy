@@ -21,4 +21,4 @@ likewise licenced under the Creative Commons Attribution 4.0 International Licen
 
 This file contains a GeoDataFrame with a *highly* simplified polygon for Southern Kamchatka. The polygon was 
 drawn by hand using QGIS 3.22. It is provided solely for illustrative purposes in one of the worked examples
-in this repository (`./examples/large_rasters/01_kamchatka_topo_eager.py`)
+in this repository (`./examples/large_rasters/04_kamchatka_topo_eager.py`)

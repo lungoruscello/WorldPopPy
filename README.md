@@ -206,16 +206,16 @@ it used. Ambiguous names such as "Congo" raise an error that lists the candidate
     <td width="50%" valign="top">
       <h3 align="center">3. Automatic Memory Optimisation</h3>
       <div align="center">
-        <a href="./examples/large_rasters/01_kamchatka_topo_eager.py">
-          <img src="./worldpoppy/assets/gallery/large01_kamchatka.png" alt="Kamchatka Topo" width="95%"/>
+        <a href="./examples/large_rasters/01_moscow_built_volume.py">
+          <img src="./worldpoppy/assets/gallery/large01_moscow.png" alt="Moscow Built-up Volume" width="95%"/>
         </a>
       </div>
       <br>
       <div align="center">
-        <b><a href="./examples/large_rasters/01_kamchatka_topo_eager.py">Southern Kamchatka</a></b>
+        <b><a href="./examples/large_rasters/01_moscow_built_volume.py">Greater Moscow</a></b>
       </div>
       <div align="left">
-        Handle large source rasters (2GB+) efficiently via automatic spatial subsetting.
+        Use any shapely geometry as the AoI. Only the cells near it are read, reducing memory consumption for large country rasters (here: about 1 GB instead of 84 GB).
       </div>
     </td>
     <td width="50%" valign="top">
