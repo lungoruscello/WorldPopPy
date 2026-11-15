@@ -267,19 +267,26 @@ def test_single_year_of_multi_year_product(fake_wp):
     assert "long_name" not in da.attrs
 
 
-@pytest.mark.parametrize("masked, mask_and_scale", [(True, True), (False, True), (True, False), (False, False)])
-def test_read_settings_are_recorded(fake_wp, masked, mask_and_scale):
+@pytest.mark.parametrize(
+    "read_kwargs, expected",
+    [
+        ({}, "true"),
+        ({"masked": True, "mask_and_scale": True}, "true"),
+        ({"masked": False}, "false"),  # `mask_and_scale` follows `masked`
+        ({"masked": False, "mask_and_scale": False}, "false"),
+    ],
+)
+def test_read_settings_are_recorded(fake_wp, read_kwargs, expected):
     """
-    Both read settings are always recorded, as 'true' or 'false', also when
-    `mask_and_scale` masks the data although `masked` is False (bug 1.17).
+    Both effective read settings are always recorded, as 'true' or 'false'
+    (bug 1.17), including the value `mask_and_scale` takes from `masked`.
     """
     from worldpoppy import wp_raster
 
     fake_wp()
-    da = wp_raster(PRODUCT, aoi=AOIS["countries"], masked=masked, mask_and_scale=mask_and_scale)
+    da = wp_raster(PRODUCT, aoi=AOIS["countries"], **read_kwargs)
 
-    assert da.attrs["wpy_read_masked"] == str(masked).lower()
-    assert da.attrs["wpy_read_mask_and_scale"] == str(mask_and_scale).lower()
+    assert da.attrs["wpy_read_masked"] == da.attrs["wpy_read_mask_and_scale"] == expected
 
 
 # --- wp_raster: nodata and pre-clipping ---
@@ -302,19 +309,16 @@ def test_masked_results_have_nan_nodata(fake_wp, tmp_path, years, chunks):
 
 
 @pytest.mark.parametrize("years", [None, [2015, 2024]], ids=["static", "multi-year"])
-@pytest.mark.parametrize("chunks", [None, "auto"], ids=["eager", "lazy"])
-def test_unmasked_results_keep_the_source_nodata(fake_wp, tmp_path, years, chunks):
+def test_unmasked_results_keep_the_source_nodata(fake_wp, tmp_path, years):
     """
     Unmasked results keep the source files' nodata value (here -9999), also
     after saving to a GeoTIFF and reading it back; they never claim NaN.
+    (Unmasked reads are always eager: lazy reads require masked data.)
     """
     from worldpoppy import wp_raster
 
     fake_wp(years=years, multi_year=years is not None)
-    da = wp_raster(
-        PRODUCT, aoi=AOIS["countries"], years=years, chunks=chunks,
-        masked=False, mask_and_scale=False,
-    )
+    da = wp_raster(PRODUCT, aoi=AOIS["countries"], years=years, masked=False)
 
     assert da.rio.nodata == -9999
     da.rio.to_raster(tmp_path / "saved.tif")

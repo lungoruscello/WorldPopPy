@@ -125,7 +125,7 @@ def wp_raster(
     cache_downloads=True,
     skip_download_if_exists=None,
     masked=True,
-    mask_and_scale=True,
+    mask_and_scale=None,
     other_read_kwargs=None,
     suppress_pre_clip=False,
     download_chunk_size=1024*1024*4,
@@ -190,6 +190,7 @@ def wp_raster(
           Equivalent to passing {'x': K, 'y': K}.
         - If dict (e.g., {'x': 1024, 'y': 1024}), that specific chunking is used.
 
+        Lazy reading requires `masked=True`.
     years : int or List[Union[int, str]] or str or None, optional
         One or more years of interest or a keyword string.
         For static data products, this argument is usually None (default).
@@ -222,24 +223,24 @@ def wp_raster(
         Defaults to True if `cache_downloads` is True. Has no effect (and defaults to
         False) if `cache_downloads` is False, since no local cache is used then.
     masked: bool, optional, default=True
-        If True, read the mask of all input rasters and set masked
-        values to NaN. This argument is passed to
-        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
-        when reading input rasters.
-        Note: The default here is True, unlike in `rioxarray.open_rasterio`.
-    mask_and_scale: bool, default=True
-        Lazily scale (using the `scales` and `offsets` from rasterio) all
-        input rasters and mask them. If the _Unsigned attribute is present
-        treat integer arrays as unsigned. This argument is passed to
-        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
-        when reading input rasters.
-        Note: The default here is True, unlike in `rioxarray.open_rasterio`.
+        If True, set the nodata values of all input rasters to NaN and apply
+        their scale and offset, if any (`mask_and_scale=True` in
+        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__).
+        The result is then floating-point data. If False, read the raw values
+        in the source files' data type, with their nodata value. (WorldPop
+        rasters carry no scale or offset, so masking does not change any
+        valid value.)
+    mask_and_scale: bool, optional
+        Follows `masked` and only exists for compatibility. If given, it must
+        equal `masked`: reading masked but unscaled data is not supported (use
+        `rioxarray.open_rasterio` directly for this).
     other_read_kwargs : dict, optional
         Dictionary with additional keyword arguments that are passed to
         `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
         when reading input rasters (e.g., `lock` or `band_as_variable`).
         Note that `chunks` passed here will be ignored in favour of the
-        explicit `chunks` argument.
+        explicit `chunks` argument. The read settings (`masked`,
+        `mask_and_scale`) cannot be passed here.
     suppress_pre_clip : bool, optional, default=False
         If True, no **automatic** or **manual** pre-clipping is ever applied when
         loading input rasters. Mutually exclusive with `pre_clip_bbox`.
@@ -274,6 +275,11 @@ def wp_raster(
 
     Raises
     -------
+    ValueError
+        If `mask_and_scale` is given and differs from `masked`, if `chunks`
+        is combined with `masked=False`, or if `other_read_kwargs` contains
+        `masked` or `mask_and_scale`.
+
     RasterReadError
         If reading an input raster fails.
 
@@ -281,16 +287,16 @@ def wp_raster(
         This function validates input-raster attributes before merging.
 
         - `crs` is *always* validated.
-        - `_FillValue` is validated *only if* `masked=False` and
-          `mask_and_scale=False`.
-        - `scale_factor` and `add_offset` are validated *only if*
-          `mask_and_scale=False`.
+        - `_FillValue`, `scale_factor` and `add_offset` are validated *only*
+          for raw reads (`masked=False`).
 
         (This function thus trusts `rioxarray` to correctly normalise
-         input rasters whenever `mask_and_scale=True` is passed, even
-         if the underlying source files have different `_FillValue`,
-         `scale_factor` or `add_offset` attributes.)
+         masked input rasters, even if the underlying source files have
+         different `_FillValue`, `scale_factor` or `add_offset` attributes.)
     """
+
+    # --- Resolve read settings ---
+    masked, mask_and_scale = _resolve_read_settings(masked, mask_and_scale, chunks, other_read_kwargs)
 
     if skip_download_if_exists is None:
         skip_download_if_exists = cache_downloads
@@ -552,7 +558,7 @@ def merge_rasters(
     name=None,
     chunks=None,
     masked=True,
-    mask_and_scale=True,
+    mask_and_scale=None,
     other_read_kwargs=None,
     pre_clip_bbox=None,
     clipping_gdf=None,
@@ -572,34 +578,33 @@ def merge_rasters(
         List of paths to the input raster files that are to be merged.
     name : str, optional
         A custom name for the returned DataArray.
-    chunks : str, int, dict or None, optional, default='auto'
+    chunks : str, int, dict or None, optional, default=None
         If chunks is provided, the raster data is loaded into a *Dask* array
-        for better memory management.
+        for better memory management. Lazy reading requires `masked=True`.
 
-        * If 'auto' (default), Dask chooses the chunk size.
+        * If 'auto', Dask chooses the chunk size.
         * If int K, the data is loaded in chunks of size (K, K).
           Equivalent to passing {'x': K, 'y': K}.
         * If dict (e.g., {'x': 1024, 'y': 1024}), that specific chunking is used.
-        * If None, data loading with Dask is *disabled*.
+        * If None (default), data loading with Dask is *disabled*.
 
     masked: bool, optional, default=True
-        If True, read the mask of all input rasters and set masked
-        values to NaN. This argument is passed to
-        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
-        when reading input rasters.
-        Note: The default here is True, unlike in `rioxarray.open_rasterio`.
-    mask_and_scale: bool, default=True
-        Lazily scale (using the `scales` and `offsets` from rasterio) all
-        input rasters and mask them. If the _Unsigned attribute is present
-        treat integer arrays as unsigned. This argument is passed to
-        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
-        when reading input rasters.
-        Note: The default here is True, unlike in `rioxarray.open_rasterio`.
+        If True, set the nodata values of all input rasters to NaN and apply
+        their scale and offset, if any (`mask_and_scale=True` in
+        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__).
+        The result is then floating-point data. If False, read the raw values
+        in the source files' data type, with their nodata value.
+    mask_and_scale: bool, optional
+        Follows `masked` and only exists for compatibility. If given, it must
+        equal `masked`: reading masked but unscaled data is not supported (use
+        `rioxarray.open_rasterio` directly for this).
     other_read_kwargs : dict, optional
         Dictionary with additional keyword arguments that are passed to
         `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
         when reading input rasters (e.g., `lock`
-        or `band_as_variable`).
+        or `band_as_variable`). Note that `chunks` passed here will be ignored
+        in favour of the explicit `chunks` argument. The read settings
+        (`masked`, `mask_and_scale`) cannot be passed here.
     pre_clip_bbox : Tuple[float, float, float, float], optional
         An explicit bounding box to use for pre-clipping the input rasters.
         If provided, this overrides the default buffered pre-clipping.
@@ -619,21 +624,24 @@ def merge_rasters(
 
     Raises
     ------
+    ValueError
+        If `mask_and_scale` is given and differs from `masked`, if `chunks`
+        is combined with `masked=False`, or if `other_read_kwargs` contains
+        `masked` or `mask_and_scale`.
+
     RasterReadError
         If reading an input raster fails.
 
     IncompatibleRasterError
         This function validates input-raster attributes before merging.
+
         - `crs` is *always* validated.
-        - `_FillValue` is validated *only if* `masked=False` and
-          `mask_and_scale=False`.
-        - `scale_factor` and `add_offset` are validated *only if*
-          `mask_and_scale=False`.
+        - `_FillValue`, `scale_factor` and `add_offset` are validated *only*
+          for raw reads (`masked=False`).
 
         (This function thus trusts `rioxarray` to correctly normalise
-         input rasters whenever `mask_and_scale=True` is passed, even
-         if the underlying source files have different `_FillValue`,
-         `scale_factor` or `add_offset` attributes.)
+         masked input rasters, even if the underlying source files have
+         different `_FillValue`, `scale_factor` or `add_offset` attributes.)
 
     Notes
     -----
@@ -647,6 +655,8 @@ def merge_rasters(
     a large number of raster tiles, consider merging them in smaller batches
     first.
     """
+
+    masked, mask_and_scale = _resolve_read_settings(masked, mask_and_scale, chunks, other_read_kwargs)
 
     da, used_paths, safe_attrs = _merge_rasters(
         raster_fpaths,
@@ -817,7 +827,7 @@ def _merge_rasters(
         # We use a custom helper function to ensure
         # that merging different input rasters does *not*
         # trigger execution of the Dask graph.
-        da = _lazy_merge_helper(rasters_to_merge, masked)
+        da = _lazy_merge_helper(rasters_to_merge)
     else:
         da = merge_arrays(rasters_to_merge)
 
@@ -920,6 +930,46 @@ def bbox_from_location(centre, width_degrees=None, width_km=None):
     bounds = min_lon, min_lat, max_lon, max_lat
     validate_bbox_wgs84(bounds)
     return bounds
+
+
+def _resolve_read_settings(masked, mask_and_scale, chunks, other_read_kwargs):
+    """
+    Return the effective read settings `(masked, mask_and_scale)`, which are
+    always equal: `mask_and_scale` follows `masked` unless given.
+
+    Raises
+    ------
+    ValueError
+        If `mask_and_scale` is given and differs from `masked` (masked but
+        unscaled reads are not supported), if lazy reading (`chunks`) is
+        requested for raw data (the lazy merge marks missing data with NaN),
+        or if `other_read_kwargs` contains a read setting (which would bypass
+        these checks).
+    """
+    if other_read_kwargs and {'masked', 'mask_and_scale'} & set(other_read_kwargs):
+        raise ValueError(
+            "`other_read_kwargs` must not contain `masked` or `mask_and_scale`. "
+            "Use the `masked` argument instead."
+        )
+
+    masked = bool(masked)
+    if mask_and_scale is not None and bool(mask_and_scale) != masked:
+        if masked:
+            raise ValueError(
+                "Reading masked but unscaled data (`masked=True`, `mask_and_scale=False`) "
+                "is not supported. Use `rioxarray.open_rasterio` directly to read such data."
+            )
+        raise ValueError(
+            "`mask_and_scale=True` requires `masked=True`, since scaling also masks the "
+            "data. For raw values, pass `masked=False` (and leave out `mask_and_scale`)."
+        )
+
+    if chunks is not None and not masked:
+        raise ValueError(
+            "Lazy reading (`chunks`) requires `masked=True`, since lazy merging marks "
+            "missing data with NaN. For raw values, read eagerly (`chunks=None`)."
+        )
+    return masked, masked
 
 
 def _standardise_aoi(aoi):
@@ -1481,7 +1531,7 @@ def _concat_with_info(objs, **kwargs):
     return da
 
 
-def _lazy_merge_helper(das, masked):
+def _lazy_merge_helper(das):
     """
     Lazily merge a list of DataArrays using a 'Painter's Algorithm' with
     Tree Reduction to minimise Dask graph depth.
@@ -1492,10 +1542,15 @@ def _lazy_merge_helper(das, masked):
         This is helps avoid recursion errors during graph construction for continental-scale
         merges (e.g., 50+ countries).
 
+    Where rasters overlap, the first raster wins, as in eager merges with
+    `rioxarray.merge.merge_arrays`.
+
     Note:
         This helper is ONLY used when lazy loading (via Dask) is active
-        (i.e., `chunks` is not None). It is NOT the default merge path for eager
-        execution (which uses `rioxarray.merge.merge_arrays` instead).
+        (i.e., `chunks` is not None), which requires masked data: missing
+        values are NaN, since `combine_first` only fills NaN. It is NOT the
+        default merge path for eager execution (which uses
+        `rioxarray.merge.merge_arrays` instead).
     """
     # TODO: Document that lazy-merging country rasters can create very deep Dask graphs.
     #  In many workflows, it likely is better to downsample individual country
@@ -1519,10 +1574,9 @@ def _lazy_merge_helper(das, masked):
     )
 
     # --- Establish Z-order ---
-    # Reverse rasters to establish Z-order priority (Top -> Bottom)
-    # The first element in 'current_layer' is the one that stays on top.
-    # We do this because `combine_first` prioritises the caller (self).
-    current_layer = das[::-1]
+    # The first element in 'current_layer' stays on top, since `combine_first`
+    # prioritises the caller (self) and the pairwise merging keeps the order.
+    current_layer = list(das)
 
     # --- Pairwise Merging ---
     # Iterative Tree Reduction
@@ -1555,16 +1609,9 @@ def _lazy_merge_helper(das, masked):
         combined = combined.sortby("y", ascending=False)
 
     # --- Clean the Metadata ---
-    if masked:
-        # User requested masking  -> Data is Float with NaNs.
-        # We must tell GDAL that NaN is the nodata value.
-        combined.rio.write_nodata(np.nan, encoded=True, inplace=True)
-    else:
-        # User requested raw data -> Data probably uses another nodata value (e.g. -9999).
-        # `combine_first` drops this attribute, so we restore it from the first input.
-        original_nodata = das[0].rio.nodata
-        if original_nodata is not None:
-            combined.rio.write_nodata(original_nodata, encoded=True, inplace=True)
+    # Masked data is floating point with NaN as nodata, which `combine_first`
+    # does not keep in the metadata
+    combined.rio.write_nodata(np.nan, encoded=True, inplace=True)
 
     # Recover CRS & name
     combined.rio.write_crs(das[0].rio.crs, inplace=True)

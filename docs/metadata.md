@@ -55,7 +55,7 @@ Example: `wp_raster('pop_g2_1km_r25a', aoi=bbox, years=[2015, 2024])`.
 | `wpy_years` | the years of the data, space-separated. Static results have no `year` dimension, so for them this is the only record of the year. | `2015 2024` (multi-year); `2024` (static product such as `pop_g2_alt`) | whenever the datasets have a year; absent for static products without one |
 | `wpy_aoi` | the AoI as passed (in short) | `countries: KHM VNM`, `bbox: 103.0 10.0 105.0 12.0`, `geometry: 3 features, bounds 103.0 10.0 105.0 12.0` | always |
 | `wpy_pre_clip_bbox` | the pre-clip box passed by the user (`pre_clip_bbox`). The automatic pre-clipping for bbox and geometry AoIs only speeds up processing and is not recorded. | `97.5 18.0 99.0 20.0` | only if the user passed a pre-clip box |
-| `wpy_read_masked`, `wpy_read_mask_and_scale` | the effective settings used to read the source files (the `wp_raster` parameters `masked` and `mask_and_scale`) | `true` / `false` | always (both) |
+| `wpy_read_masked`, `wpy_read_mask_and_scale` | the effective settings used to read the source files (the `wp_raster` parameters `masked` and `mask_and_scale`, which are always equal) | `true` / `false` | always (both) |
 
 `wpy_source_files`, `wpy_countries` and `references` describe only datasets that contributed data
 to the result: files that do not overlap the pre-clip box (the user's `pre_clip_bbox`, or the AoI's
@@ -75,12 +75,12 @@ logged).
 
 | Aspect | Rule |
 |---|---|
-| Masked results (`masked=True` or `mask_and_scale=True`) | floating-point data; missing values are NaN; `rio.nodata` is NaN (also after saving) |
+| Masked results (`masked=True`, the default) | floating-point data; missing values are NaN; `rio.nodata` is NaN (also after saving) |
 | Unmasked results | the source files' data type; `rio.nodata` is the source files' nodata value |
 | CRS | in the `spatial_ref` coordinate (EPSG:4326 for all WorldPop data), not in the attributes |
 | Name | the product name, or the `name` passed by the user |
 | Results with several years | a `year` dimension with the years as coordinate values, and `long_name` set to the years as a tuple of strings, e.g. `('2015', '2024')`. This is rioxarray's convention for band descriptions: `rio.to_raster` labels each GeoTIFF band with its year, and `rioxarray.open_rasterio` restores the tuple when reading the file back. (Without it, every band would be named after the product, and the years would be lost in saved GeoTIFFs.) A single year of a multi-year product has no `year` dimension and no `long_name`; its year is in `wpy_years`. |
-| Scale and offset | handled as today: `_FillValue`, `scale_factor`, `add_offset` only for unmasked, unscaled reads |
+| Scale and offset | `_FillValue`, `scale_factor`, `add_offset` only for raw reads (`masked=False`) |
 
 ## 4. `history`
 

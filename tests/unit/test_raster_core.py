@@ -1,3 +1,5 @@
+import re
+
 import dask.array as da
 import numpy as np
 import pytest
@@ -217,6 +219,30 @@ def test_wp_raster_execution_modes(
         assert result.chunks is None
 
 
+@pytest.mark.filterwarnings("ignore:Merging multiple country rasters lazily")
+def test_lazy_and_eager_merges_agree_where_rasters_overlap(mock_raster_factory):
+    """
+    Lazy and eager merges give identical results. Where the valid data of
+    several rasters overlaps, the first raster wins in both (bug 1.22: lazy
+    merges used to let the last raster win). Three rasters also exercise the
+    later rounds of the lazy pairwise merge, including the leftover raster.
+    """
+    from worldpoppy import merge_rasters
+
+    # A covers x 0-10 (value 1), B x 5-15 (value 2), C x 3-13 (value 3):
+    # all three overlap at x 5-10
+    path_a = mock_raster_factory("A.tif", np.full((10, 10), 1.0), origin=(0, 10))
+    path_b = mock_raster_factory("B.tif", np.full((10, 10), 2.0), origin=(5, 10))
+    path_c = mock_raster_factory("C.tif", np.full((10, 10), 3.0), origin=(3, 10))
+    paths = [path_a, path_b, path_c]
+
+    eager = merge_rasters(paths)
+    lazy = merge_rasters(paths, chunks="auto").compute()
+
+    xr.testing.assert_equal(lazy, eager)
+    assert float(eager.sel(x=7.5, y=5.5).squeeze()) == 1.0
+
+
 @pytest.mark.parametrize(
     "mismatch_kwargs, error_substring",
     [
@@ -302,3 +328,103 @@ def test_wp_raster_skip_download_default(
     passed_skip = bound.arguments["skip_download_if_exists"]
     assert passed_skip is expected_skip
     assert ("has no effect" in caplog.text) is expect_warning
+
+
+@pytest.mark.parametrize(
+    "masked, mask_and_scale, message",
+    [
+        (True, False, "masked but unscaled data"),  # A mode that is no longer supported
+        (False, True, "requires `masked=True`"),    # Contradictory: scaling also masks
+    ],
+)
+@pytest.mark.parametrize("func", ["wp_raster", "merge_rasters"])
+def test_conflicting_read_settings_are_rejected(
+    mock_downloader, func, masked, mask_and_scale, message
+):
+    """
+    `masked` and `mask_and_scale` must agree. Conflicting values raise a
+    `ValueError` before anything is downloaded or read.
+    """
+    import worldpoppy
+
+    kwargs = dict(masked=masked, mask_and_scale=mask_and_scale)
+    with pytest.raises(ValueError, match=re.escape(message)):
+        if func == "wp_raster":
+            worldpoppy.wp_raster("pop_g1", aoi=["MCK"], **kwargs)
+        else:
+            worldpoppy.merge_rasters(["does_not_exist.tif"], **kwargs)
+    mock_downloader.download.assert_not_called()
+
+
+@pytest.mark.parametrize("chunks", ["auto", 4, {}, {"x": 4, "y": 4}])
+@pytest.mark.parametrize("func", ["wp_raster", "merge_rasters"])
+def test_lazy_reads_require_masked_data(mock_downloader, func, chunks):
+    """
+    Lazy reading (any `chunks` other than None, including `{}`) is only
+    supported for masked data, since lazy merging marks missing data with NaN
+    (bugs 1.20, 1.21, 1.23, 1.24).
+    """
+    import worldpoppy
+
+    with pytest.raises(ValueError, match=re.escape("Lazy reading (`chunks`) requires `masked=True`")):
+        if func == "wp_raster":
+            worldpoppy.wp_raster("pop_g1", aoi=["MCK"], chunks=chunks, masked=False)
+        else:
+            worldpoppy.merge_rasters(["does_not_exist.tif"], chunks=chunks, masked=False)
+    mock_downloader.download.assert_not_called()
+
+
+@pytest.mark.parametrize("key", ["masked", "mask_and_scale"])
+@pytest.mark.parametrize("func", ["wp_raster", "merge_rasters"])
+def test_read_settings_in_other_read_kwargs_are_rejected(mock_downloader, func, key):
+    """
+    The read settings cannot be passed through `other_read_kwargs`, where they
+    would bypass the checks of `masked` and `mask_and_scale`.
+    """
+    import worldpoppy
+
+    kwargs = dict(other_read_kwargs={key: False})
+    with pytest.raises(ValueError, match=re.escape("`other_read_kwargs` must not contain")):
+        if func == "wp_raster":
+            worldpoppy.wp_raster("pop_g1", aoi=["MCK"], **kwargs)
+        else:
+            worldpoppy.merge_rasters(["does_not_exist.tif"], **kwargs)
+    mock_downloader.download.assert_not_called()
+
+
+def test_masked_false_alone_reads_raw_values(mock_raster_factory):
+    """
+    `mask_and_scale` follows `masked` unless given, so `masked=False` alone
+    reads the raw values: the source data type, with nodata cells kept.
+    """
+    from worldpoppy import merge_rasters
+
+    data = np.ones((5, 5), dtype="int16")
+    data[0, 0] = -1
+    path = mock_raster_factory("A.tif", data, nodata=-1)
+
+    result = merge_rasters([path], masked=False)
+
+    assert result.dtype == np.int16
+    assert result.values[0, 0, 0] == -1
+    assert result.attrs["wpy_read_masked"] == result.attrs["wpy_read_mask_and_scale"] == "false"
+
+
+@pytest.mark.parametrize("chunks", [None, "auto"], ids=["eager", "lazy"])
+def test_masked_reads_apply_scale_and_offset(mock_raster_factory, chunks):
+    """
+    Masked reads also apply the source files' scale and offset (rioxarray's
+    `mask_and_scale=True`); raw reads keep the stored values.
+    """
+    from worldpoppy import merge_rasters
+
+    data = np.full((5, 5), 3, dtype="int16")
+    data[0, 0] = -1
+    path = mock_raster_factory("A.tif", data, nodata=-1, scale_factor=10.0)
+
+    masked = merge_rasters([path], chunks=chunks).compute()
+    raw = merge_rasters([path], masked=False)
+
+    assert float(masked.values[0, 1, 1]) == 30.0
+    assert np.isnan(masked.values[0, 0, 0])
+    assert raw.values[0, 1, 1] == 3
