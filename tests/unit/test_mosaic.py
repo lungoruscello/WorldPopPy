@@ -2,9 +2,10 @@ import numpy as np
 import pytest
 import rasterio
 import rioxarray
+from affine import Affine
 from rioxarray.merge import merge_arrays
 
-from worldpoppy.mosaic import build_vrt, write_vrt
+from worldpoppy.mosaic import build_vrt, check_same_grid, write_vrt
 
 NODATA = -9999.0
 
@@ -78,34 +79,50 @@ def test_mosaic_grid_matches_eager_merge(mock_raster_factory, tmp_path):
     assert np.isnan(values[0, 3:]).all()  # gap between the rasters
 
 
-def test_sub_pixel_offsets_are_rounded_to_whole_pixels(mock_raster_factory, tmp_path):
+def test_grid_noise_is_snapped_onto_the_first_grid(mock_raster_factory, tmp_path):
     """
-    A raster shifted by a fraction of a pixel is placed at the nearest
-    whole-pixel offset of the first raster's grid (rounded, not truncated:
-    2.96 pixels become 3).
+    A raster whose origin is off the first raster's grid by floating-point
+    noise is placed at the whole-pixel offset, and the mosaic lies exactly on
+    the first raster's grid, also when another raster lies further left.
     """
-    a = mock_raster_factory("a.tif", _filled(1.0), origin=(0, 3), nodata=NODATA)
-    b = mock_raster_factory("b.tif", _filled(2.0), origin=(2.96, 2.96), nodata=NODATA)
+    a = mock_raster_factory("a.tif", _filled(1.0), origin=(3, 3), nodata=NODATA)
+    b = mock_raster_factory("b.tif", _filled(2.0), origin=(1e-7, 3 - 1e-7), nodata=NODATA)
 
     values, transform, _ = _read_mosaic(write_vrt([a, b], tmp_path / "m.vrt"))
 
     assert values.shape == (3, 6)
-    assert transform.c == 0 and transform.f == 3 and transform.a == 1
-    np.testing.assert_array_equal(values[:, 3:], 2.0)
+    assert (transform.c, transform.f, transform.a) == (0.0, 3.0, 1.0)  # exactly a's grid
+    np.testing.assert_array_equal(values[:, :3], 2.0)
+    np.testing.assert_array_equal(values[:, 3:], 1.0)
 
 
-def test_raster_rounded_outwards_is_not_cut(mock_raster_factory, tmp_path):
+@pytest.mark.parametrize("shift", [0.02, 0.5, 0.96])
+def test_offsets_beyond_noise_are_rejected(mock_raster_factory, shift):
     """
-    The grid holds every raster entirely, also when rounding its offset moves
-    it one pixel beyond the extent of the others.
+    A raster whose origin is off the first raster's grid by more than
+    MAX_GRID_NOISE pixels (e.g. a half-pixel shift) is rejected, not rounded
+    to the nearest pixel.
     """
     a = mock_raster_factory("a.tif", _filled(1.0), origin=(0, 3), nodata=NODATA)
-    b = mock_raster_factory("b.tif", _filled(2.0, (3, 2)), origin=(1.6, 3), nodata=NODATA)
+    b = mock_raster_factory("b.tif", _filled(2.0), origin=(3 + shift, 3), nodata=NODATA)
 
-    values, _, _ = _read_mosaic(write_vrt([a, b], tmp_path / "m.vrt"))
+    with pytest.raises(ValueError, match="b.tif lies .* pixels off the grid of a.tif"):
+        build_vrt([a, b])
 
-    assert values.shape == (3, 4)  # b at offset 2 (1.6 rounded), 2 columns wide
-    np.testing.assert_array_equal(values[0], [1.0, 1.0, 1.0, 2.0])
+
+def test_check_same_grid_returns_whole_pixel_offsets():
+    """
+    Offsets are counted in whole pixels of the first raster (columns to the
+    right, rows downwards), also across a large extent with noise in the
+    pixel size and origin.
+    """
+    res = 1 / 1200
+    first = Affine(res, 0, 10.0, 0, -res, 50.0)
+    noisy = Affine(res * (1 + 4e-9), 0, 10.0 - 25_000 * res + 1e-10, 0, -res, 50.0 + 7 * res)
+
+    offsets = check_same_grid([(first, 100, 100), (noisy, 100, 100)])
+
+    assert offsets == [(0, 0), (-25_000, -7)]
 
 
 def test_nan_nodata(mock_raster_factory, tmp_path):

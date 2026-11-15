@@ -12,9 +12,9 @@ can read the VRT format natively.
 
 Where rasters overlap, the first raster wins (as in
 `rioxarray.merge.merge_arrays`), and nodata cells never cover valid data of
-another raster. Each raster is placed at the nearest whole-pixel offset of the
-mosaic grid, which uses the exact resolution of the first raster. The mosaic
-has the data type of the first raster; GDAL converts the values of the other
+another raster. All rasters must lie on one grid, up to floating-point noise
+(see `check_same_grid`), and the mosaic uses the grid of the first raster
+exactly. The mosaic has the data type of the first raster; GDAL converts the values of the other
 rasters to it when reading (as `rioxarray.merge.merge_arrays` does, except that
 GDAL rounds fractional values converted to integers, which `merge_arrays`
 truncates).
@@ -29,6 +29,8 @@ Main methods
         Return the XML of a mosaic of several rasters.
     - :func:`write_vrt`
         Write the XML of a mosaic of several rasters to a file.
+    - :func:`check_same_grid`
+        Check that rasters lie on one grid, up to floating-point noise.
 """
 
 import math
@@ -38,14 +40,16 @@ from pathlib import Path
 import rasterio
 
 __all__ = [
+    "MAX_GRID_NOISE",
     "VRT_FORMAT_VERSION",
     "build_vrt",
+    "check_same_grid",
     "write_vrt",
 ]
 
 # Version of the XML that `build_vrt` writes. It changes whenever that XML
 # changes, so that callers who keep VRT files can rebuild outdated ones.
-VRT_FORMAT_VERSION = 1
+VRT_FORMAT_VERSION = 2
 
 # GDAL's names of the data types that rasterio reports
 GDAL_DATA_TYPES = {
@@ -61,11 +65,15 @@ GDAL_DATA_TYPES = {
     "float64": "Float64",
 }
 
-# The mosaic uses the resolution of the first raster. A raster whose pixel
-# size differs slightly (floating-point noise in the files' geotransforms)
-# drifts against that grid across the mosaic; it counts as having the same
-# resolution if this drift stays below MAX_RESOLUTION_DRIFT pixels.
-MAX_RESOLUTION_DRIFT = 0.01
+# Largest difference between two grids (in pixels) that counts as
+# floating-point noise in the files' geotransforms, see `check_same_grid`.
+# Measured on 2026-11-15 for 524 cached WorldPop rasters (28 products, 3 and
+# 30 arcseconds; rasterio 1.5.2, GDAL 3.12.2): pixel-size noise adds up to at
+# most 0.0017 pixels across a raster (nearly 360 degrees wide), and origins of
+# files of one product differ from whole pixels by at most 0.00034 pixels;
+# real differences between WorldPop grids are half a pixel. The limit leaves a
+# margin of 5 above the noise and of 50 below a real shift.
+MAX_GRID_NOISE = 0.01
 
 
 # --- Public Functions ---
@@ -75,18 +83,16 @@ def build_vrt(raster_fpaths):
     Return the XML of a virtual mosaic (VRT) of several rasters.
 
     Where rasters overlap, the first raster in `raster_fpaths` wins, and nodata
-    cells never cover valid data of another raster. Each raster is placed at
-    the nearest whole-pixel offset of the mosaic grid, which uses the exact
-    resolution of the first raster. The mosaic has the data type of the first
+    cells never cover valid data of another raster. The mosaic uses the grid
+    of the first raster exactly. The mosaic has the data type of the first
     raster; GDAL converts the values of the other rasters to it when reading.
 
     Parameters
     ----------
     raster_fpaths : List[str or Path]
-        Paths to single-band rasters with the same CRS, resolution and nodata
-        value. Pixel sizes may differ by floating-point noise: by so little
-        that the drift across the mosaic stays below MAX_RESOLUTION_DRIFT
-        pixels. The VRT refers to the rasters by their absolute paths.
+        Paths to single-band rasters with the same CRS and nodata value, on
+        one grid up to floating-point noise (see `check_same_grid`). The VRT
+        refers to the rasters by their absolute paths.
 
     Returns
     -------
@@ -97,15 +103,15 @@ def build_vrt(raster_fpaths):
     ------
     ValueError
         If `raster_fpaths` is empty, if a raster has more than one band, is
-        rotated or has an unsupported data type, or if the rasters differ in
-        CRS, resolution or nodata value.
+        rotated or has an unsupported data type, if the rasters differ in CRS or
+        nodata value, or if they do not lie on one grid (see `check_same_grid`).
     """
     if not raster_fpaths:
         raise ValueError("`raster_fpaths` is empty: a mosaic needs at least one raster.")
 
     rasters = [_read_raster_info(path) for path in raster_fpaths]
-    _check_compatible(rasters)
-    return _mosaic_xml(rasters)
+    offsets = _check_compatible(rasters)
+    return _mosaic_xml(rasters, offsets)
 
 
 def write_vrt(raster_fpaths, vrt_fpath):
@@ -138,6 +144,70 @@ def write_vrt(raster_fpaths, vrt_fpath):
     return vrt_fpath
 
 
+def check_same_grid(grids, names=None):
+    """
+    Check that north-up rasters lie on one grid, up to floating-point noise,
+    and return their whole-pixel offsets from the first raster.
+
+    Two grids are the same up to noise if (1) their pixel sizes differ so
+    little that the difference adds up to at most MAX_GRID_NOISE pixels across
+    the extent of all rasters, and (2) their origins are a whole number of
+    pixels apart, within MAX_GRID_NOISE pixels. Snapping such rasters onto the
+    first raster's grid moves no cell by more than MAX_GRID_NOISE pixels. Real
+    differences (e.g. a half-pixel shift, or another resolution) are rejected.
+
+    Parameters
+    ----------
+    grids : List[Tuple[affine.Affine, int, int]]
+        The transform, width and height of each raster (in this order).
+    names : List[str], optional
+        Names of the rasters for error messages. Defaults to 'raster 1',
+        'raster 2', and so on.
+
+    Returns
+    -------
+    List[Tuple[int, int]]
+        The offset (columns, rows) of each raster from the first one, in
+        whole pixels of the first raster (positive: to the right, downwards).
+
+    Raises
+    ------
+    ValueError
+        If a raster does not lie on the grid of the first raster.
+    """
+    if names is None:
+        names = [f"raster {i + 1}" for i in range(len(grids))]
+    first_transform = grids[0][0]
+    xres, yres = first_transform.a, -first_transform.e
+
+    # Extent of all rasters in pixels of the first raster, along x and y
+    lefts = [t.c for t, _, _ in grids]
+    rights = [t.c + w * t.a for t, w, _ in grids]
+    tops = [t.f for t, _, _ in grids]
+    bottoms = [t.f + h * t.e for t, _, h in grids]
+    num_x = (max(rights) - min(lefts)) / xres
+    num_y = (max(tops) - min(bottoms)) / yres
+
+    offsets = []
+    for (transform, _, _), name in zip(grids, names):
+        for res, ref_res, num_pixels in ((transform.a, xres, num_x), (-transform.e, yres, num_y)):
+            if abs(res - ref_res) / ref_res * num_pixels > MAX_GRID_NOISE:
+                raise ValueError(
+                    f"{name} has a different resolution than {names[0]} "
+                    f"({res!r} vs {ref_res!r})."
+                )
+        col = (transform.c - first_transform.c) / xres
+        row = (first_transform.f - transform.f) / yres
+        off_grid = max(abs(col - round(col)), abs(row - round(row)))
+        if off_grid > MAX_GRID_NOISE:
+            raise ValueError(
+                f"{name} lies {off_grid:.3g} pixels off the grid of {names[0]} "
+                f"(at most {MAX_GRID_NOISE} pixels are accepted as floating-point noise)."
+            )
+        offsets.append((round(col), round(row)))
+    return offsets
+
+
 # --- Reading and Checking the Rasters ---
 
 def _read_raster_info(path):
@@ -160,12 +230,9 @@ def _read_raster_info(path):
 
         return dict(
             path=path,
+            transform=transform,
             width=src.width,
             height=src.height,
-            left=transform.c,
-            top=transform.f,
-            xres=transform.a,
-            yres=-transform.e,
             crs=src.crs,
             dtype=dtype,
             nodata=src.nodata,
@@ -176,33 +243,24 @@ def _read_raster_info(path):
 
 def _check_compatible(rasters):
     """
-    Check that all rasters share the CRS, resolution and nodata value of the
-    first one. (Their data types may differ, see `build_vrt`.)
+    Check that all rasters share the CRS and nodata value of the first one and
+    lie on its grid (see `check_same_grid`), and return their whole-pixel
+    offsets from it. (Their data types may differ, see `build_vrt`.)
     """
     first = rasters[0]
-    # Extent of the mosaic in pixels of the first raster, along x and y
-    num_pixels = dict(
-        xres=(max(r['left'] + r['width'] * r['xres'] for r in rasters)
-              - min(r['left'] for r in rasters)) / first['xres'],
-        yres=(max(r['top'] for r in rasters)
-              - min(r['top'] - r['height'] * r['yres'] for r in rasters)) / first['yres'],
-    )
     for raster in rasters[1:]:
         name, first_name = raster['path'].name, first['path'].name
         if raster['crs'] != first['crs']:
             raise ValueError(f"{name} has a different CRS than {first_name}.")
-        for key in ('xres', 'yres'):
-            drift = abs(raster[key] - first[key]) / first[key] * num_pixels[key]
-            if drift > MAX_RESOLUTION_DRIFT:
-                raise ValueError(
-                    f"{name} has a different resolution than {first_name} "
-                    f"({raster[key]!r} vs {first[key]!r})."
-                )
         if not _same_nodata(raster['nodata'], first['nodata']):
             raise ValueError(
                 f"{name} has a different nodata value ({raster['nodata']}) than "
                 f"{first_name} ({first['nodata']})."
             )
+    return check_same_grid(
+        [(r['transform'], r['width'], r['height']) for r in rasters],
+        names=[r['path'].name for r in rasters],
+    )
 
 
 def _same_nodata(a, b):
@@ -216,23 +274,25 @@ def _same_nodata(a, b):
 
 # --- Building the Mosaic ---
 
-def _mosaic_xml(rasters):
+def _mosaic_xml(rasters, offsets):
     """
-    Place the rasters on the mosaic grid and return the XML of the VRT.
+    Place the rasters on the grid of the first raster, at their whole-pixel
+    `offsets` from it (see `check_same_grid`), and return the XML of the VRT.
     """
-    first = rasters[0]
-    xres, yres = first['xres'], first['yres']
-    left = min(r['left'] for r in rasters)
-    top = max(r['top'] for r in rasters)
+    first_transform = rasters[0]['transform']
+    xres, yres = first_transform.a, -first_transform.e
 
-    # Whole-pixel offsets on the grid of the first raster; the grid is sized to
-    # hold every raster entirely, so that no raster is cut at the edge
-    offsets = [
-        (round((r['left'] - left) / xres), round((top - r['top']) / yres))
-        for r in rasters
-    ]
+    # The mosaic starts at the top-left raster, on the first raster's grid, and
+    # is sized to hold every raster entirely
+    min_col = min(col for col, _ in offsets)
+    min_row = min(row for _, row in offsets)
+    left = first_transform.c + min_col * xres
+    top = first_transform.f - min_row * yres
+    offsets = [(col - min_col, row - min_row) for col, row in offsets]
     width = max(xoff + r['width'] for r, (xoff, _) in zip(rasters, offsets))
     height = max(yoff + r['height'] for r, (_, yoff) in zip(rasters, offsets))
+
+    first = rasters[0]
 
     data_type = GDAL_DATA_TYPES[first['dtype']]
     nodata = first['nodata']

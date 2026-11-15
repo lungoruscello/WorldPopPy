@@ -611,6 +611,50 @@ def test_merge_raises_incompatible_error(
     assert f"Input rasters do not share the same {error_substring}" in str(exc.value)
 
 
+@pytest.mark.parametrize("chunks", [None, "auto"], ids=["eager", "lazy"])
+def test_rasters_off_the_grid_are_rejected(mock_raster_factory, chunks):
+    """
+    Rasters shifted against each other by part of a pixel (here: half a pixel)
+    are rejected in eager and lazy merges alike, rather than placed at the
+    nearest pixel.
+    """
+    from worldpoppy import merge_rasters
+    from worldpoppy.raster import IncompatibleRasterError
+
+    path_a = mock_raster_factory("A.tif", np.ones((5, 5), dtype="float32"), origin=(0, 5))
+    path_b = mock_raster_factory("B.tif", np.ones((5, 5), dtype="float32"), origin=(5.5, 5))
+
+    with pytest.raises(IncompatibleRasterError, match="B.tif lies 0.5 pixels off the grid of A.tif"):
+        merge_rasters([path_a, path_b], chunks=chunks)
+
+
+def test_grid_noise_gives_identical_eager_and_lazy_merges(mock_raster_factory):
+    """
+    Rasters whose grids differ by floating-point noise only are merged, and
+    eager and lazy merges give the same values on the same cells. (The eager
+    grid may have one extra, empty row and column at its edge, see TODO 1.36.)
+    """
+    from worldpoppy import merge_rasters
+
+    res = 1 / 1200  # 3 arcseconds
+    data_a = np.arange(20, dtype="float32").reshape(4, 5)
+    path_a = mock_raster_factory("A.tif", data_a, origin=(10.0, 50.0), res=res)
+    path_b = mock_raster_factory(
+        "B.tif", data_a + 100, origin=(10.0 + 5 * res + 1e-10, 50.0 - 1e-10), res=res * (1 + 4e-9)
+    )
+
+    eager = merge_rasters([path_a, path_b]).squeeze("band")
+    lazy = merge_rasters([path_a, path_b], chunks=2).squeeze("band").compute()
+
+    assert lazy.shape == (4, 10)
+    shared = eager.isel(y=slice(0, 4), x=slice(0, 10))
+    np.testing.assert_array_equal(shared.values, lazy.values)
+    # Eager coordinates are rounded to 5 decimals (up to 0.006 pixels at 3 arcseconds)
+    np.testing.assert_allclose(shared.x.values, lazy.x.values, rtol=0, atol=res * 0.01)
+    assert np.isnan(eager.isel(y=slice(4, None)).values).all()
+    assert np.isnan(eager.isel(x=slice(10, None)).values).all()
+
+
 def test_replaced_files_are_validated_with_their_new_attributes(mock_raster_factory):
     """
     The cached raster attributes follow the file: after a file is replaced at

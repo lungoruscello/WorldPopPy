@@ -54,7 +54,7 @@ from worldpoppy.func_utils import (
     get_buffered_bounds,
 )
 from worldpoppy.manifest_loader import _get_active_manifest_info, resolve_product_years
-from worldpoppy.mosaic import VRT_FORMAT_VERSION, write_vrt
+from worldpoppy.mosaic import VRT_FORMAT_VERSION, check_same_grid, write_vrt
 from worldpoppy import __url__ as wpy_url, __version__ as wpy_version
 
 logger = logging.getLogger(__name__)
@@ -1307,6 +1307,10 @@ def _validate_raster_attrs(raster_fpaths, masked, mask_and_scale):
     6.  The one exception is `crs`, which `rioxarray` does not
         "consume" and which would cause a fatal error on merge.
         Therefore, `crs` is always validated, regardless of flags.
+    7.  The grids are also always validated: all rasters must lie on one
+        grid, up to floating-point noise (see
+        `worldpoppy.mosaic.check_same_grid`), so that eager and lazy merges
+        never shift a raster by part of a pixel.
 
     Raises
     ------
@@ -1345,6 +1349,14 @@ def _validate_raster_attrs(raster_fpaths, masked, mask_and_scale):
                     f"{Path(ref['path']).name} has '{ref[key]}' but "
                     f"{Path(meta['path']).name} has '{meta[key]}'."
                 )
+
+    try:
+        check_same_grid(
+            [meta['grid'] for meta in metadata_list],
+            names=[Path(meta['path']).name for meta in metadata_list],
+        )
+    except ValueError as e:
+        raise IncompatibleRasterError(f"Input rasters do not lie on one grid: {e}") from e
 
     # All checks passed. Return the single, consistent set of safe attrs.
     safe_attrs = {'crs': ref['crs']}
@@ -1405,6 +1417,7 @@ def _read_raster_attrs(path, masked, mask_and_scale, file_state):
 
             return {
                 'path': path,
+                'grid': (da.rio.transform(), da.rio.width, da.rio.height),
                 'crs': crs_str,
                 'nodata': nodata_val,
                 'scale_factor': scale_factor,
