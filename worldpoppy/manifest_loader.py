@@ -541,7 +541,7 @@ def show_supported_data_products(
     cols = 'product_name product_notes resolution multi_year api_project data_series summary_url'.split()
 
     products = mdf[cols].drop_duplicates(subset='product_name')
-    products.rename(
+    products = products.rename(
         columns={
             'product_name': 'Product name',
             'product_notes': 'Product notes',
@@ -551,9 +551,13 @@ def show_supported_data_products(
             'data_series': 'Data series',
             'summary_url': 'Example',
         },
-        inplace=True,
     )
     products = products.set_index('Product name').sort_index()
+
+    # The 'summary_url' is only shown in notebooks, in debug mode
+    show_summary_url = _likely_notebook and DEBUG
+    if not show_summary_url:
+        products = products.drop(columns='Example')
 
     if _likely_notebook:
         # Create the base styler
@@ -564,16 +568,11 @@ def show_supported_data_products(
             [dict(selector='th', props=[('text-align', 'left')])]
         )
 
-        if DEBUG:
+        if show_summary_url:
             # format the 'summary_url'
             styled = styled.format({"Example": format_url_to_emoji})
-        else:
-            # drop the 'summary_url'
-            products.drop('Example', axis=1, inplace=True)
         display(styled)
     else:
-        # always drop the 'summary_url' in console display
-        products.drop('Example', axis=1, inplace=True)
         try:
             from tabulate import tabulate
 
@@ -673,7 +672,7 @@ def _get_cleaned_manifest():
     # --- Clean Columns ---
     # Drop processing columns that are not needed
     drop_cols = "base_name band band_alias".split()
-    mdf.drop(drop_cols, axis=1, inplace=True)
+    mdf = mdf.drop(columns=drop_cols)
 
     # Re-order columns
     maj_cols = [

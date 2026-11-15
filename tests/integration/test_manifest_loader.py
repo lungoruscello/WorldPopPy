@@ -1,5 +1,6 @@
 import importlib
 import logging
+import sys
 
 import pandas as pd
 import pytest
@@ -227,6 +228,29 @@ def test_manifest_accepts_lowercase_iso3_codes():
     # Validation also sees the normalised codes
     with pytest.raises(ValueError, match="XXX"):
         wp_manifest(iso3_codes='xxx')
+
+
+@pytest.mark.integration
+@needs_raw_manifest
+def test_show_supported_data_products_console_hides_summary_urls(capsys, monkeypatch):
+    """
+    Verify that the console overview lists the matching products without
+    their summary URLs (the 'Example' column is shown only in notebooks,
+    in debug mode).
+    """
+    from worldpoppy.manifest_loader import show_supported_data_products, wp_manifest
+
+    monkeypatch.delitem(sys.modules, 'ipykernel', raising=False)  # console, not notebook
+
+    show_supported_data_products(iso3_codes='LUX')
+    output = capsys.readouterr().out
+
+    expected = wp_manifest(iso3_codes='LUX')
+    missing = [name for name in expected['product_name'].unique() if name not in output]
+    assert not missing, f"Products missing from the console overview: {missing[:3]}"
+    assert 'Example' not in output
+    shown_urls = [url for url in expected['summary_url'].dropna() if url in output]
+    assert not shown_urls, f"Summary URLs shown in the console: {shown_urls[:3]}"
 
 
 @pytest.mark.integration

@@ -110,7 +110,7 @@ def mock_raster_factory(tmp_path):
 
         # Create the transform automatically
         # (Top-left X, Pixel Width, 0, Top-left Y, 0, -Pixel Height)
-        transform = Affine.translation(x_start, y_start) * Affine.scale(res, -res)
+        transform = Affine.translation(x_start, y_start) @ Affine.scale(res, -res)
 
         # Generate Coordinate Arrays (Pixel Centers)
         #   X: start + half_res, start + 1.5*res, ...
