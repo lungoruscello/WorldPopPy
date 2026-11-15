@@ -55,7 +55,7 @@ from worldpoppy.func_utils import (
     get_buffered_bounds,
 )
 from worldpoppy.manifest_loader import _get_active_manifest_info, resolve_product_years
-from worldpoppy.mosaic import VRT_FORMAT_VERSION, check_same_grid, write_vrt
+from worldpoppy.mosaic import VRT_FORMAT_VERSION, check_same_grid, mosaic_grid, write_vrt
 from worldpoppy import __url__ as wpy_url, __version__ as wpy_version
 
 logger = logging.getLogger(__name__)
@@ -900,10 +900,6 @@ def _merge_rasters(
                 logger.info(f"Skipping {Path(path).name}: no overlap with the pre-clip box.")
                 continue
 
-            # -- Round Coordinates ---
-            # To avoid floating-point issues in a downstream merge.
-            da = da.assign_coords({"x": da.x.round(5), "y": da.y.round(5)})
-
             # Assign fixed variable name for mosaicking
             da.name = "wpy_data"
 
@@ -923,7 +919,16 @@ def _merge_rasters(
 
     # --- Merge! ---
     if not use_dask:
-        da = merge_arrays(rasters_to_merge)
+        # On the grid of the lazy mosaic, so that eager and lazy merges give the
+        # same grid (`merge_arrays` would otherwise derive its grid from the
+        # rasters' bounds, which can add an empty row and column where pixel
+        # sizes differ by floating-point noise)
+        transform, width, height, _ = mosaic_grid(
+            [(r.rio.transform(), r.rio.width, r.rio.height) for r in rasters_to_merge]
+        )
+        bounds = (transform.c, transform.f + height * transform.e,
+                  transform.c + width * transform.a, transform.f)
+        da = merge_arrays(rasters_to_merge, bounds=bounds, res=(transform.a, -transform.e))
     elif len(rasters_to_merge) == 1:
         da = rasters_to_merge[0]
     else:

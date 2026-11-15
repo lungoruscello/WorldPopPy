@@ -31,6 +31,8 @@ Main methods
         Write the XML of a mosaic of several rasters to a file.
     - :func:`check_same_grid`
         Check that rasters lie on one grid, up to floating-point noise.
+    - :func:`mosaic_grid`
+        Return the grid of the mosaic of several rasters.
 """
 
 import math
@@ -44,11 +46,14 @@ __all__ = [
     "VRT_FORMAT_VERSION",
     "build_vrt",
     "check_same_grid",
+    "mosaic_grid",
     "write_vrt",
 ]
 
 # Version of the XML that `build_vrt` writes. It changes whenever that XML
 # changes, so that callers who keep VRT files can rebuild outdated ones.
+# (Raise it with every change to the XML: VRT files built by earlier code are
+# otherwise reused, e.g. from worldpoppy's cache.)
 VRT_FORMAT_VERSION = 2
 
 # GDAL's names of the data types that rasterio reports
@@ -110,8 +115,8 @@ def build_vrt(raster_fpaths):
         raise ValueError("`raster_fpaths` is empty: a mosaic needs at least one raster.")
 
     rasters = [_read_raster_info(path) for path in raster_fpaths]
-    offsets = _check_compatible(rasters)
-    return _mosaic_xml(rasters, offsets)
+    _check_compatible(rasters)
+    return _mosaic_xml(rasters)
 
 
 def write_vrt(raster_fpaths, vrt_fpath):
@@ -208,6 +213,44 @@ def check_same_grid(grids, names=None):
     return offsets
 
 
+def mosaic_grid(grids, names=None):
+    """
+    Return the grid of the mosaic of north-up rasters: the first raster's
+    grid, extended to hold every raster entirely.
+
+    Parameters
+    ----------
+    grids : List[Tuple[affine.Affine, int, int]]
+        The transform, width and height of each raster (in this order).
+    names : List[str], optional
+        Names of the rasters for error messages (see `check_same_grid`).
+
+    Returns
+    -------
+    Tuple[affine.Affine, int, int, List[Tuple[int, int]]]
+        The transform, width and height of the mosaic, and the offset
+        (columns, rows) of each raster within it, in whole pixels.
+
+    Raises
+    ------
+    ValueError
+        If the rasters do not lie on one grid (see `check_same_grid`).
+    """
+    offsets = check_same_grid(grids, names=names)
+    first = grids[0][0]
+
+    # The mosaic starts at the top-left raster, on the first raster's grid
+    min_col = min(col for col, _ in offsets)
+    min_row = min(row for _, row in offsets)
+    offsets = [(col - min_col, row - min_row) for col, row in offsets]
+    width = max(col + w for (col, _), (_, w, _) in zip(offsets, grids))
+    height = max(row + h for (_, row), (_, _, h) in zip(offsets, grids))
+    transform = rasterio.Affine(
+        first.a, 0.0, first.c + min_col * first.a, 0.0, first.e, first.f + min_row * first.e
+    )
+    return transform, width, height, offsets
+
+
 # --- Reading and Checking the Rasters ---
 
 def _read_raster_info(path):
@@ -244,8 +287,8 @@ def _read_raster_info(path):
 def _check_compatible(rasters):
     """
     Check that all rasters share the CRS and nodata value of the first one and
-    lie on its grid (see `check_same_grid`), and return their whole-pixel
-    offsets from it. (Their data types may differ, see `build_vrt`.)
+    lie on its grid (see `check_same_grid`). (Their data types may differ, see
+    `build_vrt`.)
     """
     first = rasters[0]
     for raster in rasters[1:]:
@@ -257,7 +300,7 @@ def _check_compatible(rasters):
                 f"{name} has a different nodata value ({raster['nodata']}) than "
                 f"{first_name} ({first['nodata']})."
             )
-    return check_same_grid(
+    check_same_grid(
         [(r['transform'], r['width'], r['height']) for r in rasters],
         names=[r['path'].name for r in rasters],
     )
@@ -274,24 +317,15 @@ def _same_nodata(a, b):
 
 # --- Building the Mosaic ---
 
-def _mosaic_xml(rasters, offsets):
+def _mosaic_xml(rasters):
     """
-    Place the rasters on the grid of the first raster, at their whole-pixel
-    `offsets` from it (see `check_same_grid`), and return the XML of the VRT.
+    Place the rasters on the grid of the mosaic (see `mosaic_grid`) and return
+    the XML of the VRT.
     """
-    first_transform = rasters[0]['transform']
-    xres, yres = first_transform.a, -first_transform.e
-
-    # The mosaic starts at the top-left raster, on the first raster's grid, and
-    # is sized to hold every raster entirely
-    min_col = min(col for col, _ in offsets)
-    min_row = min(row for _, row in offsets)
-    left = first_transform.c + min_col * xres
-    top = first_transform.f - min_row * yres
-    offsets = [(col - min_col, row - min_row) for col, row in offsets]
-    width = max(xoff + r['width'] for r, (xoff, _) in zip(rasters, offsets))
-    height = max(yoff + r['height'] for r, (_, yoff) in zip(rasters, offsets))
-
+    transform, width, height, offsets = mosaic_grid(
+        [(r['transform'], r['width'], r['height']) for r in rasters],
+        names=[r['path'].name for r in rasters],
+    )
     first = rasters[0]
 
     data_type = GDAL_DATA_TYPES[first['dtype']]
@@ -300,7 +334,7 @@ def _mosaic_xml(rasters, offsets):
     root = ET.Element("VRTDataset", rasterXSize=str(width), rasterYSize=str(height))
     ET.SubElement(root, "SRS").text = first['crs'].to_wkt()
     ET.SubElement(root, "GeoTransform").text = ", ".join(
-        repr(float(value)) for value in (left, xres, 0.0, top, 0.0, -yres)
+        repr(float(value)) for value in transform.to_gdal()
     )
     band = ET.SubElement(root, "VRTRasterBand", dataType=data_type, band="1")
     if nodata is not None:

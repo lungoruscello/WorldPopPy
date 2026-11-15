@@ -667,8 +667,8 @@ def test_rasters_off_the_grid_are_rejected(mock_raster_factory, chunks):
 def test_grid_noise_gives_identical_eager_and_lazy_merges(mock_raster_factory):
     """
     Rasters whose grids differ by floating-point noise only are merged, and
-    eager and lazy merges give the same values on the same cells. (The eager
-    grid may have one extra, empty row and column at its edge, see TODO 1.36.)
+    eager and lazy merges give the same grid and values (before, the eager
+    grid could have one extra, empty row and column at its edge).
     """
     from worldpoppy import merge_rasters
 
@@ -682,13 +682,36 @@ def test_grid_noise_gives_identical_eager_and_lazy_merges(mock_raster_factory):
     eager = merge_rasters([path_a, path_b]).squeeze("band")
     lazy = merge_rasters([path_a, path_b], chunks=2).squeeze("band").compute()
 
-    assert lazy.shape == (4, 10)
-    shared = eager.isel(y=slice(0, 4), x=slice(0, 10))
-    np.testing.assert_array_equal(shared.values, lazy.values)
-    # Eager coordinates are rounded to 5 decimals (up to 0.006 pixels at 3 arcseconds)
-    np.testing.assert_allclose(shared.x.values, lazy.x.values, rtol=0, atol=res * 0.01)
-    assert np.isnan(eager.isel(y=slice(4, None)).values).all()
-    assert np.isnan(eager.isel(x=slice(10, None)).values).all()
+    assert eager.shape == lazy.shape == (4, 10)
+    np.testing.assert_array_equal(eager.values, lazy.values)
+    np.testing.assert_array_equal(eager.x.values, lazy.x.values)
+    np.testing.assert_array_equal(eager.y.values, lazy.y.values)
+
+
+@pytest.mark.parametrize("n_files", [1, 2])
+def test_eager_merges_keep_the_exact_coordinates_of_the_files(mock_raster_factory, n_files):
+    """
+    Eager results keep the cell coordinates of the input files, also for an
+    origin with many decimals (before, they were rounded to 5 decimals, i.e.
+    moved by up to 0.006 pixels at 3 arcseconds, so that an AoI edge close to
+    a pixel edge could select another row or column than a lazy merge).
+    """
+    from worldpoppy import merge_rasters
+
+    res = 1 / 1200  # 3 arcseconds
+    origin = (10.123456789, 50.987654321)
+    data = np.ones((4, 5), dtype="float32")
+    paths = [
+        mock_raster_factory(f"F{i}.tif", data, origin=(origin[0] + 5 * i * res, origin[1]), res=res)
+        for i in range(n_files)
+    ]
+
+    result = merge_rasters(paths).squeeze("band")
+
+    expected_x = origin[0] + (np.arange(5 * n_files) + 0.5) * res
+    expected_y = origin[1] - (np.arange(4) + 0.5) * res
+    np.testing.assert_allclose(result.x.values[:5 * n_files], expected_x, rtol=0, atol=res * 1e-6)
+    np.testing.assert_allclose(result.y.values[:4], expected_y, rtol=0, atol=res * 1e-6)
 
 
 def test_replaced_files_are_validated_with_their_new_attributes(mock_raster_factory):
