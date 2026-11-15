@@ -6,17 +6,22 @@ Rationale:
     `wp_raster` (dimensions, coordinates, keyword resolution) without
     performing expensive numerical validation.
 
-    We use **Liechtenstein (LIE)** for all tests because it is very small
-    (~160 km²), resulting in tiny downloads (<1MB).
+    We use **Liechtenstein (LIE)** for most tests because it is very small
+    (~160 km²), resulting in tiny downloads (<1MB). The regression test for
+    grids that differ between years uses Kenya (and Malawi), the only real
+    case known; it downloads ~730 MB and therefore only runs with
+    `WPY_RUN_HEAVY_TESTS=1`.
 
 Note on Terminology:
     This is classified as an **Integration Test** rather than a strict End-to-End (E2E)
     test because it respects the local cache. If raster files exist locally, the downloader
     is bypassed.
 """
+import numpy as np
 import pytest
 
 from tests.helpers import needs_internet_or_cache
+from worldpoppy.config import ENABLE_HEAVY_TESTS
 
 # Tiny, fast test case
 TEST_ISO = "LIE"
@@ -128,6 +133,48 @@ def test_raster_multi_year_stacking():
 
     # 2. Check Sort Order (Time should inevitably increase)
     assert da.year.values.tolist() == [2010, 2015]
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    not ENABLE_HEAVY_TESTS,
+    reason="Heavy tests are disabled (WPY_RUN_HEAVY_TESTS != 1); downloads ~730 MB"
+)
+@needs_internet_or_cache
+@pytest.mark.parametrize("aoi, chunks", [
+    (["KEN"], None),
+    (["KEN"], 4096),
+    (["KEN", "MWI"], 4096),  # eager would need several GB of memory
+], ids=["KEN-eager", "KEN-lazy", "KEN+MWI-lazy"])
+def test_years_with_grid_noise_are_stacked_on_one_grid(aoi, chunks):
+    """
+    Kenya's `pop_g1` files for 2000 and 2020 lie on grids that differ by
+    floating-point noise (pixel widths differ in the last digits, and the 2020
+    grid starts one pixel further east). Stacking the two years must give one
+    north-up grid with each coordinate once, and each year's total unchanged
+    (bug 1.37: every column appeared twice, half of them empty).
+    """
+    from worldpoppy import wp_raster
+
+    years = [2000, 2020]
+    stacked = wp_raster("pop_g1", aoi=aoi, years=years, chunks=chunks)
+
+    res = abs(float(stacked.x[1] - stacked.x[0]))
+    for dim in ("x", "y"):
+        coords = stacked[dim].values
+        assert len(np.unique(coords)) == coords.size, f"Duplicated {dim} coordinates"
+        np.testing.assert_allclose(np.abs(np.diff(coords)), res, rtol=1e-6)
+    assert (np.diff(stacked.y.values) < 0).all(), "Rows must run from north to south"
+
+    # Each year holds exactly the cells of the same year fetched on its own (the
+    # totals differ only in the last digits, since the order of summation differs)
+    for year in years:
+        single = wp_raster("pop_g1", aoi=aoi, years=year, chunks=chunks)
+        stacked_year = stacked.sel(year=year)
+        assert int(stacked_year.count()) == int(single.count()), f"Valid cells of {year} changed"
+        np.testing.assert_allclose(
+            float(stacked_year.sum(dtype="float64")), float(single.sum(dtype="float64")), rtol=1e-12
+        )
 
 
 @pytest.mark.integration

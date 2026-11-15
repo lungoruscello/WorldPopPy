@@ -37,6 +37,7 @@ import shapely
 import xarray as xr
 from pyproj import CRS, Transformer
 from rasterio.enums import Resampling
+from rasterio.transform import from_origin
 from shapely.geometry import box
 from shapely.geometry.base import BaseGeometry
 from rioxarray.exceptions import NoDataInBounds
@@ -446,9 +447,17 @@ def wp_raster(
                 annual_rasters.append(merged)
                 used_paths.extend(used_year_paths)
 
-            # Stack years via `xr.concat` (attributes are set below). A single
+            # Stack years via `xr.concat` (attributes are set below), on one
+            # grid: the years' grids may differ by floating-point noise, and
+            # `xr.concat` aligns cells by exactly equal coordinates. A single
             # year is dropped as a dimension (its year stays a coordinate).
+            annual_rasters = _snap_to_common_grid(
+                annual_rasters, names=[f"year {year}" for year in paths_by_year]
+            )
             result = _concat_restoring_nodata(annual_rasters, dim='year', combine_attrs='drop').squeeze("band")
+            # Where the years' extents differ, `xr.concat` sorts the union of
+            # their coordinates in ascending order; restore north-up order
+            result = result.sortby('y', ascending=False)
             if result.sizes['year'] == 1:
                 result = result.squeeze('year')
 
@@ -1639,6 +1648,38 @@ def _format_numbers(values):
 def _unique(values):
     """Return the distinct, non-missing values in order of appearance."""
     return list(dict.fromkeys(value for value in values if pd.notna(value)))
+
+
+def _snap_to_common_grid(das, names):
+    """
+    Give rasters that lie on one grid up to floating-point noise (see
+    `worldpoppy.mosaic.check_same_grid`) exactly the coordinates and transform
+    of the first raster's grid, so that `xarray` aligns their cells exactly
+    (e.g. when stacking the years of a multi-year result). Values are not
+    changed, and no cell moves by more than MAX_GRID_NOISE pixels.
+
+    Raises
+    ------
+    IncompatibleRasterError
+        If the rasters do not lie on one grid.
+    """
+    grids = [(da.rio.transform(), da.rio.width, da.rio.height) for da in das]
+    try:
+        offsets = check_same_grid(grids, names=names)
+    except ValueError as e:
+        raise IncompatibleRasterError(f"The rasters do not lie on one grid: {e}") from e
+
+    ref = grids[0][0]
+    snapped = []
+    for da, (col, row) in zip(das, offsets):
+        # Cell centres computed with one formula for all rasters, so that the
+        # same grid cell has bit-identical coordinates in every raster
+        x = ref.c + (col + np.arange(da.rio.width) + 0.5) * ref.a
+        y = ref.f + (row + np.arange(da.rio.height) + 0.5) * ref.e
+        da = da.assign_coords({da.rio.x_dim: x, da.rio.y_dim: y})
+        transform = from_origin(ref.c + col * ref.a, ref.f + row * ref.e, ref.a, -ref.e)
+        snapped.append(da.rio.write_transform(transform))
+    return snapped
 
 
 def _concat_restoring_nodata(objs, **kwargs):

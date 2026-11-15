@@ -565,6 +565,42 @@ def test_multi_year_bands_hold_their_own_years_values(mock_raster_factory, mock_
     assert result.attrs["long_name"] == tuple(str(year) for year in result.year.values)
 
 
+@pytest.mark.parametrize("chunks", [None, "auto"], ids=["eager", "lazy"])
+def test_years_with_grid_noise_are_stacked_on_one_grid(mock_raster_factory, mock_downloader, chunks):
+    """
+    Years whose grids differ by floating-point noise are stacked on one grid,
+    each column once. Here, as with Kenya's `pop_g1` files for 2000 and 2020,
+    the pixel widths differ in the last digits, and the later grid starts one
+    pixel further east (bug 1.37: every column appeared twice, half of them
+    empty).
+    """
+    from worldpoppy import wp_raster
+
+    res = 1 / 1200  # 3 arcseconds
+    paths, datasets = [], []
+    for year, rel_noise, x_shift, width in [(2000, -4e-11, 0, 20), (2020, 4e-11, 1, 19)]:
+        year_res = res * (1 + rel_noise)
+        data_a = np.full((10, width), float(year), dtype="float32")
+        data_b = np.full((10, 20), float(year) + 1, dtype="float32")
+        paths.append(mock_raster_factory(
+            f"AAA_{year}.tif", data_a, origin=(10.0 + x_shift * year_res, 50.0), res=year_res
+        ))
+        paths.append(mock_raster_factory(f"BBB_{year}.tif", data_b, origin=(10.0, 50.0 - 10 * res), res=res))
+        datasets += [("AAA", year), ("BBB", year)]
+    mock_downloader.download.return_value = (paths, fake_manifest_rows(datasets, multi_year=True))
+
+    result = wp_raster(product_name="pop_test", aoi=["AAA", "BBB"], years=[2000, 2020], chunks=chunks)
+
+    assert result.sizes["x"] == 20, f"Expected 20 columns, got {result.sizes['x']}"
+    # North-up order, also where the years' extents differ
+    assert (np.diff(result.y.values) < 0).all(), "Rows must run from north to south"
+    assert (np.diff(result.x.values) > 0).all(), "Columns must run from west to east"
+    np.testing.assert_array_equal(result.sel(year=2000).isel(y=0).values, 2000.0)
+    top_row_2020 = result.sel(year=2020).isel(y=0).values
+    assert np.isnan(top_row_2020[0]), "The 2020 grid starts one pixel further east"
+    np.testing.assert_array_equal(top_row_2020[1:], 2020.0)
+
+
 @pytest.mark.parametrize(
     "mismatch_kwargs, error_substring",
     [
