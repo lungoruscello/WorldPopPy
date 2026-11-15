@@ -680,6 +680,19 @@ def test_lazy_reads_require_masked_data(mock_downloader, func, chunks):
     mock_downloader.download.assert_not_called()
 
 
+def test_lazy_reads_require_cached_downloads(mock_downloader):
+    """
+    Lazy reading (`chunks`) requires `cache_downloads=True`: a lazy result reads
+    its source files only when computed, but without caching, the downloaded
+    files are deleted when `wp_raster` returns (bug 1.33).
+    """
+    from worldpoppy import wp_raster
+
+    with pytest.raises(ValueError, match=re.escape("requires `cache_downloads=True`")):
+        wp_raster("pop_g1", aoi=["MCK"], chunks="auto", cache_downloads=False)
+    mock_downloader.download.assert_not_called()
+
+
 @pytest.mark.parametrize("key", ["masked", "mask_and_scale"])
 @pytest.mark.parametrize("func", ["wp_raster", "merge_rasters"])
 def test_read_settings_in_other_read_kwargs_are_rejected(mock_downloader, func, key):

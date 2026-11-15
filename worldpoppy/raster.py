@@ -193,7 +193,7 @@ def wp_raster(
           Equivalent to passing {'x': K, 'y': K}.
         - If dict (e.g., {'x': 1024, 'y': 1024}), that specific chunking is used.
 
-        Lazy reading requires `masked=True`.
+        Lazy reading requires `masked=True` and `cache_downloads=True`.
     years : int or List[Union[int, str]] or str or None, optional
         One or more years of interest or a keyword string.
         For static data products, this argument is usually None (default).
@@ -220,7 +220,9 @@ def wp_raster(
         islands result in a merged raster that is largely empty, causing
         RAM explosions. Mutually exclusive with `suppress_pre_clip`.
     cache_downloads: bool, optional, default=True
-        Whether to cache downloaded source rasters.
+        Whether to cache downloaded source rasters. Without caching, the downloads
+        are deleted when this function returns, so lazy reading (`chunks`) is not
+        possible.
     skip_download_if_exists : bool, optional
         Whether to skip downloading source rasters that already exist in the local cache.
         Defaults to True if `cache_downloads` is True. Has no effect (and defaults to
@@ -280,8 +282,8 @@ def wp_raster(
     -------
     ValueError
         If `mask_and_scale` is given and differs from `masked`, if `chunks`
-        is combined with `masked=False`, or if `other_read_kwargs` contains
-        `masked` or `mask_and_scale`.
+        is combined with `masked=False` or `cache_downloads=False`, or if
+        `other_read_kwargs` contains `masked` or `mask_and_scale`.
 
     BboxInvalidError
         If `pre_clip_bbox` (or a bounding-box AoI) is not a valid longitude/latitude
@@ -305,6 +307,12 @@ def wp_raster(
 
     # --- Resolve read settings ---
     masked, mask_and_scale = _resolve_read_settings(masked, mask_and_scale, chunks, other_read_kwargs)
+    if chunks is not None and not cache_downloads:
+        raise ValueError(
+            "Lazy reading (`chunks`) requires `cache_downloads=True`: a lazy result reads "
+            "its source files only when it is computed, but without caching, the "
+            "downloaded files are deleted when `wp_raster` returns."
+        )
 
     if skip_download_if_exists is None:
         skip_download_if_exists = cache_downloads
