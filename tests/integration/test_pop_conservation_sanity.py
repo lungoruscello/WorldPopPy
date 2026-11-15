@@ -26,8 +26,9 @@ Test Cases:
 
 Note on Terminology:
     This is classified as an **Integration Test** rather than a strict End-to-End (E2E)
-    test because it respects the local cache. If raster files exist locally, the downloader
-    is bypassed.
+    test because it respects the local raster-data cache. If raster files exist locally, the
+    downloader is bypassed. (The VRT files of lazy merges are built anew in every test, see
+    `tests/integration/conftest.py`.)
 
 Warning:
     This test requires an internet connection and will download approx. 60-130MB per case
