@@ -1270,7 +1270,7 @@ def _validate_raster_attrs(raster_fpaths, masked, mask_and_scale):
     try:
         metadata_list = []
         for p in raster_fpaths:
-            meta = _read_raster_attrs(str(p), masked, mask_and_scale)
+            meta = _read_raster_attrs(str(p), masked, mask_and_scale, _file_state(p))
             metadata_list.append(meta)
     except RasterReadError as e:
         logger.error(f"A raster file is unreadable. Aborting. Error: {e}")
@@ -1325,13 +1325,15 @@ def _same_value(a, b):
 
 
 @lru_cache(maxsize=4096)
-def _read_raster_attrs(path, masked, mask_and_scale):
+def _read_raster_attrs(path, masked, mask_and_scale, file_state):
     """
     Read critical meta-data from a single raster file.
 
     This function is cached and opens the file lazily, i.e. does *not*
     read the full raster data into memory. It immediately closes the
-    file handle after extracting the metadata.
+    file handle after extracting the metadata. `file_state` (see
+    `_file_state`) is only part of the cache key, so that a file replaced
+    at the same path is read again.
     """
 
     try:
@@ -1368,6 +1370,18 @@ def _read_raster_attrs(path, masked, mask_and_scale):
             f"Failed to read/parse metadata for {path}. Error: {e}"
         ) from e
 
+
+
+def _file_state(path):
+    """
+    Return the modification time and size of a file, or None if it cannot be
+    read (reading the file then fails with a `RasterReadError`).
+    """
+    try:
+        stat = Path(path).stat()
+    except OSError:
+        return None
+    return stat.st_mtime_ns, stat.st_size
 
 def _standardise_rio_nodata_meta(da, masked=False, mask_and_scale=False):
     """

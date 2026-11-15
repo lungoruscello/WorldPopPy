@@ -595,6 +595,30 @@ def test_merge_raises_incompatible_error(
     assert f"Input rasters do not share the same {error_substring}" in str(exc.value)
 
 
+def test_replaced_files_are_validated_with_their_new_attributes(mock_raster_factory):
+    """
+    The cached raster attributes follow the file: after a file is replaced at
+    the same path, its new attributes are used (bug 1.27: the cache was keyed
+    on the path only).
+    """
+    import os
+    from worldpoppy import merge_rasters
+    from worldpoppy.raster import IncompatibleRasterError
+
+    path_a = mock_raster_factory("A.tif", np.ones((5, 5)), nodata=-9999)
+    path_b = mock_raster_factory("B.tif", np.ones((5, 5)), origin=(5, 0), nodata=-1)
+    with pytest.raises(IncompatibleRasterError):
+        merge_rasters([path_a, path_b], masked=False)
+
+    # Replace B with a compatible file; a later modification time is set
+    # explicitly, so that the test does not depend on the timestamp resolution
+    path_b = mock_raster_factory("B.tif", np.ones((5, 5)), origin=(5, 0), nodata=-9999)
+    later = os.stat(path_b).st_mtime_ns + 10**9
+    os.utime(path_b, ns=(later, later))
+
+    assert merge_rasters([path_a, path_b], masked=False).rio.nodata == -9999
+
+
 @pytest.mark.parametrize(
     "cache_downloads, skip_download_if_exists, expected_skip, expect_warning",
     [
