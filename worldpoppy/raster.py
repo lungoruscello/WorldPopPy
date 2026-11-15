@@ -46,7 +46,6 @@ from worldpoppy.country_names import resolve_country_name
 from worldpoppy.download import WorldPopDownloader
 from worldpoppy.func_utils import (
     BboxInvalidError,
-    module_available,
     geolocate_name,
     standardise_iso3_codes,
     validate_bbox,
@@ -180,20 +179,6 @@ def wp_raster(
         its boundary.
 
         The AoI's CRS does not affect the CRS of the result (see Returns).
-    name : str, optional
-        A custom name for the returned DataArray. This is useful for plotting
-        (it appears as the title/label) or when converting to a Dataset.
-        Defaults to `product_name` if not provided.
-    chunks : str, int, dict or None, optional, default=None
-        If chunks is provided, the raster data is loaded into a *Dask* array
-        for better memory management.
-
-        - If 'auto', Dask chooses the chunk size.
-        - If int K, the data is loaded in chunks of size (K, K).
-          Equivalent to passing {'x': K, 'y': K}.
-        - If dict (e.g., {'x': 1024, 'y': 1024}), that specific chunking is used.
-
-        Lazy reading requires `masked=True` and `cache_downloads=True`.
     years : int or List[Union[int, str]] or str or None, optional
         One or more years of interest or a keyword string.
         For static data products, this argument is usually None (default).
@@ -208,14 +193,28 @@ def wp_raster(
         * List: A list containing integers and/or keywords (e.g.,
           ``[2010, 'last']``).
         * None: (Default) for static data products.
+    name : str, optional
+        A custom name for the returned DataArray. This is useful for plotting
+        (it appears as the title/label) or when converting to a Dataset.
+        Defaults to `product_name` if not provided.
+    chunks : str, int, dict or None, optional, default=None
+        If chunks is provided, the raster data is loaded into a *Dask* array
+        for better memory management.
 
+        - If 'auto', Dask chooses the chunk size.
+        - If int K, the data is loaded in chunks of size (K, K).
+          Equivalent to passing {'x': K, 'y': K}.
+        - If dict (e.g., {'x': 1024, 'y': 1024}), that specific chunking is used.
+
+        Lazy reading requires `masked=True` and `cache_downloads=True`.
     pre_clip_bbox : Tuple[float, float, float, float], optional
         A bounding box (min_lon, min_lat, max_lon, max_lat) to which
         input rasters will *immediately* be clipped after loading them
-        from disk. This is the **manual** pre-clipping boundary.
-        If provided, this overrides the **automatic** buffered pre-clipping
-        mechanism (which is applied by default when users pass the AoI as
-        either a GeoDataFrame or BBOx). Manual pre-clipping is useful when
+        from disk. This is the **manual** pre-clipping boundary. It is only
+        used for AoIs given as country codes or names: bounding-box and
+        geometry AoIs are pre-clipped **automatically** to their slightly
+        enlarged bounding box, and a `pre_clip_bbox` passed with them is
+        ignored (with a warning). Manual pre-clipping is useful when
         working with country-code AoIs like Chile, where remote outlying
         islands result in a merged raster that is largely empty, causing
         RAM explosions. Mutually exclusive with `suppress_pre_clip`.
@@ -283,9 +282,18 @@ def wp_raster(
     -------
     ValueError
         If `mask_and_scale` is given and differs from `masked`, if `chunks`
-        is combined with `masked=False` or `cache_downloads=False`, or if
+        is combined with `masked=False` or `cache_downloads=False`, if
         `other_read_kwargs` contains `masked`, `mask_and_scale` or
-        `band_as_variable=True`.
+        `band_as_variable=True`, if `pre_clip_bbox` is combined with
+        `suppress_pre_clip`, if the AoI is empty, intersects no supported
+        country, or names an unknown or ambiguous country, or if no raster
+        data overlaps the pre-clip box.
+
+    TypeError
+        If the AoI is of an unsupported type.
+
+    FileNotFoundError
+        If the AoI is given as a path that does not exist.
 
     BboxInvalidError
         If `pre_clip_bbox` (or a bounding-box AoI) is not a valid longitude/latitude
@@ -425,7 +433,7 @@ def wp_raster(
 
             # Stack years via `xr.concat` (attributes are set below). A single
             # year is dropped as a dimension (its year stays a coordinate).
-            result = _concat_with_info(annual_rasters, dim='year', combine_attrs='drop').squeeze("band")
+            result = _concat_restoring_nodata(annual_rasters, dim='year', combine_attrs='drop').squeeze("band")
             if result.sizes['year'] == 1:
                 result = result.squeeze('year')
 
@@ -633,8 +641,9 @@ def merge_rasters(
         read settings (`masked`, `mask_and_scale`) cannot be passed here, and
         `band_as_variable` is not supported.
     pre_clip_bbox : Tuple[float, float, float, float], optional
-        An explicit bounding box to use for pre-clipping the input rasters.
-        If provided, this overrides the default buffered pre-clipping.
+        An explicit bounding box (in the CRS of the input rasters) to use for
+        pre-clipping them. If provided, this overrides the automatic buffered
+        pre-clipping (which is applied when `clipping_gdf` is given).
     clipping_gdf : geopandas.GeoDataFrame, optional
         GeoDataFrame with geometries used to clip the merged raster. This is
         used for the **final precise clip**, which keeps every cell that the
@@ -654,9 +663,10 @@ def merge_rasters(
     ------
     ValueError
         If `raster_fpaths` is empty, if `mask_and_scale` is given and differs
-        from `masked`, if `chunks` is combined with `masked=False`, or if
+        from `masked`, if `chunks` is combined with `masked=False`, if
         `other_read_kwargs` contains `masked`, `mask_and_scale` or
-        `band_as_variable=True`.
+        `band_as_variable=True`, if `pre_clip_bbox` is combined with
+        `suppress_pre_clip`, or if no raster overlaps the pre-clip box.
 
     BboxInvalidError
         If `pre_clip_bbox` is not four finite numbers with each minimum not
@@ -680,14 +690,14 @@ def merge_rasters(
     Notes
     -----
     **Performance Warning:**
-    This function uses `xarray.combine_first` iteratively to merge rasters
-    lazily. While this preserves memory, it builds a nested Dask task graph
-    whose depth is proportional to the number of input files.
+    With `chunks`, this function merges rasters lazily, pairwise with
+    `xarray.combine_first`. While this preserves memory, it builds a Dask
+    task graph that grows with the number of input files (its depth grows
+    logarithmically, thanks to the pairwise merging).
 
-    Merging a large number of files may result in a `RecursionError` or
-    significant overhead during graph construction. If you are processing
-    a large number of raster tiles, consider merging them in smaller batches
-    first.
+    Merging a large number of files may still cause significant overhead
+    during graph construction. If you are processing a large number of
+    raster tiles, consider merging them in smaller batches first.
     """
 
     masked, mask_and_scale = _resolve_read_settings(masked, mask_and_scale, chunks, other_read_kwargs)
@@ -795,7 +805,8 @@ def _merge_rasters(
 
         elif clipping_gdf is not None:
             # Case 2: Pre-clipping BBox *automatically* inferred
-            # We need the raster CRS to calculate the buffer. Peek at first file.
+            # The buffered box is computed in the raster CRS, which validation
+            # has already checked to be the same for all files
             try:
                 processing_clip_box = get_buffered_bounds(
                     clipping_gdf, raster_crs=safe_attrs['crs'], buffer_deg=0.1
@@ -805,7 +816,7 @@ def _merge_rasters(
                 )
             except Exception as e:
                 logger.warning(
-                    f"Failed to calculate automatic buffer from first raster. "
+                    f"Failed to calculate the automatic pre-clip box. "
                     f"Pre-clipping disabled. Reason: {e}"
                 )
 
@@ -921,7 +932,11 @@ def bbox_from_location(centre, width_degrees=None, width_km=None):
     Raises
     ------
     ValueError
-        If either both or neither of `width_degrees` and `width_km` are specified.
+        If `centre` is neither a string nor a (lon, lat) tuple, or if either
+        both or neither of `width_degrees` and `width_km` are specified.
+    BboxInvalidError
+        If the resulting box is not valid in WGS84, e.g. because it crosses a
+        pole or the anti-meridian.
     """
 
     # --- Handle location ---
@@ -1299,7 +1314,6 @@ def _validate_raster_attrs(raster_fpaths, masked, mask_and_scale):
                 )
 
     # All checks passed. Return the single, consistent set of safe attrs.
-    # TODO Consider simplifying
     safe_attrs = {'crs': ref['crs']}
     if ref['nodata'] is not None:
         safe_attrs['_FillValue'] = ref['nodata']
@@ -1385,7 +1399,7 @@ def _file_state(path):
 
 def _standardise_rio_nodata_meta(da, masked=False, mask_and_scale=False):
     """
-    Standardise the .rio 'nodata' metadata attribute for floating-point rasters.
+    Standardise the .rio 'nodata' metadata attribute of a raster.
 
     This function resolves the ambiguity where floating-point arrays (either
     implicitly float or explicitly masked) rely on `NaN` to represent missing
@@ -1581,17 +1595,11 @@ def _unique(values):
     return list(dict.fromkeys(value for value in values if pd.notna(value)))
 
 
-def _concat_with_info(objs, **kwargs):
+def _concat_restoring_nodata(objs, **kwargs):
     """
-    Thin wrapper for `xarray.concat` which logs an info message if the optional
-    `bottleneck` library is not available.
+    Concatenate DataArrays with `xarray.concat`, and restore the .rio 'nodata'
+    metadata, which `concat` may drop.
     """
-    if not module_available("bottleneck"):
-        logger.info(
-            "Installing the optional `bottleneck` module may accelerate "
-            "`xarray` concatenation. (pip install bottleneck)"
-        )
-
     da = xr.concat(objs, **kwargs)
 
     # We again restore .rio's 'nodata' metadata attribute since
@@ -1622,10 +1630,6 @@ def _lazy_merge_helper(das):
         default merge path for eager execution (which uses
         `rioxarray.merge.merge_arrays` instead).
     """
-    # TODO: Document that lazy-merging country rasters can create very deep Dask graphs.
-    #  In many workflows, it likely is better to downsample individual country
-    #  rasters first and merge them afterwards.
-
     if not das:
         raise ValueError("Cannot merge empty list of rasters.")
 
