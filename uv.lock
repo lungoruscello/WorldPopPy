@@ -4622,7 +4622,7 @@ requires-dist = [
     { name = "pyarrow" },
     { name = "pycountry" },
     { name = "pyproj" },
-    { name = "rasterio" },
+    { name = "rasterio", specifier = ">=1.4.3" },
     { name = "rioxarray" },
     { name = "shapely" },
     { name = "tabulate" },

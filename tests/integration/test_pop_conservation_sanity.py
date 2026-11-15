@@ -56,8 +56,10 @@ AEQA_CAUC = CRS(
 )
 
 # Largest relative change in the total population allowed after merging and
-# warping. This is a relaxed limit, since the test cases are hard ones.
-MAX_DISCREPANCY = 0.02
+# warping. The largest change measured on 2026-11-15 was 0.0011% ("Caucasus" case,
+# with GDAL 3.12 and rasterio 1.5). Older libraries do much worse (0.18% with GDAL 3.5
+# and rasterio 1.3), hence the minimum `rasterio>=1.4.3`.
+MAX_DISCREPANCY = 0.0001
 
 
 @pytest.mark.integration
@@ -104,8 +106,9 @@ def test_mass_conservation_eager(case_name, iso_codes, target_crs):
         resampling='sum'  # Population must be summed
     )
 
-    # Calculate the total mass of the processed result
-    processed_total = float(combined_warped.sum())
+    # Calculate the total mass of the processed result (summed in float64,
+    # since float32 sums of millions of people are off by a few people)
+    processed_total = float(combined_warped.sum(dtype="float64"))
 
     # --- Control Operation ---
     # Get Sum of Individual Raw Country Rasters
@@ -121,7 +124,7 @@ def test_mass_conservation_eager(case_name, iso_codes, target_crs):
             masked=True,
             mask_and_scale=True,
         )
-        raw_total += float(da.sum())
+        raw_total += float(da.sum(dtype="float64"))
         da.close()
 
     # --- Check Discrepancy Size ---
@@ -134,6 +137,6 @@ def test_mass_conservation_eager(case_name, iso_codes, target_crs):
     print(f"Discrepancy: {discrepancy_ratio:.4%}")
 
     assert discrepancy_ratio < MAX_DISCREPANCY, (
-        f"Significant mass loss detected for {case_name}! "
-        f"Discrepancy: {discrepancy_ratio:.2%} (Limit: {MAX_DISCREPANCY:.1%})"
+        f"Significant change in the total population for {case_name}! "
+        f"Discrepancy: {discrepancy_ratio:.4%} (Limit: {MAX_DISCREPANCY:.2%})"
     )
