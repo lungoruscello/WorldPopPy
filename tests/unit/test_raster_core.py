@@ -207,6 +207,31 @@ def test_automatic_pre_clipping_does_not_change_results(
         np.testing.assert_allclose(pre_clipped[dim], not_pre_clipped[dim], rtol=0, atol=1e-9)
 
 
+@pytest.mark.filterwarnings("ignore:Merging multiple country rasters lazily")
+@pytest.mark.parametrize("chunks", [None, "auto"], ids=["eager", "lazy"])
+def test_pre_clip_keeps_a_narrow_overlap(mock_raster_factory, chunks):
+    """
+    A raster that overlaps the pre-clip box by less than two pixels still
+    contributes its overlapping cells (bug 1.26: it was skipped as if it did
+    not overlap at all).
+    """
+    from worldpoppy import merge_rasters
+
+    # A covers x 0-10 (value = column index), B covers x 10-20 (value 100).
+    # The box starts at x 9.2, so it overlaps only A's last column (x 9-10).
+    data_a = np.tile(np.arange(10, dtype="float32"), (10, 1))
+    path_a = mock_raster_factory("A.tif", data_a, origin=(0, 10))
+    path_b = mock_raster_factory("B.tif", np.full((10, 10), 100.0), origin=(10, 10))
+
+    result = merge_rasters([path_a, path_b], pre_clip_bbox=(9.2, 2, 12, 8), chunks=chunks)
+    result = result.squeeze("band").compute()
+
+    np.testing.assert_array_equal(result.sel(x=9.5).values, 9.0)
+    assert result.attrs["wpy_source_files"].split("\n") == ["A.tif", "B.tif"]
+    # Pre-clipped to the box (columns x 9-12), not loaded in full
+    np.testing.assert_array_equal(result.x.values, [9.5, 10.5, 11.5])
+
+
 def test_wp_raster_clips_to_shapely_aoi(mock_raster_factory, mock_downloader, monkeypatch):
     """
     A shapely geometry AoI clips the merged raster exactly like the
@@ -286,6 +311,45 @@ def test_clip_keeps_exactly_the_cells_the_aoi_touches(
     expected_cols = [col for _, col in expected]
     assert list(rows) == list(range(min(expected_rows), max(expected_rows) + 1))
     assert list(cols) == list(range(min(expected_cols), max(expected_cols) + 1))
+
+
+@pytest.mark.parametrize(
+    "aoi, expected_shape",
+    [((2.21, 2.21, 2.24, 6.39), (42, 1)), ((2.21, 2.21, 2.24, 2.24), (1, 1))],
+    ids=["one-column", "one-cell"],
+)
+@pytest.mark.parametrize("years", [None, [2015, 2020]], ids=["static", "multi-year"])
+def test_narrow_results_keep_their_spatial_dimensions(
+    mock_raster_factory, mock_downloader, monkeypatch, tmp_path, aoi, expected_shape, years
+):
+    """
+    A result only one cell wide (or one cell in total) keeps its `y` and `x`
+    dimensions and can be saved as a GeoTIFF (bug 1.30: a bare `squeeze()`
+    dropped them). Only `band`, and `year` for a single year, are dropped.
+    """
+    import geopandas as gpd
+    import worldpoppy.raster
+    from shapely.geometry import box
+    from worldpoppy import wp_raster
+
+    world = gpd.GeoDataFrame({"iso3": ["MCK"]}, geometry=[box(0, 0, 10, 10)], crs="EPSG:4326")
+    monkeypatch.setattr(worldpoppy.raster, "load_country_borders", lambda: world)
+
+    # 0.1-degree cells (x 0-10, y 0-10); one file per year
+    file_years = years or [None]
+    paths = [
+        mock_raster_factory(f"MCK_{year}.tif", np.ones((100, 100)), origin=(0, 10), res=0.1)
+        for year in file_years
+    ]
+    mdf = fake_manifest_rows([("MCK", year) for year in file_years], multi_year=years is not None)
+    mock_downloader.download.return_value = (paths, mdf)
+
+    result = wp_raster(product_name="pop_test", aoi=aoi, years=years)
+
+    expected_dims = ("y", "x") if years is None else ("year", "y", "x")
+    assert result.dims == expected_dims
+    assert (result.sizes["y"], result.sizes["x"]) == expected_shape
+    result.rio.to_raster(tmp_path / "narrow.tif")
 
 
 @pytest.mark.parametrize(

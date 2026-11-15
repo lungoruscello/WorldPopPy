@@ -38,7 +38,7 @@ from pyproj import CRS, Transformer
 from rasterio.enums import Resampling
 from shapely.geometry import box
 from shapely.geometry.base import BaseGeometry
-from rioxarray.exceptions import NoDataInBounds, OneDimensionalRaster
+from rioxarray.exceptions import NoDataInBounds
 from rioxarray.merge import merge_arrays
 from worldpoppy.borders import load_country_borders
 from worldpoppy.config import WGS84_CRS, get_cache_dir
@@ -385,7 +385,7 @@ def wp_raster(
             merged, used_paths, safe_attrs = _merge_rasters(
                 all_raster_paths, **shared_processing_kwargs
             )
-            result = merged.squeeze()
+            result = merged.squeeze("band")
 
         else:
             # --- Multi-year Product ---
@@ -407,8 +407,11 @@ def wp_raster(
                 annual_rasters.append(merged)
                 used_paths.extend(used_year_paths)
 
-            # Stack years via `xr.concat` (attributes are set below)
-            result = _concat_with_info(annual_rasters, dim='year', combine_attrs='drop').squeeze()
+            # Stack years via `xr.concat` (attributes are set below). A single
+            # year is dropped as a dimension (its year stays a coordinate).
+            result = _concat_with_info(annual_rasters, dim='year', combine_attrs='drop').squeeze("band")
+            if result.sizes['year'] == 1:
+                result = result.squeeze('year')
 
         # --- Metadata (see docs/metadata.md) ---
         result.name = name
@@ -790,8 +793,10 @@ def _merge_rasters(
             # --- Apply Pre-Clipping Slice (Lazy with Dask) ---
             if processing_clip_box is not None:
                 try:
-                    da = da.rio.clip_box(*processing_clip_box)
-                except (NoDataInBounds, OneDimensionalRaster):
+                    # A raster that overlaps the box by a single row or column
+                    # still contributes that strip
+                    da = da.rio.clip_box(*processing_clip_box, allow_one_dimensional_raster=True)
+                except NoDataInBounds:
                     # No overlap with the pre-clip box: the raster contributes
                     # nothing (rather than the full raster being used)
                     da = None
