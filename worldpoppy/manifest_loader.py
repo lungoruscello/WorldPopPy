@@ -149,6 +149,7 @@ from functools import lru_cache
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 
 from worldpoppy.config import (
     PRODUCT_BASE_NAME_MAP,
@@ -649,7 +650,7 @@ def _get_cleaned_manifest():
 
     #  b. Ensure that datasets recorded under the same *static*
     #     product either all have the same year or pd.NA (but no mix)
-    static_mdf = mdf[mdf.multi_year==False]
+    static_mdf = mdf.loc[mdf.multi_year==False, ['product_name', 'year']]
     year_by_prod = static_mdf.groupby('product_name').year
     mixed_vals = year_by_prod.unique().apply(len) > 1  # this is correct for pd.NA
     bad_prod_names = list(mixed_vals[mixed_vals].index)
@@ -659,7 +660,9 @@ def _get_cleaned_manifest():
 
     # --- Infer data series and apparent raster resolution ---
     mdf["data_series"] = mdf.remote_path.apply(infer_data_series)
-    mdf['arcsecs'] = mdf.api_series_desc.apply(infer_resolution_from_description)
+    # The resolution is parsed once per description (a few dozen), not per row
+    descs = mdf.api_series_desc
+    mdf['arcsecs'] = descs.map({d: infer_resolution_from_description(d) for d in descs.unique()})
 
     # --- Validate & clean-up ---
     # Check remaining manifest data
@@ -700,6 +703,12 @@ def _get_cleaned_manifest():
     # Account for additional columns that might be present
     other_cols = sorted([col for col in mdf.columns if col not in maj_cols])
     mdf = mdf.reindex(columns=maj_cols + other_cols)
+
+    # --- Release Memory ---
+    # pandas stores strings with pyarrow, whose memory pool keeps freed memory
+    # for reuse. The cleaning above frees several hundred MB of temporary
+    # data, which would otherwise stay with the process for the whole session.
+    pa.default_memory_pool().release_unused()
 
     return mdf
 
@@ -1037,6 +1046,10 @@ def _build_final_notes_map(mdf):
     This provides a single, clean note for every unique product_name.
     """
     final_notes = {}
+
+    # Only the columns needed here, so that the row filters below do not
+    # copy the whole manifest
+    mdf = mdf[['product_name', 'band', 'band_alias', 'api_slug']]
 
     # 1. Handle BANDED products first
     # The note for a banded product *is* its band description.
