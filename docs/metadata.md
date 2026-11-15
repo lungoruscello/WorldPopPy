@@ -76,7 +76,7 @@ logged).
 | Aspect | Rule |
 |---|---|
 | Masked results (`masked=True`, the default) | floating-point data; missing values are NaN; `rio.nodata` is NaN (also after saving) |
-| Unmasked results | the source files' data type; `rio.nodata` is the source files' nodata value |
+| Unmasked results | the source files' data type; `rio.nodata` is the source files' nodata value. If the source files have none: NaN for floating-point data, none for integer data. |
 | CRS | in the `spatial_ref` coordinate (EPSG:4326 for all WorldPop data), not in the attributes |
 | Name | the product name, or the `name` passed by the user |
 | Results with several years | a `year` dimension with the years as coordinate values, and `long_name` set to the years as a tuple of strings, e.g. `('2015', '2024')`. This is rioxarray's convention for band descriptions: `rio.to_raster` labels each GeoTIFF band with its year, and `rioxarray.open_rasterio` restores the tuple when reading the file back. (Without it, every band would be named after the product, and the years would be lost in saved GeoTIFFs.) A single year of a multi-year product has no `year` dimension and no `long_name`; its year is in `wpy_years`. |
