@@ -58,11 +58,12 @@ AEQA_CAUC = CRS(
 # Largest relative change in the total population allowed after merging and
 # warping. The largest change measured on 2026-11-15 was 0.0011% ("Caucasus" case,
 # with GDAL 3.12 and rasterio 1.5). Older libraries do much worse (0.18% with GDAL 3.5
-# and rasterio 1.3), hence the minimum `rasterio>=1.4.3`.
+# and rasterio 1.3); see the nox session `accuracy_versions`.
 MAX_DISCREPANCY = 0.0001
 
 
 @pytest.mark.integration
+@pytest.mark.accuracy
 @needs_internet_or_cache
 @pytest.mark.parametrize(
     "case_name, iso_codes, target_crs",

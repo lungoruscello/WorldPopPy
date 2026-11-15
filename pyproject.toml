@@ -102,6 +102,7 @@ version = {attr = "worldpoppy.__version__"}
 testpaths = ["tests"]
 markers = [
     "integration: uses real data or bundled assets (may need internet or a filled cache)",
+    "accuracy: numerical accuracy on real data; depends on the rasterio/GDAL version (see the nox session `accuracy_versions`)",
     "e2e: full traversal of WorldPop's API (opt-in via WPY_RUN_HEAVY_TESTS=1)",
     "performance: benchmarks (e.g., building lazy Dask graphs for many input files)",
 ]

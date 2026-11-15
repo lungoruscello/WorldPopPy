@@ -29,6 +29,7 @@ MAX_COORD_DIFF_PIXELS = 0.1
 
 
 @pytest.mark.integration
+@pytest.mark.accuracy
 @needs_internet_or_cache
 @pytest.mark.parametrize(
     "case_name, iso_codes",

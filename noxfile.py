@@ -56,6 +56,17 @@ Supported Python versions
     uv run nox -s versions --force-python 3.15
 
 If it passes, add its classifier (e.g. "Programming Language :: Python :: 3.15").
+
+Minimum versions of rasterio and GDAL
+-------------------------------------
+The numerical accuracy of merging and warping depends on the versions of
+rasterio and the GDAL it bundles (e.g., older versions lose population when
+warping). `accuracy_versions` runs the accuracy tests (marker `accuracy`) on
+the hardest case only, for the minimum rasterio version and the latest series,
+with all other dependencies resolved to match. Run it by hand when changing the
+minimum versions:
+
+    uv run nox -s accuracy_versions
 """
 import os
 import shutil
@@ -72,6 +83,15 @@ SUPPORTED_PYTHONS = nox.project.python_versions(PYPROJECT)
 
 # Python version for all other sessions (matches `.python-version`)
 DEV_PYTHON = "3.12"
+
+# rasterio versions tested by the session `accuracy_versions` (each bundles its
+# own GDAL): the minimum declared in `pyproject.toml` and the latest 1.5.x.
+# Measured on 2026-11-15: 1.4.2 and older fail (eager merges differ from the
+# source values), 1.4.3 passes, hence the minimum `rasterio>=1.4.3`. To test
+# below the minimum, lower it in `pyproject.toml` first. Also the hardest test
+# case, selected with `pytest -k`
+RASTERIO_SERIES = ["1.4.3", "1.5"]
+HARDEST_ACCURACY_CASE = "Caucasus"
 
 nox.needs_version = ">=2025.2.9"  # for `nox.project.dependency_groups`
 nox.options.default_venv_backend = "uv"
@@ -136,6 +156,24 @@ def versions(session):
             "--ignore=tests/unit/test_update_bundled_manifest.py",
             *session.posargs,
         )
+
+
+@nox.session(python=DEV_PYTHON)
+@nox.parametrize("rasterio", RASTERIO_SERIES)
+def accuracy_versions(session, rasterio):
+    """Run the accuracy tests on the hardest case, for one rasterio series (by hand)."""
+    # No lockfile: uv resolves all other dependencies to match this series
+    session.install(".", f"rasterio=={rasterio}.*", *nox.project.dependency_groups(PYPROJECT, "test"))
+    session.run(
+        "python", "-c",
+        "import rasterio, rioxarray; "
+        "print(f'rasterio {rasterio.__version__}, GDAL {rasterio.__gdal_version__}, "
+        "rioxarray {rioxarray.__version__}')",
+    )
+    session.run(
+        "pytest", "tests/integration", "-m", "accuracy", "-k", HARDEST_ACCURACY_CASE, "-s",
+        *session.posargs,
+    )
 
 
 @nox.session(python=DEV_PYTHON)
