@@ -271,9 +271,10 @@ def clean_axes(ax=None, title=None, remove_xy_ticks=True, **title_kwargs):
     if ax is None:
         ax = plt.gca()
 
-    # Handle xarray FacetGrids (extract the underlying array of axes)
-    if hasattr(ax, "axes"):
-        ax = ax.axes
+    # Handle xarray FacetGrids (extract the underlying array of axes; xarray
+    # deprecated the older attribute name `axes` in version 2022.11)
+    if hasattr(ax, "axs"):
+        ax = ax.axs
 
     # Handle Collections (Lists, Numpy Arrays of Axes)
     # We check if it is iterable but NOT a single Axes object

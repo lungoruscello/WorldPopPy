@@ -1,5 +1,10 @@
+import warnings
+
 import httpx
+import matplotlib.pyplot as plt
+import numpy as np
 import pytest
+import xarray as xr
 from geopy.exc import (
     GeocoderInsufficientPrivileges,
     GeocoderQueryError,
@@ -18,7 +23,7 @@ from worldpoppy.func_utils import (
     is_fatal_http_error,
     standardise_iso3_codes,
 )
-from worldpoppy.plot_utils import plot_location_markers
+from worldpoppy.plot_utils import clean_axes, plot_location_markers
 
 FAKE_URL = "https://fake.url/afg.tif"
 FAKE_PLACE = "Nairobi, Kenya"
@@ -400,6 +405,28 @@ def test_location_markers_skip_failed_lookups(
     [warning] = [r.getMessage() for r in caplog.records if r.name == "worldpoppy.plot_utils"]
     assert "Skipping plotting" in warning
     assert "Service timed out" in warning
+
+
+# --- Tests: Axis Cleaning ---
+
+def test_clean_axes_cleans_every_panel_of_a_facet_grid():
+    """
+    An xarray FacetGrid (e.g. one panel per year) has every panel cleaned,
+    without xarray's FutureWarning about its deprecated `axes` attribute.
+    """
+    da = xr.DataArray(
+        np.arange(8.0).reshape(2, 2, 2), dims=("year", "y", "x"), coords={"year": [2015, 2023]}
+    )
+    grid = da.plot(col="year", add_colorbar=False)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        clean_axes(grid)
+
+    for ax in grid.axs.flat:
+        assert len(ax.get_xticks()) == 0 and len(ax.get_yticks()) == 0
+        assert ax.get_xlabel() == "" and ax.get_ylabel() == ""
+    plt.close(grid.fig)
 
 
 # --- Tests: ISO3 Codes ---
