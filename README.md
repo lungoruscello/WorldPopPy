@@ -205,7 +205,22 @@ it used. Ambiguous names such as "Congo" raise an error that lists the candidate
 <table>
   <tr>
     <td width="50%" valign="top">
-      <h3 align="center">3. Automatic Memory Optimisation</h3>
+      <h3 align="center">3. Exploring the Catalogue</h3>
+      <div align="center">
+        <a href="./examples/workflows/02_rwanda_pop_data_availability.py">
+          <img src="./worldpoppy/assets/gallery/workflow02_rwanda.png" alt="Rwanda Population Products" width="95%"/>
+        </a>
+      </div>
+      <br>
+      <div align="center">
+        <b><a href="./examples/workflows/02_rwanda_pop_data_availability.py">Rwanda</a></b>
+      </div>
+      <div align="left">
+        Find all population products available for a country and compare them side by side.
+      </div>
+    </td>
+    <td width="50%" valign="top">
+      <h3 align="center">4. Automatic Memory Optimisation</h3>
       <div align="center">
         <a href="./examples/large_rasters/01_moscow_built_volume.py">
           <img src="./worldpoppy/assets/gallery/large01_moscow.png" alt="Moscow Built-up Volume" width="95%"/>
@@ -219,8 +234,13 @@ it used. Ambiguous names such as "Congo" raise an error that lists the candidate
         Use any shapely geometry as the AoI. Only the cells near it are read, reducing memory consumption for large country rasters (here: about 1 GB instead of 84 GB).
       </div>
     </td>
+  </tr>
+</table>
+
+<table>
+  <tr>
     <td width="50%" valign="top">
-      <h3 align="center">4. Manual Memory Optimisation</h3>
+      <h3 align="center">5. Manual Memory Optimisation</h3>
       <div align="center">
         <a href="./examples/large_rasters/02_chile_climate_dask.py">
           <img src="./worldpoppy/assets/gallery/large02_chile_dask.png" alt="Chile Weather" width="95%"/>
@@ -231,7 +251,22 @@ it used. Ambiguous names such as "Congo" raise an error that lists the candidate
         <b><a href="./examples/large_rasters/02_chile_climate_dask.py">Mainland Chile</a></b>
       </div>
       <div align="left">
-        Easily clip country geometries and lazy-load rasters with Dask.
+        Manually pre-clip a country raster to any box, e.g. without remote islands (here: 2 GB instead of 10 GB).
+      </div>
+    </td>
+    <td width="50%" valign="top">
+      <h3 align="center">6. Lazy Merging with Dask</h3>
+      <div align="center">
+        <a href="./examples/large_rasters/03_andes_topo_dask.py">
+          <img src="./worldpoppy/assets/gallery/large03_andes.png" alt="Andes Topography" width="95%"/>
+        </a>
+      </div>
+      <br>
+      <div align="center">
+        <b><a href="./examples/large_rasters/03_andes_topo_dask.py">The Andes</a></b>
+      </div>
+      <div align="left">
+        Merge the elevation rasters of six countries lazily with Dask (here: an 11 GB grid in about 3 GB of memory).
       </div>
     </td>
   </tr>

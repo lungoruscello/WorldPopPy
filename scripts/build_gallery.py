@@ -20,7 +20,9 @@ GALLERY_MAP = {
     "examples/quickstart/03_korea_lights.py":             ("gallery/quick03_korea.png",         "regular"),
     "examples/quickstart/04_west_africa_growth.py":       ("gallery/quick04_west_africa.png",   "regular"),
     "examples/large_rasters/01_moscow_built_volume.py":   ("gallery/large01_moscow.png",        "regular"),
-    "examples/large_rasters/02_chile_climate_dask.py":    ("gallery/large02_chile_dask.png",    "regular")
+    "examples/large_rasters/02_chile_climate_dask.py":    ("gallery/large02_chile_dask.png",    "regular"),
+    "examples/large_rasters/03_andes_topo_dask.py":       ("gallery/large03_andes.png",         "regular"),
+    "examples/workflows/02_rwanda_pop_data_availability.py": ("gallery/workflow02_rwanda.png", "regular"),
 }
 
 
