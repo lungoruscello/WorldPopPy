@@ -56,50 +56,39 @@ for name in unique_names:
 products_to_plot.sort()
 print(f"Found {len(products_to_plot)} products. Fetching years closest to {TARGET_YEAR}: {products_to_plot}")
 
-# --- Plot Grid Setup---
-num_prods = len(products_to_plot)
+# --- Plot Grid Setup ---
 num_cols = 3
-num_rows = -(-num_prods // num_cols)  # ceiling division
-
-fig, axarr = plt.subplots(
-    num_rows, num_cols,
-    figsize=(12, 3.5 * num_rows),
-    constrained_layout=True
-)
+num_rows = -(-len(products_to_plot) // num_cols)  # ceiling division
+fig, axarr = plt.subplots(num_rows, num_cols, figsize=(6, 6), layout='compressed')
 axarr = np.array(axarr).flatten()  # flatten array for easy iteration
 
+# One shared colour scale for all products. The products differ in resolution
+# (100 m and 1 km cells), so we compare population densities (people per km²)
+# rather than counts per cell.
+norm = LogNorm(vmin=10, vmax=20_000)
+
 # --- Iterate and Plot ---
-for i, (name, year) in enumerate(tqdm(products_to_plot, leave=False)):
-    ax = axarr[i]
+for ax, (name, year) in zip(axarr, tqdm(products_to_plot, leave=False)):
+    pop_data = wp_raster(product_name=name, aoi=aoi, years=year)
 
-    # Fetch data
-    pop_data = wp_raster(
-        product_name=name,
-        aoi=aoi,
-        years=year,
-        masked=True
-    )
+    # Convert counts per cell to people per km² (cells shrink towards the poles)
+    res_x, res_y = pop_data.rio.resolution()
+    cell_km2 = abs(res_x * res_y) * 111.32 ** 2 * np.cos(np.deg2rad(pop_data.y))
+    density = pop_data / cell_km2
 
-    # Plot
-    # Add 1 to allow log-scale plotting of 0 values.
-    # Crucial: We do NOT fill NaN values in this example to highlight that
-    # different WorldPop data products handle unpopulated areas differently.
-    (pop_data + 1).plot(
-        ax=ax,
-        norm=LogNorm(),
-        cmap='inferno',
-        cbar_kwargs={'label': 'Population count'}
-    )
+    # Add 1 to allow log-scale plotting of 0 values. We do NOT fill missing
+    # values (shown in white), to highlight that different WorldPop data products
+    # handle unpopulated areas differently (zero vs. no estimate).
+    img = (density + 1).plot(ax=ax, norm=norm, cmap='inferno', add_colorbar=False)
+    plot_country_borders(aoi, ax=ax, linewidth=0.5)
+    clean_axes(ax, title=f"{name} ({year})", fontsize=7)
 
-    clean_axes(ax, title=f"{name}\n({year})")
-    plot_country_borders(aoi, ax=ax, linewidth=0.75)
+# Hide any unused subplots (if products do not fill the last row)
+for ax in axarr[len(products_to_plot):]:
+    ax.axis('off')
 
-# Hide any unused subplots (if products don't fill the last row)
-for j in range(i + 1, len(axarr)):
-    axarr[j].axis('off')
-
-plt.suptitle(f"Population Data Comparison: {aoi} (~{TARGET_YEAR})", fontsize=15)
+fig.colorbar(img, ax=axarr, orientation='horizontal', shrink=0.6, label='People per km²')
+fig.suptitle(f"Population Data Products for Rwanda (~{TARGET_YEAR})", fontweight='bold')
 
 if __name__ == "__main__":
     plt.show()
-
