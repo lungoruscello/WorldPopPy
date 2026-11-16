@@ -38,6 +38,7 @@ Before a release
 ----------------
     uv run nox -s tests_heavy      # everything, incl. e2e (contacts WorldPop)
     uv run nox -s versions         # the built wheel on all supported Pythons
+    uv run nox -s lowest           # the lowest allowed dependency versions
     uv run nox -s docs             # the documentation, warnings as errors
     uv run scripts/make_dist.py    # build the distributions
 
@@ -46,7 +47,8 @@ Dependencies
 `tests`, `tests_heavy` and `docs` install the exact versions pinned in
 `uv.lock`, so that results do not change when a dependency releases a new
 version. `versions` deliberately ignores the lockfile: it installs the built
-wheel with freshly resolved dependencies, as a user would.
+wheel with freshly resolved dependencies, as a user would. `lowest` also
+ignores it, to install the lowest allowed versions instead.
 
 Supported Python versions
 -------------------------
@@ -56,6 +58,20 @@ Supported Python versions
     uv run nox -s versions --force-python 3.15
 
 If it passes, add its classifier (e.g. "Programming Language :: Python :: 3.15").
+
+Minimum versions of dependencies
+--------------------------------
+The lower bounds in `dependencies` (`pyproject.toml`) are the lowest versions
+for which the tests pass. `lowest` checks them: it installs the lowest allowed
+version of each direct dependency, incl. the test group (uv's resolution
+strategy `lowest-direct`), on the oldest supported Python and runs the unit and
+integration tests. Run it by hand when adding a dependency or changing a lower
+bound:
+
+    uv run nox -s lowest
+
+If it fails, raise the lower bound of the responsible package to the lowest
+version for which it passes.
 
 Minimum versions of rasterio and GDAL
 -------------------------------------
@@ -80,6 +96,10 @@ PYPROJECT = nox.project.load_toml(ROOT / "pyproject.toml")
 # Python versions on which the built wheel is tested (session `versions`),
 # read from the classifiers in `pyproject.toml`
 SUPPORTED_PYTHONS = nox.project.python_versions(PYPROJECT)
+
+# Oldest supported Python, used by the session `lowest` (the classifiers are
+# listed in ascending order)
+LOWEST_PYTHON = SUPPORTED_PYTHONS[0]
 
 # Python version for all other sessions (matches `.python-version`)
 DEV_PYTHON = "3.12"
@@ -156,6 +176,19 @@ def versions(session):
             "--ignore=tests/unit/test_update_bundled_manifest.py",
             *session.posargs,
         )
+
+
+@nox.session(python=LOWEST_PYTHON)
+def lowest(session):
+    """Run the unit and integration tests with the lowest allowed dependency versions (by hand)."""
+    # No lockfile: uv installs the lowest version allowed by `pyproject.toml`
+    # for each direct dependency (incl. the test group), and the highest
+    # matching version for each indirect one
+    session.install(
+        "--resolution=lowest-direct", ".", *nox.project.dependency_groups(PYPROJECT, "test")
+    )
+    session.run("uv", "pip", "list", external=True)
+    session.run("pytest", "tests/unit", "tests/integration", *session.posargs)
 
 
 @nox.session(python=DEV_PYTHON)
