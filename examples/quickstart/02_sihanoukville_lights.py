@@ -4,7 +4,7 @@ Quickstart 2: Visualise Growth of Night-Light Emissions Around Sihanoukville (Ca
 Illustrates `worldpoppy`'s time-series support and Xarray's powerful built-in plotting functions.
 
 Download Requirements:
-    This example requires night-light rasters for KHM and VNM (~100 MB).
+    This example requires night-light rasters for KHM (~9 MB).
     If cached files do not exist, they will be downloaded.
 """
 
@@ -13,11 +13,11 @@ from matplotlib.colors import LogNorm
 
 from worldpoppy import wp_raster, bbox_from_location, clean_axes
 
-# Fetch Time-Series: Night-light data for Sihanoukville
+# Fetch Time-Series: Night-light data around Sihanoukville
 # Different years will be stacked along the 'year' dimension of the DataArray.
 ntl_data = wp_raster(
     product_name="ntl_viirs_g2",  # Night lights from "Global 2" series
-    aoi=bbox_from_location("Preah Sihanouk", width_km=100),
+    aoi=bbox_from_location("Sihanoukville Special Economic Zone", width_km=45),
     years=['first', 'last'],  # Request first & last available year
 )
 
@@ -25,6 +25,7 @@ ntl_data = wp_raster(
 # We use Xarray's built-in plotting to create a facet grid by year.
 p = (ntl_data + 1).plot(
     col="year",
+    subplot_kws={"facecolor": "#c8d3dc"},  # sea (no data) in light grey-blue
     cmap="inferno",
     vmax=50,
     norm=LogNorm(),

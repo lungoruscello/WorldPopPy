@@ -79,13 +79,14 @@ from worldpoppy import wp_raster, bbox_from_location, clean_axes
 # Fetch Two Years of Night-light Data for Sihanoukville (Cambodia)
 ntl_data = wp_raster(
     product_name="ntl_viirs_g2",
-    aoi=bbox_from_location("Preah Sihanouk", width_km=100),
+    aoi=bbox_from_location("Sihanoukville Special Economic Zone", width_km=45),
     years=['first', 'last']  # Request first & last available year 
 )
 
 # Plot: Xarray can create a facet grid by year
 p = (ntl_data + 1).plot(
     col="year", figsize=(10, 5),
+    subplot_kws={"facecolor": "#c8d3dc"},  # sea (no data) in light grey-blue
     cmap="inferno", vmax=50, norm=LogNorm(),
     add_colorbar=False  # Remove since radiance units are not intuitive
 )
