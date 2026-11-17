@@ -41,10 +41,11 @@ Cells:
     source file.
 
 Cases:
-    Mostly small countries, each adding a different situation: two countries
+    Mostly small countries, each adding a different situation (most files'
+    pixel sizes and origins differ by floating-point noise): two countries
     sharing one island (overlapping rasters along a land border; also for two
     stacked years, and for an integer elevation product), separate islands (a
-    gap between files), pixel sizes that differ by floating-point noise,
+    gap between files), a tiny raster at the land border of a larger one,
     negative longitudes and latitudes, a medium-sized merge of three countries,
     a bounding box across a border (AoI clip edges), and a 30-arcsecond
     product. Each case runs eagerly and lazily.
@@ -56,7 +57,7 @@ Note on Terminology:
     lazy merges are built anew in every test, see `tests/integration/conftest.py`.)
 
 Warning:
-    This test requires an internet connection and will download approx. 63 MB
+    This test requires an internet connection and will download approx. 96 MB
     *if* files are not already present in the cache.
 """
 
@@ -233,8 +234,8 @@ def _assert_matches_sources(result, source_paths, label):
     pytest.param("srtm_elevation_g1", ["SXM", "MAF"], None, id="Saint-Martin-elevation"),
     # Separate islands: the gap between the files must stay empty (NaN)
     pytest.param("pop_g1", ["GGY", "JEY"], 2020, id="Guernsey+Jersey"),
-    # Pixel sizes that differ by floating-point noise (1.6e-9, relative)
-    pytest.param("pop_g1", ["LIE", "LUX"], 2020, id="Liechtenstein+Luxembourg"),
+    # A tiny raster at the land border of a larger one
+    pytest.param("pop_g1", ["CHE", "LIE"], 2020, id="Switzerland+Liechtenstein"),
     # Negative longitudes and latitudes (South Pacific)
     pytest.param("pop_g1", ["WLF", "NIU"], 2020, id="Wallis+Niue"),
     # A medium-sized merge of three neighbouring countries

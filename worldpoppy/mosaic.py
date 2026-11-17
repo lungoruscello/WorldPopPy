@@ -154,12 +154,15 @@ def check_same_grid(grids, names=None):
     Check that north-up rasters lie on one grid, up to floating-point noise,
     and return their whole-pixel offsets from the first raster.
 
-    Two grids are the same up to noise if (1) their pixel sizes differ so
-    little that the difference adds up to at most MAX_GRID_NOISE pixels across
-    the extent of all rasters, and (2) their origins are a whole number of
-    pixels apart, within MAX_GRID_NOISE pixels. Snapping such rasters onto the
-    first raster's grid moves no cell by more than MAX_GRID_NOISE pixels. Real
-    differences (e.g. a half-pixel shift, or another resolution) are rejected.
+    A raster lies on the first raster's grid up to noise if snapping it onto
+    that grid moves none of its cells by more than MAX_GRID_NOISE pixels: the
+    offset of its origin from a whole number of pixels, plus the difference in
+    pixel size added up across the raster's own width (or height), must not
+    exceed MAX_GRID_NOISE. A tiny raster whose stored pixel size is relatively
+    noisy is therefore accepted next to a very wide one. (The reverse order can
+    fail: the very wide raster would then be snapped onto the tiny raster's
+    noisy pixel size.) Real differences (e.g. a half-pixel shift, or another
+    resolution) are rejected.
 
     Parameters
     ----------
@@ -185,28 +188,28 @@ def check_same_grid(grids, names=None):
     first_transform = grids[0][0]
     xres, yres = first_transform.a, -first_transform.e
 
-    # Extent of all rasters in pixels of the first raster, along x and y
-    lefts = [t.c for t, _, _ in grids]
-    rights = [t.c + w * t.a for t, w, _ in grids]
-    tops = [t.f for t, _, _ in grids]
-    bottoms = [t.f + h * t.e for t, _, h in grids]
-    num_x = (max(rights) - min(lefts)) / xres
-    num_y = (max(tops) - min(bottoms)) / yres
-
     offsets = []
-    for (transform, _, _), name in zip(grids, names):
-        for res, ref_res, num_pixels in ((transform.a, xres, num_x), (-transform.e, yres, num_y)):
-            if abs(res - ref_res) / ref_res * num_pixels > MAX_GRID_NOISE:
-                raise ValueError(
-                    f"{name} has a different resolution than {names[0]} "
-                    f"({res!r} vs {ref_res!r})."
-                )
+    for (transform, width, height), name in zip(grids, names):
         col = (transform.c - first_transform.c) / xres
         row = (first_transform.f - transform.f) / yres
-        off_grid = max(abs(col - round(col)), abs(row - round(row)))
-        if off_grid > MAX_GRID_NOISE:
+        largest_move = 0.0
+        for res, ref_res, num_pixels, offset in (
+            (transform.a, xres, width, col), (-transform.e, yres, height, row)
+        ):
+            # How far the raster's cells drift from the first raster's grid
+            # across the raster itself, in pixels
+            drift = abs(res - ref_res) / ref_res * num_pixels
+            if drift > MAX_GRID_NOISE:
+                raise ValueError(
+                    f"{name} has a different resolution than {names[0]} ({res!r} vs "
+                    f"{ref_res!r}): across its {num_pixels} pixels, the difference adds up "
+                    f"to {drift:.3g} pixels (at most {MAX_GRID_NOISE} pixels are accepted as "
+                    f"floating-point noise)."
+                )
+            largest_move = max(largest_move, abs(offset - round(offset)) + drift)
+        if largest_move > MAX_GRID_NOISE:
             raise ValueError(
-                f"{name} lies {off_grid:.3g} pixels off the grid of {names[0]} "
+                f"{name} lies {largest_move:.3g} pixels off the grid of {names[0]} "
                 f"(at most {MAX_GRID_NOISE} pixels are accepted as floating-point noise)."
             )
         offsets.append((round(col), round(row)))

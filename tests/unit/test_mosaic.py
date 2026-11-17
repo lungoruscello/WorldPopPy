@@ -125,6 +125,44 @@ def test_check_same_grid_returns_whole_pixel_offsets():
     assert offsets == [(0, 0), (-25_000, -7)]
 
 
+def test_pixel_size_noise_counts_across_each_raster_only():
+    """
+    Noise in a raster's pixel size counts only across that raster: a tiny
+    raster with a relatively noisy pixel size (e.g. Vatican City's `pop_g1`
+    file: 14 x 8 pixels, relative noise 2.9e-8) is accepted next to a raster
+    432,000 pixels wide (e.g. Fiji's, which spans 360 degrees). In the reverse
+    order, the wide raster would be snapped onto the tiny raster's noisy pixel
+    size, and its far cells would move by 0.0125 pixels, so it is rejected.
+    """
+    res = 1 / 1200
+    noisy_res = res * (1 + 2.9e-8)
+    wide = (Affine(res, 0, -180.0, 0, -res, -12.0), 432_000, 10_000)
+    tiny = (Affine(noisy_res, 0, 12.0, 0, -noisy_res, 42.0), 14, 8)
+
+    offsets = check_same_grid([wide, tiny], names=["wide", "tiny"])
+
+    assert offsets == [(0, 0), (230_400, -64_800)]
+    with pytest.raises(ValueError, match="wide has a different resolution than tiny"):
+        check_same_grid([tiny, wide], names=["tiny", "wide"])
+
+
+def test_origin_offset_and_pixel_size_drift_add_up():
+    """
+    A raster whose origin offset (0.006 pixels) and pixel-size drift across its
+    width (0.006 pixels) are each within MAX_GRID_NOISE, but together exceed
+    it, is rejected: its far cells would move by 0.012 pixels.
+    """
+    first = (Affine(1.0, 0, 0.0, 0, -1.0, 100.0), 100, 100)
+    offset_only = (Affine(1.0, 0, 50.006, 0, -1.0, 100.0), 100, 100)
+    drift_only = (Affine(1 + 6e-5, 0, 50.0, 0, -1.0, 100.0), 100, 100)
+    both = (Affine(1 + 6e-5, 0, 50.006, 0, -1.0, 100.0), 100, 100)
+
+    check_same_grid([first, offset_only])
+    check_same_grid([first, drift_only])
+    with pytest.raises(ValueError, match="lies 0.012 pixels off the grid"):
+        check_same_grid([first, both])
+
+
 def test_nan_nodata(mock_raster_factory, tmp_path):
     """
     Rasters whose nodata value is NaN keep their NaN cells from covering valid
@@ -226,14 +264,16 @@ def test_resolution_noise_is_accepted(mock_raster_factory, tmp_path):
 
 # --- Tests: Rejected Inputs ---
 
-def test_resolution_drift_across_the_mosaic_is_rejected(mock_raster_factory):
+def test_resolution_drift_across_a_raster_is_rejected(mock_raster_factory):
     """
     A difference in pixel size that is tiny in relative terms is still rejected
-    if it adds up to more than MAX_RESOLUTION_DRIFT pixels across the mosaic
-    (here: 1e-4 over 1,000 pixels = 0.1 pixels).
+    if it adds up to more than MAX_GRID_NOISE pixels across the raster itself
+    (here: 1e-4 over 200 pixels = 0.02 pixels).
     """
     a = mock_raster_factory("a.tif", _filled(1.0), origin=(0, 3), nodata=NODATA)
-    b = mock_raster_factory("b.tif", _filled(2.0), origin=(997, 3), res=1 + 1e-4, nodata=NODATA)
+    b = mock_raster_factory(
+        "b.tif", _filled(2.0, shape=(3, 200)), origin=(3, 3), res=1 + 1e-4, nodata=NODATA
+    )
 
     with pytest.raises(ValueError, match="b.tif has a different resolution"):
         build_vrt([a, b])
