@@ -14,18 +14,19 @@ Keywords: WorldPop Python package, download and combine WorldPop datasets, globa
 
 WorldPop offers global, gridded datasets on population dynamics, night-light emissions, topography, and much more. 
 These datasets are typically distributed as individual files per country. **WorldPopPy** abstracts the process of
-data discovery, retrieval, and preprocessing. Users query data by Area of Interest (AOI). The library automatically 
+data discovery, retrieval, and preprocessing. Users query data by Area of Interest (AoI). The library automatically 
 identifies the necessary country rasters, downloads them, and merges them into a unified dataset. For an area that
 spans several countries, such as a river basin or a border region, a single call to `wp_raster` replaces finding,
 downloading, merging, and clipping country files by hand.
 
-(See the [Example Gallery](#example-gallery) below for a visual overview of the library's capabilities).
+See the **[Example Gallery](#example-gallery)** below for a visual overview of the library's capabilities.
 
 ## Key Features
 
 * Fetch data for any region by passing country codes or names, bounding boxes, GeoDataFrames, shapely geometries, or vector files.
+* Built-in memory optimisations for massive country rasters, incl. lazy reading and merging with Dask.
 * Easy handling of time-series through integration with [`xarray`](https://docs.xarray.dev/en/stable/).
-* Built-in optimisations to help you handle massive country rasters.
+* Provenance metadata on every result (source datasets, references, processing history), preserved when saving to GeoTIFF.
 * Parallel data downloads with automatic retry logic, local caching, and dry-run support.
 * Searchable data manifest, allowing you to quickly find WorldPop products of interest.
 
@@ -98,73 +99,6 @@ plt.show()
 ```
 <img src="worldpoppy/assets/gallery/quick02_sihanoukville.png" alt="Night lights in Sihanoukville, 2015-2023" width="550"/>
 
-## Working with Results
-
-`wp_raster` returns an `xarray.DataArray` with geospatial metadata (handled by
-[`rioxarray`](https://corteva.github.io/rioxarray/)). Results can therefore be analysed with xarray and saved as a
-GeoTIFF:
-
-```python
-pop_data.rio.to_raster("mekong_pop_2024.tif")
-```
-
-Results are always in the coordinate reference system of WorldPop's source rasters (WGS84, EPSG:4326), whatever the
-CRS of the area of interest. To reproject a result, use `wp_warp`. For counts such as population, use
-`resampling='sum'` to approximately preserve totals:
-
-```python
-from worldpoppy import wp_warp
-
-pop_warped = wp_warp(pop_data, to_crs="EPSG:32647", res=1_000, resampling="sum")
-```
-
-## Finding Data
-
-To simplify data discovery, **WorldPopPy** organises WorldPop's thousands of raw files into curated data products
-with a consistent naming scheme. For example, `pop_g2_r25a` denotes population counts (`pop`) from WorldPop's
-Global 2 series (`g2`), 2025 alpha release (`r25a`). Products cover population counts, night lights, 
-elevation, land cover, and climate variables, among others, and many are available for several years. Use
-`show_supported_data_products` for an overview, with a short description, the spatial resolution, and whether a
-data product covers several years or is static. The overview can be filtered by keyword, country, or year:
-
-```python
-from worldpoppy import show_supported_data_products
-
-# Print data products related to "population" from the Global 2 series 
-show_supported_data_products(keywords=["population", "global2"])
-
-# Print static (single-year) data products available for Brazil
-show_supported_data_products(static_only=True, iso3_codes="BRA")
-``` 
-
-Alternatively, you can also get the library's full data manifest as a pandas DataFrame:
-
-```python
-from worldpoppy import wp_manifest
-
-mdf = wp_manifest()
-mdf.head()
-```
-
-WorldPop organises its data by country, and **WorldPopPy** identifies countries by their three-letter ISO codes
-(ISO 3166-1 alpha-3, e.g., "KEN" for Kenya). These codes select countries in `wp_raster`, `wp_manifest`,
-`show_supported_data_products`, and `plot_country_borders`. To look up a country's code, search for (part of) its name:
-
-```python
-from worldpoppy import find_country_code
-
-find_country_code("ivory")  # -> CIV (Côte d'Ivoire)
-```
-
-`wp_raster` also accepts country names (e.g., `aoi="Kenya"`) if they match exactly one country, and reports the code 
-it used. Ambiguous names such as "Congo" raise an error that lists the candidates.
-
-## Documentation
-
-* **API Reference:** https://worldpoppy.readthedocs.io/
-
-* **Examples:** See the [`examples/`](./examples/) folder in this repository.
-
 ## Example Gallery
 
 <table>
@@ -231,7 +165,7 @@ it used. Ambiguous names such as "Congo" raise an error that lists the candidate
         <b><a href="./examples/large_rasters/01_moscow_built_volume.py">Greater Moscow</a></b>
       </div>
       <div align="left">
-        Use any shapely geometry as the AoI. Only the cells near it are read, reducing memory consumption for large country rasters (here: about 1 GB instead of 84 GB).
+        Use any shapely geometry as the AoI. Only the cells near it are read, reducing memory load for large country rasters (here: about 1 GB instead of 84 GB).
       </div>
     </td>
   </tr>
@@ -271,6 +205,73 @@ it used. Ambiguous names such as "Congo" raise an error that lists the candidate
     </td>
   </tr>
 </table>
+
+## Working with Results
+
+`wp_raster` returns an `xarray.DataArray` with geospatial metadata (handled by
+[`rioxarray`](https://corteva.github.io/rioxarray/)). Results can therefore be analysed with xarray and saved as a
+GeoTIFF:
+
+```python
+pop_data.rio.to_raster("mekong_pop_2024.tif")
+```
+
+Results are always in the coordinate reference system of WorldPop's source rasters (WGS84, EPSG:4326), whatever the
+CRS of the area of interest. To reproject a result, use `wp_warp`. For counts such as population, use
+`resampling='sum'` to approximately preserve totals:
+
+```python
+from worldpoppy import wp_warp
+
+pop_warped = wp_warp(pop_data, to_crs="EPSG:32647", res=1_000, resampling="sum")
+```
+
+## Finding Data
+
+To simplify data discovery, **WorldPopPy** organises WorldPop's thousands of raw files into curated data products
+with a consistent naming scheme. For example, `pop_g2_r25a` denotes population counts (`pop`) from WorldPop's
+Global 2 series (`g2`), 2025 alpha release (`r25a`). Products cover population counts, night lights, 
+elevation, land cover, and climate variables, among others, and many are available for several years. Use
+`show_supported_data_products` for an overview, with a short description, the spatial resolution, and whether a
+data product covers several years or is static. The overview can be filtered by keyword, country, or year:
+
+```python
+from worldpoppy import show_supported_data_products
+
+# Print data products related to "population" from the Global 2 series 
+show_supported_data_products(keywords=["population", "global2"])
+
+# Print static (single-year) data products available for Brazil
+show_supported_data_products(static_only=True, iso3_codes="BRA")
+``` 
+
+Alternatively, you can also get the library's full data manifest as a pandas DataFrame:
+
+```python
+from worldpoppy import wp_manifest
+
+mdf = wp_manifest()
+mdf.head()
+```
+
+WorldPop organises its data by country, and **WorldPopPy** identifies countries by their three-letter ISO codes
+(ISO 3166-1 alpha-3, e.g., "KEN" for Kenya). These codes select countries in `wp_raster`, `wp_manifest`,
+`show_supported_data_products`, and `plot_country_borders`. To look up a country's code, search for (part of) its name:
+
+```python
+from worldpoppy import find_country_code
+
+find_country_code("ivory")  # -> CIV (Côte d'Ivoire)
+```
+
+`wp_raster` also accepts country names (e.g., `aoi="Kenya"`) if they match exactly one country, and reports the code 
+it used. Ambiguous names such as "Congo" raise an error that lists the candidates.
+
+## Documentation
+
+* **API Reference:** https://worldpoppy.readthedocs.io/
+
+* **Examples:** See the [`examples/`](./examples/) folder in this repository.
 
 ## Utilities
 
