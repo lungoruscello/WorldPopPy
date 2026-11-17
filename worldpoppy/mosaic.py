@@ -107,9 +107,10 @@ def build_vrt(raster_fpaths):
     Raises
     ------
     ValueError
-        If `raster_fpaths` is empty, if a raster has more than one band, is
-        rotated or has an unsupported data type, if the rasters differ in CRS or
-        nodata value, or if they do not lie on one grid (see `check_same_grid`).
+        If `raster_fpaths` is empty, if a raster has more than one band or an
+        unsupported data type, if the rasters differ in CRS or nodata value, or
+        if they are not north-up or do not lie on one grid (see
+        `check_same_grid`).
     """
     if not raster_fpaths:
         raise ValueError("`raster_fpaths` is empty: a mosaic needs at least one raster.")
@@ -151,8 +152,12 @@ def write_vrt(raster_fpaths, vrt_fpath):
 
 def check_same_grid(grids, names=None):
     """
-    Check that north-up rasters lie on one grid, up to floating-point noise,
-    and return their whole-pixel offsets from the first raster.
+    Check that rasters are north-up and lie on one grid, up to floating-point
+    noise, and return their whole-pixel offsets from the first raster.
+
+    North-up rasters are unrotated, run from west to east and from north to
+    south (positive pixel width, negative pixel height). Other rasters (e.g.
+    south-up ones) are rejected.
 
     A raster lies on the first raster's grid up to noise if snapping it onto
     that grid moves none of its cells by more than MAX_GRID_NOISE pixels: the
@@ -181,10 +186,13 @@ def check_same_grid(grids, names=None):
     Raises
     ------
     ValueError
-        If a raster does not lie on the grid of the first raster.
+        If a raster is not north-up, or does not lie on the grid of the first
+        raster.
     """
     if names is None:
         names = [f"raster {i + 1}" for i in range(len(grids))]
+    for (transform, _, _), name in zip(grids, names):
+        _check_north_up(transform, name)
     first_transform = grids[0][0]
     xres, yres = first_transform.a, -first_transform.e
 
@@ -256,6 +264,25 @@ def mosaic_grid(grids, names=None):
 
 # --- Reading and Checking the Rasters ---
 
+def _check_north_up(transform, name):
+    """
+    Raise a ValueError if a raster's transform is not north-up (see
+    `check_same_grid`).
+    """
+    if transform.b != 0 or transform.d != 0:
+        raise ValueError(f"{name} is rotated; worldpoppy merges north-up rasters only.")
+    if transform.e >= 0:
+        raise ValueError(
+            f"{name} is stored south-up (its pixel height is positive); worldpoppy merges "
+            f"north-up rasters only. Flip it first, e.g. with `gdalwarp`."
+        )
+    if transform.a <= 0:
+        raise ValueError(
+            f"{name} runs from east to west (its pixel width is negative); worldpoppy "
+            f"merges north-up rasters only. Flip it first, e.g. with `gdalwarp`."
+        )
+
+
 def _read_raster_info(path):
     """
     Read the properties of a raster that the mosaic needs.
@@ -267,8 +294,6 @@ def _read_raster_info(path):
                 f"{path.name} has {src.count} bands; a mosaic needs single-band rasters."
             )
         transform = src.transform
-        if transform.b != 0 or transform.d != 0:
-            raise ValueError(f"{path.name} is rotated; a mosaic needs north-up rasters.")
         dtype = src.dtypes[0]
         if dtype not in GDAL_DATA_TYPES:
             raise ValueError(f"{path.name} has the unsupported data type {dtype}.")

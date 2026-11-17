@@ -664,6 +664,30 @@ def test_rasters_off_the_grid_are_rejected(mock_raster_factory, chunks):
         merge_rasters([path_a, path_b], chunks=chunks)
 
 
+@pytest.mark.parametrize("chunks", [None, 2], ids=["eager", "lazy"])
+def test_south_up_rasters_are_rejected(mock_raster_factory, tmp_path, chunks):
+    """
+    A raster stored south-up (positive pixel height) is rejected in eager and
+    lazy merges alike, also as the only raster (before, eager merges returned
+    all NaN without an error, and a lazy merge with a north-up raster placed
+    that raster in the wrong rows).
+    """
+    import rasterio
+    from worldpoppy import merge_rasters
+    from worldpoppy.raster import IncompatibleRasterError
+
+    south_up = tmp_path / "S.tif"
+    profile = dict(driver="GTiff", width=4, height=3, count=1, dtype="float32", nodata=-9999,
+                   crs="EPSG:4326", transform=rasterio.Affine(1, 0, 0, 0, 1, 0))
+    with rasterio.open(south_up, "w", **profile) as dst:
+        dst.write(np.ones((1, 3, 4), dtype="float32"))
+    north_up = mock_raster_factory("N.tif", np.ones((3, 4), dtype="float32"), origin=(4, 3))
+
+    for paths in ([south_up], [south_up, north_up]):
+        with pytest.raises(IncompatibleRasterError, match="S.tif is stored south-up"):
+            merge_rasters(paths, chunks=chunks)
+
+
 def test_grid_noise_gives_identical_eager_and_lazy_merges(mock_raster_factory):
     """
     Rasters whose grids differ by floating-point noise only are merged, and

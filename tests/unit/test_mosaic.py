@@ -302,6 +302,26 @@ def test_incompatible_rasters_raise(mock_raster_factory, change, message):
         build_vrt([a, b])
 
 
+@pytest.mark.parametrize("transform, message", [
+    (Affine(1, 0, 0, 0, 1, 0), "is stored south-up"),
+    (Affine(-1, 0, 5, 0, -1, 5), "runs from east to west"),
+    (Affine(1, 0.1, 0, 0, -1, 5), "is rotated"),
+], ids=["south-up", "east-to-west", "rotated"])
+def test_rasters_that_are_not_north_up_are_rejected(transform, message):
+    """
+    A raster that is not north-up is rejected with a message naming the cause,
+    whether it is the only raster, the first or a later one (before, a
+    south-up raster first gave all-NaN eager merges, and a later one a
+    misleading "different resolution").
+    """
+    north_up = (Affine(1, 0, 0, 0, -1, 5), 5, 5)
+    other = (transform, 5, 5)
+
+    for grids, names in (([other], ["b"]), ([north_up, other], ["a", "b"]), ([other, north_up], ["b", "a"])):
+        with pytest.raises(ValueError, match=f"b {message}"):
+            check_same_grid(grids, names=names)
+
+
 def test_multi_band_raster_raises(tmp_path):
     path = tmp_path / "two_bands.tif"
     profile = dict(driver="GTiff", width=2, height=2, count=2, dtype="float32",
