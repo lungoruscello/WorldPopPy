@@ -44,6 +44,8 @@ def extract_year_from_filename(file_path_or_url):
     unique_years = set(matches)
 
     if len(unique_years) > 1:
+        # filename seems to contain multiple *different* year
+        # identifiers
         logger.warning(
             f"Ambiguous year in filename: {filename}. "
             f"Found multiple different non-range years: {sorted(unique_years)}. "
@@ -51,7 +53,9 @@ def extract_year_from_filename(file_path_or_url):
         )
         return None
 
+    # we found at least one year, and all found years are identical.
     try:
+        # cast to int
         year_str = matches[0]
         year_int = int(year_str)
     except (IndexError, ValueError) as e:
@@ -158,12 +162,13 @@ def are_all_files_tif(file_list):
     """
     valid_suffixes = {".tif", ".tiff", ".geotiff"}
 
-    if not file_list:
+    if not file_list:  # empty list
         return False
 
     try:
         return all(Path(f).suffix.lower() in valid_suffixes for f in file_list)
     except Exception as e:
+        # safety net for weird inputs (e.g., list contains non-strings)
         logger.warning(f"Error while validating file list: {e}")
         return False
 
@@ -205,11 +210,17 @@ def are_unique_integers_consecutive(unique_int_list):
         True if the integers are consecutive, False otherwise.
     """
     if not unique_int_list or len(unique_int_list) < 2:
+        # empty list or a single item are consecutive
         return True
 
     min_val = min(unique_int_list)
     max_val = max(unique_int_list)
 
+    # If a list of 5 unique integers is consecutive
+    # (e.g., [20, 24, 22, 21, 23]),
+    # then max-min+1 (24-20+1) *must* equal its length (5).
+    # If a number were missing (e.g., [20, 24, 22, 21]),
+    # then (24-20+1) = 5, but len = 4.
     return (max_val - min_val + 1) == len(unique_int_list)
 
 

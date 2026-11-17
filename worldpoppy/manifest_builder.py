@@ -1204,7 +1204,21 @@ def _infer_summary_url_template(sample_details):
     """
     Convert the summary URL for a single WorldPop dataset into
     a more general template.
-    ... (docstring as before) ...
+
+    Convert a literal summary URL into a replaceable template.
+
+    This function handles the simple substitution for summary URLs,
+    which only requires replacing the dataset ID.
+
+    Parameters
+    ----------
+    sample_details : dict
+        The `sample_details` dictionary from the Sample Payload.
+
+    Returns
+    -------
+    str | None
+        The template (e.g., "...?id={id}") or None if templating fails.
     """
     sample_summary_url = sample_details.get("url_summary")
     sample_id_str = sample_details.get("id")
@@ -1296,6 +1310,9 @@ def _build_dataset_record(
     try:
         iso_code = coverage_entry["iso3"]
         year = coverage_entry.get("popyear")  # will be None for static data
+
+        # This is `worldpoppy`'s own ID for the manifest, which *must* be unique.
+        # For "multi-year" and "multi-band" data, this will be synthetic (e.g., "62514_2020")
         unique_idx = str(coverage_entry["id"])
 
         # --- 1. Build Download URL ---
