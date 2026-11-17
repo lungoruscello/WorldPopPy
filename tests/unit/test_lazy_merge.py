@@ -188,6 +188,32 @@ def test_lazy_merge_of_different_resolutions_raises(mock_raster_factory):
         merge_rasters([a, b], chunks=2)
 
 
+@pytest.mark.parametrize("b_config, message", [
+    (dict(nodata=None), "b.tif has no nodata value"),
+    (dict(scale_factor=10.0), "b.tif has a scale or offset"),
+    (dict(dtype="int16"), "b.tif has the data type int16"),
+    (dict(nodata=-1), "b.tif has a different nodata value"),
+], ids=["no-nodata", "scale", "data-type", "nodata-differs"])
+def test_lazy_merge_rejects_rasters_whose_values_it_would_change(mock_raster_factory, b_config, message):
+    """
+    Rasters that the virtual mosaic cannot merge without changing their values
+    are rejected in lazy merges, with a hint to read them eagerly, which works
+    (before, a scale or another data type gave wrong values silently, and a
+    missing nodata value filled gaps with 0). No WorldPop file is affected;
+    this protects users' own rasters.
+    """
+    from worldpoppy.raster import IncompatibleRasterError
+
+    b_config = dict(b_config)
+    dtype = b_config.pop("dtype", "float32")
+    a = mock_raster_factory("a.tif", np.ones((3, 3), dtype="float32"), origin=(0, 3))
+    b = mock_raster_factory("b.tif", np.full((3, 3), 2, dtype=dtype), origin=(3, 3), **b_config)
+
+    with pytest.raises(IncompatibleRasterError, match=rf"{message}.*chunks=None"):
+        merge_rasters([a, b], chunks=2)
+    assert merge_rasters([a, b]).notnull().all()
+
+
 def test_read_only_cache_gives_a_clear_error(mock_raster_factory):
     """
     If the cache directory is not writable, a lazy merge of several rasters

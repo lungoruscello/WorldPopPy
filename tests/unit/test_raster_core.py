@@ -234,7 +234,7 @@ def test_pre_clip_keeps_a_narrow_overlap(mock_raster_factory, chunks):
     # The box starts at x 9.2, so it overlaps only A's last column (x 9-10).
     data_a = np.tile(np.arange(10, dtype="float32"), (10, 1))
     path_a = mock_raster_factory("A.tif", data_a, origin=(0, 10))
-    path_b = mock_raster_factory("B.tif", np.full((10, 10), 100.0), origin=(10, 10))
+    path_b = mock_raster_factory("B.tif", np.full((10, 10), 100.0, dtype="float32"), origin=(10, 10))
 
     result = merge_rasters([path_a, path_b], pre_clip_bbox=(9.2, 2, 12, 8), chunks=chunks)
     result = result.squeeze("band").compute()

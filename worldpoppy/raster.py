@@ -32,6 +32,7 @@ from contextlib import nullcontext
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import rasterio
 import rioxarray
 import shapely
 import xarray as xr
@@ -326,9 +327,11 @@ def wp_raster(
          masked input rasters, even if the underlying source files have
          different `_FillValue`, `scale_factor` or `add_offset` attributes.)
 
-        With `chunks`, also if the rasters cannot be combined into a virtual
-        mosaic (see `worldpoppy.mosaic.build_vrt`), e.g. because their
-        resolutions differ.
+        For any merge, also if the rasters are not north-up or do not lie on
+        one grid (see `worldpoppy.mosaic.check_same_grid`). With `chunks` and
+        several rasters, also if they differ in data type or nodata value, lack
+        a nodata value, or have a scale or offset: a lazy merge could not keep
+        their values (eager merges accept such rasters).
     """
 
     # --- Resolve read settings ---
@@ -723,9 +726,11 @@ def merge_rasters(
          masked input rasters, even if the underlying source files have
          different `_FillValue`, `scale_factor` or `add_offset` attributes.)
 
-        With `chunks`, also if the rasters cannot be combined into a virtual
-        mosaic (see `worldpoppy.mosaic.build_vrt`), e.g. because their
-        resolutions differ.
+        For any merge, also if the rasters are not north-up or do not lie on
+        one grid (see `worldpoppy.mosaic.check_same_grid`). With `chunks` and
+        several rasters, also if they differ in data type or nodata value, lack
+        a nodata value, or have a scale or offset: a lazy merge could not keep
+        their values (eager merges accept such rasters).
 
     Notes
     -----
@@ -1721,6 +1726,7 @@ def _open_lazy_mosaic(raster_fpaths, read_options, masked, mask_and_scale, clip_
     directory; a VRT file that already exists is reused without writing.
     `clip_box` (the pre-clip box, or None) is applied to the mosaic.
     """
+    _check_lazy_mosaic_inputs(raster_fpaths)
     vrt_fpath = _mosaic_vrt_path(raster_fpaths)
     if not vrt_fpath.is_file():
         # Written under a unique temporary name first, so that parallel runs
@@ -1748,6 +1754,49 @@ def _open_lazy_mosaic(raster_fpaths, read_options, masked, mask_and_scale, clip_
         da = da.rio.clip_box(*clip_box, allow_one_dimensional_raster=True)
     da.name = "wpy_data"
     return da
+
+
+def _check_lazy_mosaic_inputs(raster_fpaths):
+    """
+    Raise an IncompatibleRasterError for rasters whose values a lazy merge would
+    change: lazy merges read the virtual mosaic masked, but the mosaic neither
+    applies scales or offsets, nor converts between data types without
+    rounding, nor marks missing cells of rasters without a (common) nodata
+    value.
+
+    No WorldPop file is affected (checked on 2026-11-17 for all cached products:
+    within a product, all files share one data type and nodata value, and none
+    has a scale or offset). The check protects users' own rasters; eager merges
+    handle them.
+    """
+    hint = "read the rasters eagerly instead (chunks=None)"
+    first = None
+    for path in raster_fpaths:
+        with rasterio.open(path) as src:
+            name, dtype, nodata = Path(path).name, src.dtypes[0], src.nodata
+            scale, offset = src.scales[0], src.offsets[0]
+        if nodata is None:
+            raise IncompatibleRasterError(
+                f"{name} has no nodata value, so a lazy merge cannot tell its missing cells; {hint}."
+            )
+        if scale != 1 or offset != 0:
+            raise IncompatibleRasterError(
+                f"{name} has a scale or offset, which a lazy merge cannot apply; {hint}."
+            )
+        if first is None:
+            first = (name, dtype, nodata)
+            continue
+        first_name, first_dtype, first_nodata = first
+        if dtype != first_dtype:
+            raise IncompatibleRasterError(
+                f"{name} has the data type {dtype}, unlike {first_name} ({first_dtype}), so a "
+                f"lazy merge would convert its values; {hint}."
+            )
+        if not (nodata == first_nodata or (np.isnan(nodata) and np.isnan(first_nodata))):
+            raise IncompatibleRasterError(
+                f"{name} has a different nodata value ({nodata}) than {first_name} "
+                f"({first_nodata}); {hint}."
+            )
 
 
 def _mosaic_vrt_path(raster_fpaths):
