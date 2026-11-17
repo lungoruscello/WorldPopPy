@@ -226,6 +226,16 @@ from worldpoppy import wp_warp
 pop_warped = wp_warp(pop_data, to_crs="EPSG:32647", res=1_000, resampling="sum")
 ```
 
+To combine results for different products or areas of interest (e.g., population and elevation), align one result to
+the other first:
+
+```python
+elevation = elevation.rio.reproject_match(pop_data)
+```
+
+The cell coordinates of such results can differ by tiny floating-point amounts, and xarray, which matches cells by
+exactly equal coordinates, would silently drop the cells that differ.
+
 ## Finding Data
 
 To simplify data discovery, **WorldPopPy** organises WorldPop's thousands of raw files into curated data products
