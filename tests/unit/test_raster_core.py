@@ -601,6 +601,39 @@ def test_years_with_grid_noise_are_stacked_on_one_grid(mock_raster_factory, mock
     np.testing.assert_array_equal(top_row_2020[1:], 2020.0)
 
 
+@pytest.mark.parametrize("chunks", [None, "auto"], ids=["eager", "lazy"])
+def test_years_with_different_extents_are_stacked_on_their_union(mock_raster_factory, mock_downloader, chunks):
+    """
+    Years whose extents differ, as where WorldPop records a different extent
+    for a country in different years (here, the 2020 file lacks the top row of
+    the 2000 file), are stacked on the union of their grids: NaN where a year
+    has no data, rows from north to south, and without xarray's FutureWarning
+    about the default of `join` in `xr.concat`.
+    """
+    import warnings
+    from worldpoppy import wp_raster
+
+    res = 1 / 1200  # 3 arcseconds
+    paths = [
+        mock_raster_factory("AAA_2000.tif", np.full((10, 20), 2000.0, dtype="float32"),
+                            origin=(10.0, 50.0), res=res),
+        mock_raster_factory("AAA_2020.tif", np.full((9, 20), 2020.0, dtype="float32"),
+                            origin=(10.0, 50.0 - res), res=res),
+    ]
+    rows = fake_manifest_rows([("AAA", 2000), ("AAA", 2020)], multi_year=True)
+    mock_downloader.download.return_value = (paths, rows)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        result = wp_raster(product_name="pop_test", aoi=["AAA"], years=[2000, 2020], chunks=chunks)
+
+    assert result.sizes["y"] == 10, f"Expected the union of 10 rows, got {result.sizes['y']}"
+    assert (np.diff(result.y.values) < 0).all(), "Rows must run from north to south"
+    np.testing.assert_array_equal(result.sel(year=2000).values, 2000.0)
+    assert np.isnan(result.sel(year=2020).isel(y=0).values).all(), "The 2020 file has no top row"
+    np.testing.assert_array_equal(result.sel(year=2020).isel(y=slice(1, None)).values, 2020.0)
+
+
 @pytest.mark.parametrize(
     "mismatch_kwargs, error_substring",
     [

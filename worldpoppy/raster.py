@@ -454,7 +454,15 @@ def wp_raster(
             annual_rasters = _snap_to_common_grid(
                 annual_rasters, names=[f"year {year}" for year in paths_by_year]
             )
-            result = _concat_restoring_nodata(annual_rasters, dim='year', combine_attrs='drop').squeeze("band")
+            # The years' extents can differ where WorldPop records a different
+            # extent for a country in different years (e.g. `pop_g1` for Kenya:
+            # the 2020 file starts one pixel further east than the 2000 file).
+            # `join='outer'` keeps the union, with NaN where a year has no
+            # data. (It is xarray's current default, set explicitly because
+            # xarray plans to change the default to 'exact', which would raise.)
+            result = _concat_restoring_nodata(
+                annual_rasters, dim='year', join='outer', combine_attrs='drop'
+            ).squeeze("band")
             # Where the years' extents differ, `xr.concat` sorts the union of
             # their coordinates in ascending order; restore north-up order
             result = result.sortby('y', ascending=False)
