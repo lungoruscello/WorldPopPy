@@ -46,6 +46,7 @@ from pathlib import Path
 import backoff
 import httpx
 import pyarrow as pa
+import pycountry
 import pyarrow.feather
 from tqdm.autonotebook import tqdm
 
@@ -92,8 +93,16 @@ RAW_MANIFEST_COLUMNS = (
     "api_series_desc",
     "api_series_category",
     "api_source",
+    "license",
+    "citation",
+    "doi",
     "summary_url",
 )
+
+# Series-level texts that repeat in every row of a data series. Written
+# dictionary-encoded (each distinct text once), so that e.g. the citations add
+# about 0 MB to the manifest file instead of about 1 MB (measured on 2026-11-17).
+DICTIONARY_ENCODED_COLUMNS = ("license", "citation", "doi")
 
 
 class APIRequestError(Exception):
@@ -410,6 +419,9 @@ def _write_manifest(mdf, path, built_at=None, version=None):
     version = version or __version__
 
     table = pa.Table.from_pandas(mdf, preserve_index=False)
+    for name in DICTIONARY_ENCODED_COLUMNS:
+        if (i := table.schema.get_field_index(name)) >= 0:
+            table = table.set_column(i, name, table.column(name).dictionary_encode())
     metadata = {
         **(table.schema.metadata or {}),
         b"wpy_built_at": built_at.isoformat().encode(),
@@ -811,6 +823,9 @@ def _process_leaf_node(
         "source": sample_details.get("source"),
         "project": sample_details.get("project"),
         "category": sample_details.get("category").strip(),
+        "license": sample_details.get("license") or None,
+        "citation": _series_citation(sample_details, sample_iso, api_path),
+        "doi": sample_details.get("doi") or None,
     }
 
     summary_url_template = _infer_summary_url_template(sample_details)
@@ -1162,6 +1177,29 @@ def _infer_download_url_template(literal_url, sample_iso, sample_year, sample_ba
     return template
 
 
+def _series_citation(sample_details, sample_iso, api_path):
+    """
+    Return the recommended citation of a sample dataset, for use as the citation
+    of its whole data series, or None if there is none or if it may be
+    country-specific: a citation that names the sample country is not stored
+    (with a warning), since it might not apply to the series' other countries.
+    (On 2026-11-17, citations were identical across countries and years in
+    every series checked, and named no country.)
+    """
+    citation = sample_details.get("citation") or None
+    country = pycountry.countries.get(alpha_3=sample_iso)
+    if citation is None or country is None:
+        return citation
+    names = {getattr(country, attr, None) for attr in ("name", "common_name", "official_name")}
+    if any(name and name.lower() in citation.lower() for name in names):
+        logger.warning(
+            f"Not storing the citation of {api_path}: it names the sample country "
+            f"({sample_iso}), so it may not apply to the series' other countries."
+        )
+        return None
+    return citation
+
+
 def _infer_summary_url_template(sample_details):
     """
     Convert the summary URL for a single WorldPop dataset into
@@ -1299,6 +1337,9 @@ def _build_dataset_record(
             "api_series_desc": series_metadata.get("desc"),
             "api_series_category": series_metadata.get("category"),
             "api_source": series_metadata.get("source"),
+            "license": series_metadata.get("license"),
+            "citation": series_metadata.get("citation"),
+            "doi": series_metadata.get("doi"),
             # --- Dataset-Level Metadata ---
             "summary_url": summary_url,
         }

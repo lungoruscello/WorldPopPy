@@ -98,7 +98,8 @@ RESULT_COMMENT = (
     "not affiliated with WorldPop. Please cite the original datasets (see "
     "'references'). The summary URLs in 'references' are inferred by WorldPopPy "
     "and may occasionally not resolve; the official dataset titles help to find "
-    "the pages."
+    "the pages. The licence and the recommended citations are those of WorldPop's "
+    "metadata for one sample dataset per data series."
 )
 
 # Appended to error messages about unusable `aoi` arguments

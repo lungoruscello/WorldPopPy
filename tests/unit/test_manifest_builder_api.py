@@ -443,6 +443,31 @@ def test_manifest_metadata_round_trip(tmp_path):
     assert not list(tmp_path.glob("*.tmp"))  # written atomically, no leftovers
 
 
+def test_manifest_stores_series_texts_dictionary_encoded(tmp_path):
+    """
+    Licence, citation and DOI, which repeat in every row of a data series, are
+    stored dictionary-encoded (each distinct text once), and load unchanged.
+    """
+    path = tmp_path / "manifest.feather"
+    citation = "WorldPop (2018). Global High Resolution Population Denominators Project."
+    mdf = pd.DataFrame({
+        "iso3": ["AFG", "ALB", "DZA"],
+        "license": ["https://hub.example/licence.txt"] * 3,
+        "citation": [citation, citation, None],
+        "doi": ["10.5258/SOTON/WP00645"] * 3,
+    })
+
+    _write_manifest(mdf, path)
+
+    schema = pyarrow.feather.read_table(path).schema
+    assert [pa.types.is_dictionary(schema.field(name).type) for name in ("iso3", "license", "citation", "doi")] == [
+        False, True, True, True
+    ]
+    loaded = pd.read_feather(path)
+    assert loaded["citation"].tolist()[:2] == [citation, citation] and pd.isna(loaded["citation"][2])
+    assert loaded["doi"].tolist() == ["10.5258/SOTON/WP00645"] * 3
+
+
 def test_failed_manifest_write_leaves_existing_manifest_intact(tmp_path, monkeypatch):
     """
     If writing a manifest fails halfway (e.g., disk full), the existing

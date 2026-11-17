@@ -141,6 +141,19 @@ individually.
 
 - api_source (str):
     The raw source text from the meta-data API.
+
+- license (str):
+    The licence of the data series (a link to the licence text), from the
+    meta-data API (taken from one sample dataset per series).
+
+- citation (str):
+    WorldPop's recommended citation of the data series, from the meta-data API
+    (taken from one sample dataset per series; missing where it might be
+    country-specific).
+
+- doi (str):
+    The DOI of the data series, from the meta-data API (taken from one sample
+    dataset per series).
 """
 
 import logging

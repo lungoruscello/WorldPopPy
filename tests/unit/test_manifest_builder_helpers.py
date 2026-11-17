@@ -1,3 +1,6 @@
+import pytest
+
+
 def test_infer_url_template():
     from worldpoppy.manifest_builder import _infer_download_url_template
 
@@ -32,7 +35,8 @@ def test_validate_url_template_raises_on_missing_placeholder():
 def test_dataset_record_has_raw_manifest_columns():
     """
     Each manifest record has exactly the columns that the manifest loader
-    requires (`RAW_MANIFEST_COLUMNS`), incl. a filled-in summary URL.
+    requires (`RAW_MANIFEST_COLUMNS`), incl. a filled-in summary URL and the
+    series' licence, citation and DOI.
     """
     from worldpoppy.manifest_builder import RAW_MANIFEST_COLUMNS, _build_dataset_record
 
@@ -42,12 +46,38 @@ def test_dataset_record_has_raw_manifest_columns():
         summary_url_template="https://hub.example/summary?id={id}",
         id_for_summary="42",  # e.g., the country-level entry of a multi-year series
         api_path="pop/wpgp",
-        series_metadata={},
+        series_metadata={"license": "https://hub.example/licence.txt", "citation": "WorldPop (2018).",
+                         "doi": "10.5258/SOTON/WP00645"},
         node_name="Unconstrained",
     )
 
     assert tuple(record) == RAW_MANIFEST_COLUMNS
     assert record["summary_url"] == "https://hub.example/summary?id=42"
+    assert (record["license"], record["citation"], record["doi"]) == (
+        "https://hub.example/licence.txt", "WorldPop (2018).", "10.5258/SOTON/WP00645"
+    )
+
+
+@pytest.mark.parametrize("citation, expected", [
+    ("WorldPop (2018). Global High Resolution Population Denominators Project.", "kept"),
+    ("WorldPop (2018). Population of Afghanistan, 2000-2020.", None),
+    ("WorldPop (2018). Population of the Islamic Republic of Afghanistan.", None),
+    (None, None),
+    ("", None),
+], ids=["series-level", "names-the-country", "official-name", "missing", "empty"])
+def test_series_citation_is_dropped_where_it_names_the_sample_country(citation, expected, caplog):
+    """
+    The sample dataset's citation is stored for the whole data series, unless
+    it names the sample country (it might then not apply to the series' other
+    countries), which is logged as a warning.
+    """
+    from worldpoppy.manifest_builder import _series_citation
+
+    result = _series_citation({"citation": citation}, "AFG", "pop/wpgp")
+
+    assert result == (citation if expected == "kept" else None)
+    names_country = bool(citation) and "Afghanistan" in citation
+    assert ("names the sample country" in caplog.text) == names_country
 
 def test_extract_year_from_filename():
     from worldpoppy.manifest_utils import extract_year_from_filename
