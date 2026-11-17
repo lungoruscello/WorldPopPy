@@ -24,9 +24,9 @@ See the **[Example Gallery](#example-gallery)** below for a visual overview of t
 ## Key Features
 
 * Fetch data for any region by passing country codes or names, bounding boxes, GeoDataFrames, shapely geometries, or vector files.
-* Built-in memory optimisations for massive country rasters, incl. lazy reading and merging with Dask.
+* Built-in memory optimisations for massive country rasters: read only what your AoI needs, and process large areas lazily with Dask.
 * Easy handling of time-series through integration with [`xarray`](https://docs.xarray.dev/en/stable/).
-* Provenance metadata on every result (source datasets, references, processing history), preserved when saving to GeoTIFF.
+* Provenance metadata on every result (source datasets, references, processing history).
 * Parallel data downloads with automatic retry logic, local caching, and dry-run support.
 * Searchable data manifest, allowing you to quickly find WorldPop products of interest.
 
