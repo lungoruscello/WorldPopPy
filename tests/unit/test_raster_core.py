@@ -623,8 +623,14 @@ def test_years_with_different_extents_are_stacked_on_their_union(mock_raster_fac
     rows = fake_manifest_rows([("AAA", 2000), ("AAA", 2020)], multi_year=True)
     mock_downloader.download.return_value = (paths, rows)
 
+    # Only xarray's warning about `join` becomes an error: other FutureWarnings
+    # come from the libraries (e.g. rioxarray 0.19 on Python 3.11, with xarray
+    # 2026.9, warns about chunks given as a tuple in every lazy read)
     with warnings.catch_warnings():
-        warnings.simplefilter("error", FutureWarning)
+        warnings.filterwarnings(
+            "error", message="In a future version of xarray the default value for join",
+            category=FutureWarning,
+        )
         result = wp_raster(product_name="pop_test", aoi=["AAA"], years=[2000, 2020], chunks=chunks)
 
     assert result.sizes["y"] == 10, f"Expected the union of 10 rows, got {result.sizes['y']}"
