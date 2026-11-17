@@ -65,6 +65,17 @@ from worldpoppy.tracking import api_query_log
 
 logger = logging.getLogger(__name__)
 
+# API paths that the crawler does not request, with the reason (keys in lower
+# case). A skipped path does not count as a failure of the build.
+SKIPPED_API_PATHS = {
+    "age_structures": "not supported (a limitation in `_extract_unique_bands`)",
+    "covariates/merit_elevation_200": (
+        "not reachable: WorldPop's API answers HTTP 500 for every spelling (the listed "
+        "alias ' MERIT_Elevation_200' has a leading space and a truncated name, 'MERIT "
+        "Elevation 2007'; checked on 2026-11-17). Re-check at the next rebuild."
+    ),
+}
+
 # Columns of the raw manifest, i.e., the keys of each record created by
 # `_build_dataset_record`. The manifest loader requires all of them.
 RAW_MANIFEST_COLUMNS = (
@@ -614,9 +625,7 @@ def _discover_leaf_nodes(report):
             alias = node["alias"]  # noqa
             name = node["name"]  # noqa
 
-            if alias.lower() == 'age_structures':
-                # Data along this API branch is currently not supported
-                # due to a limitation in `_extract_unique_bands`
+            if _is_skipped(alias):
                 continue
 
             if DEBUG and alias.lower() != 'covariates':
@@ -670,6 +679,17 @@ def _discover_leaf_nodes(report):
     return leaf_nodes_to_process
 
 
+def _is_skipped(api_path):
+    """
+    Return True, and log the reason, if the crawler should not request
+    `api_path` (see SKIPPED_API_PATHS).
+    """
+    reason = SKIPPED_API_PATHS.get(api_path.lower())
+    if reason is not None:
+        logger.info(f"Skipping API path {api_path}: {reason}")
+    return reason is not None
+
+
 def _traverse_api_node(api_path, node_name, report):
     """
     Recursively traverse a single node in the API hierarchy and return
@@ -707,7 +727,7 @@ def _traverse_api_node(api_path, node_name, report):
             for item in returned_entries:
                 alias = item.get("alias", "").strip()
                 next_node_name = item.get("name", "N/A")
-                if not alias:
+                if not alias or _is_skipped(f"{api_path}/{alias}"):
                     continue
 
                 # recurse the function (serially)

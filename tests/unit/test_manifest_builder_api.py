@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -332,6 +333,33 @@ def test_build_reports_complete_manifest(monkeypatch, isolated_manifest_assets, 
     assert "1 raster file from" in caplog.text and "No failures" in caplog.text
     assert build_raw_manifest_from_api(force_rebuild=False) is None
     assert build_raw_manifest_from_api(force_rebuild=True).is_complete
+
+
+def test_build_skips_listed_api_paths(monkeypatch, isolated_manifest_assets, caplog):
+    """
+    API paths in SKIPPED_API_PATHS are not requested and do not make the build
+    incomplete: here a top-level branch, and a nested series whose listed
+    alias has a leading space (as WorldPop's ' MERIT_Elevation_200').
+    """
+    monkeypatch.setitem(manifest_builder.SKIPPED_API_PATHS, "pop/broken", "not reachable (test)")
+    api_tree = {  # requesting any other URL raises a KeyError
+        METADATA_API_URL: {"data": [
+            {"alias": "pop", "name": "Population"}, {"alias": "age_structures", "name": "Age"},
+        ]},
+        f"{METADATA_API_URL}/pop": {"data": [
+            {"alias": "ok", "name": "Works"}, {"alias": " broken", "name": "Broken"},
+        ]},
+        f"{METADATA_API_URL}/pop/ok": {"data": [{"id": "1", "iso3": "AFG"}]},
+    }
+    _patch_build_backend(monkeypatch, api_tree)
+
+    with caplog.at_level(logging.INFO, logger="worldpoppy.manifest_builder"):
+        report = build_raw_manifest_from_api(force_rebuild=True)
+
+    assert report.is_complete
+    assert (report.num_series, report.num_files) == (1, 1)
+    assert "Skipping API path pop/broken" in caplog.text
+    assert "Skipping API path age_structures" in caplog.text
 
 
 @pytest.mark.parametrize("tree_override, rows_per_series, expected_error", [
