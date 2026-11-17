@@ -42,13 +42,15 @@ Cells:
 
 Cases:
     Mostly small countries, each adding a different situation (most files'
-    pixel sizes and origins differ by floating-point noise): two countries
+    pixel sizes and origins differ by floating-point noise): a single country
+    (no merge), two countries
     sharing one island (overlapping rasters along a land border; also for two
     stacked years, and for an integer elevation product), separate islands (a
     gap between files), a tiny raster at the land border of a larger one,
     negative longitudes and latitudes, a medium-sized merge of three countries,
-    a bounding box across a border (AoI clip edges), and a 30-arcsecond
-    product. Each case runs eagerly and lazily.
+    a bounding box across a border (AoI clip edges), a 30-arcsecond product,
+    night lights on the other 3-arcsecond grid (half a pixel away), and the
+    current population product. Each case runs eagerly and lazily.
 
 Note on Terminology:
     This is classified as an **Integration Test** rather than a strict
@@ -57,7 +59,7 @@ Note on Terminology:
     lazy merges are built anew in every test, see `tests/integration/conftest.py`.)
 
 Warning:
-    This test requires an internet connection and will download approx. 96 MB
+    This test requires an internet connection and will download approx. 170 MB
     *if* files are not already present in the cache.
 """
 
@@ -226,6 +228,8 @@ def _assert_matches_sources(result, source_paths, label):
 @pytest.mark.parametrize("chunks", [None, 128], ids=["eager", "lazy"])
 # (Chunks of 128 cells, so that even the small results span several chunks)
 @pytest.mark.parametrize("product_name, aoi, years", [
+    # A single country: no merge (lazily: the single-file path)
+    pytest.param("pop_g1", ["LIE"], 2020, id="Liechtenstein"),
     # Two countries on one small island: their rasters overlap along a land border
     pytest.param("pop_g1", ["SXM", "MAF"], 2020, id="Saint-Martin"),
     # The same, for two stacked years: each year must match its own source files
@@ -245,6 +249,13 @@ def _assert_matches_sources(result, source_paths, label):
     pytest.param("pop_g1", (4.5, 51.2, 5.0, 51.5), 2020, id="Belgian-Dutch-bbox"),
     # 30 arcseconds instead of 3
     pytest.param("pop_g2_1km_r25a", ["RWA", "BDI"], 2020, id="Rwanda+Burundi-30arcsec"),
+    # The other 3-arcsecond grid (half a pixel away from the one above), a product
+    # other than population, and two stacked years, with sea between the rasters
+    pytest.param("ntl_viirs_g2", ["BHR", "QAT"], [2015, 2023], id="Bahrain+Qatar-night-lights"),
+    # The current population product, and a bounding box (across Benin, Ghana
+    # and Togo) where eager and lazy merges once differed by one row (stress
+    # test of 2026-11-15)
+    pytest.param("pop_g2_r25a", (1.0, 6.2, 2.4, 7.5), 2020, id="Benin+Ghana+Togo-bbox"),
 ])
 def test_merged_cells_match_their_source_files(product_name, aoi, years, chunks):
     """
