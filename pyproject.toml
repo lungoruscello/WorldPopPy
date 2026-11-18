@@ -66,6 +66,7 @@ test = [
 dev = [
     { include-group = "test" },
     "black",
+    "ipykernel>=7.3.0",
     "nox>=2026.10.20",
 ]
 docs = [
