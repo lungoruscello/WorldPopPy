@@ -389,6 +389,27 @@ def test_plot_country_borders_selects_requested_countries(
     assert plotted == [{"BEL", "LUX"}]
 
 
+@pytest.mark.parametrize("to_crs", [None, "EPSG:3035"], ids=["wgs84", "projected"])
+@pytest.mark.parametrize("labels", [("", ""), ("my x", "my y")], ids=["no-labels", "own-labels"])
+def test_plot_country_borders_keeps_axis_labels(synthetic_borders, to_crs, labels):
+    """
+    `plot_country_borders` draws borders onto an existing map and leaves its
+    axis labels as they were. (geopandas labels empty axes after the CRS, e.g.
+    "Easting [metre]", which put labels back on maps cleaned by `clean_axes`.)
+    """
+    from matplotlib.figure import Figure
+    from worldpoppy.plot_utils import plot_country_borders
+
+    ax = Figure().add_subplot()
+    ax.set_xlabel(labels[0])
+    ax.set_ylabel(labels[1])
+
+    plot_country_borders(["LUX", "BEL"], ax=ax, to_crs=to_crs)
+
+    assert (ax.get_xlabel(), ax.get_ylabel()) == labels
+    assert len(ax.collections) > 0, "no borders drawn"
+
+
 @pytest.mark.parametrize("keyword", ["all", " ALL "])
 def test_plot_country_borders_all_keyword(synthetic_borders, monkeypatch, keyword):
     """

@@ -38,6 +38,8 @@ def plot_country_borders(iso3_codes, ax=None, to_crs=None, **kwargs):
     """
     Plot country borders on a matplotlib axis.
 
+    The axis labels are left as they are (also when they are empty).
+
     Parameters
     ----------
     iso3_codes : str or list of str
@@ -66,7 +68,14 @@ def plot_country_borders(iso3_codes, ax=None, to_crs=None, **kwargs):
     gdf = world[world.iso3.isin(iso3_codes)]
     if to_crs is not None:
         gdf = gdf.to_crs(to_crs)
+
+    # The borders are drawn onto an existing map, so its axis labels stay as
+    # they are: geopandas labels empty axes after the CRS (e.g., "Easting
+    # [metre]"), which would undo `clean_axes` on maps cleaned beforehand
+    xlabel, ylabel = ax.get_xlabel(), ax.get_ylabel()
     gdf.plot(ax=ax, **kwargs)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
 
 
 def plot_location_markers(
