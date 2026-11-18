@@ -171,9 +171,10 @@ def versions(session):
         )
         session.run(
             "pytest", "tests/unit", "tests/integration",
-            # These tests cover a maintainer script in `scripts/`, which is
+            # These tests cover maintainer scripts in `scripts/`, which are
             # not part of the wheel (the `tests` session covers them)
             "--ignore=tests/unit/test_update_bundled_manifest.py",
+            "--ignore=tests/unit/test_make_dist.py",
             *session.posargs,
         )
 

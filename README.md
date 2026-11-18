@@ -240,10 +240,8 @@ Every result carries WorldPop's recommended citations, the licence, and a proces
 Importantly, these attributes describe the result as returned by **WorldPopPy**. After you select data or compute new
 values with xarray, some attributes no longer match the data (e.g., after selecting one year of a multi-year result,
 `wpy_years` still lists all years). If you save such results, e.g. to pass the files on, update or drop these
-attributes first. The [metadata guide](https://github.com/lungoruscello/WorldPopPy/blob/master/docs/metadata.md)
-describes all attributes, and the
-[metadata example](https://github.com/lungoruscello/WorldPopPy/blob/master/examples/workflows/03_working_with_metadata.py)
-shows how to handle them.
+attributes first. The [metadata guide](./docs/metadata.md) describes all attributes, and the
+[metadata example](./examples/workflows/03_working_with_metadata.py) shows how to handle them.
 
 ## Finding Data
 

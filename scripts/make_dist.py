@@ -29,6 +29,18 @@ def clean_readme_for_pypi():
     with open(ROOT / "README.md", 'r', encoding='utf-8') as f:
         content = f.read()
 
+    with open(ROOT / "readme_pypi.md", 'w', encoding='utf-8') as f:
+        f.write(pypi_readme(content))
+
+    print("✅ Generated readme_pypi.md with absolute URLs.")
+
+
+def pypi_readme(content):
+    """
+    Return the README text for PyPI: without the icon and the badges, and with
+    every relative link and image turned into an absolute GitHub URL (PyPI and
+    the docs site show the README without the repository's files).
+    """
     # Simplify header (Remove the Icon)
     content = re.sub(r'# WorldPopPy <img.*?>', '# WorldPopPy README', content)
 
@@ -36,28 +48,18 @@ def clean_readme_for_pypi():
     # (every line that consists of a linked badge image: [![alt](image)](link))
     content = re.sub(r'^\[!\[[^\]]*\]\([^)]*\)\]\([^)]*\)[ \t]*\n', '', content, flags=re.MULTILINE)
 
-    # FIX HTML IMAGES: Convert relative paths to Absolute Raw GitHub URLs
-    # Matches src="worldpoppy/..." or src="./worldpoppy/..."
-    # We replace them with the raw URL so PyPI can display the image.
-    content = content.replace('src="worldpoppy/', f'src="{GITHUB_RAW_URL}worldpoppy/')
-    content = content.replace('src="./worldpoppy/', f'src="{GITHUB_RAW_URL}worldpoppy/')
+    # Images: raw files, so that PyPI can display them. Markdown images
+    # ![alt](./path) and HTML images src="./path" or src="path" (relative paths
+    # only: no scheme such as https://)
+    content = re.sub(r'(!\[[^\]]*\]\()\./', rf'\1{GITHUB_RAW_URL}', content)
+    content = re.sub(r'src="(?:\./)?(?![a-z]+://)', f'src="{GITHUB_RAW_URL}', content)
 
-    # FIX HTML LINKS: Convert relative file links to Absolute Blob URLs
-    # e.g. href="./examples/..." -> href="https://github.com/.../blob/master/examples/..."
-    content = content.replace('href="./examples/', f'href="{GITHUB_BLOB_URL}examples/')
+    # Links: the files' pages on GitHub. Markdown links [text](./path) and HTML
+    # links href="./path"
+    content = re.sub(r'\]\(\./', f']({GITHUB_BLOB_URL}', content)
+    content = content.replace('href="./', f'href="{GITHUB_BLOB_URL}')
 
-    # FIX MARKDOWN LINKS
-    # >> Catches [examples/](./examples/) -> (https://github.../examples/)
-    content = content.replace('](./examples/)', f']({GITHUB_BLOB_URL}examples/)')
-
-    # >> Catches [LICENSE.txt](./LICENSE.txt) -> (https://github.../LICENSE.txt)
-    content = content.replace('](./LICENSE.txt)', f']({GITHUB_BLOB_URL}LICENSE.txt)')
-
-    # Save to disk
-    with open(ROOT / "readme_pypi.md", 'w', encoding='utf-8') as f:
-        f.write(content)
-
-    print("✅ Generated readme_pypi.md with absolute URLs.")
+    return content
 
 
 def copy_readme_to_doc():
