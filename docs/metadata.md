@@ -47,7 +47,7 @@ Example: `wp_raster('pop_g2_1km_r25a', aoi=bbox, years=[2015, 2024])`.
 | `history` | the processing steps, one line each (see "Processing history" below) | | always |
 | `wpy_version` | WorldPopPy version | `0.5.0` | always |
 | `wpy_product_name` | WorldPopPy's curated product name | `pop_g2_1km_r25a` | always |
-| `wpy_manifest_built_at` | build time of the data manifest used (WorldPopPy's catalogue of WorldPop's files) | `2025-12-08T19:24:34` | always (`unknown` if the manifest does not record it) |
+| `wpy_manifest_built_at` | build time of the data manifest used (WorldPopPy's catalogue of WorldPop's files), in UTC | `2026-11-17T19:51:06Z` | always (`unknown` if the manifest does not record it) |
 | `wpy_source_files` | WorldPop file names that contributed data, one per line | `khm_pop_2015_CN_1km_R2025A_UA_v1.tif` | always |
 | `wpy_countries` | ISO3 codes of the source files, space-separated | `KHM VNM` | always |
 | `wpy_product_type` | whether the product is static (one dataset per country) or multi-year, in WorldPopPy's terms | `static` or `multi-year` | always |

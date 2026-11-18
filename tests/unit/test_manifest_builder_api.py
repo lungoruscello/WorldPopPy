@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -433,7 +433,7 @@ def test_manifest_metadata_round_trip(tmp_path):
     without loading the data, and the data still loads as usual.
     """
     path = tmp_path / "manifest.feather"
-    built_at = datetime(2026, 1, 2, 3, 4, 5)
+    built_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
     _write_manifest(pd.DataFrame({"iso3": ["AFG", "ALB"]}), path, built_at=built_at, version="0.4.9")
 
     info = _read_manifest_info(path, source="user")
@@ -441,6 +441,36 @@ def test_manifest_metadata_round_trip(tmp_path):
     assert (info.built_at, info.version, info.source) == (built_at, "0.4.9", "user")
     assert list(pd.read_feather(path)["iso3"]) == ["AFG", "ALB"]
     assert not list(tmp_path.glob("*.tmp"))  # written atomically, no leftovers
+
+
+def test_manifest_build_time_is_recorded_in_utc(tmp_path):
+    """
+    A new manifest records its build time in UTC, with the time zone (before
+    0.5.0: the local time of the building machine, without a time zone).
+    """
+    path = tmp_path / "manifest.feather"
+    before = datetime.now(timezone.utc)
+    _write_manifest(pd.DataFrame({"iso3": ["AFG"]}), path)
+
+    built_at = _read_manifest_info(path, source="user").built_at
+
+    assert built_at.utcoffset() == timedelta(0)
+    assert before <= built_at <= datetime.now(timezone.utc)
+
+
+def test_build_times_without_time_zone_are_read_as_local_time(isolated_manifest_assets):
+    """
+    Build times without a time zone (manifests built before 0.5.0) are read as
+    local time, so that they can be compared with new build times in UTC: the
+    newer of an old bundled manifest and a new user manifest is selected.
+    """
+    _write_fake_manifest(manifest_builder.BUNDLED_MANIFEST_PATH, days_old=10)  # old style: no time zone
+    _write_manifest(pd.DataFrame({"iso3": ["AFG"]}), get_user_manifest_path())  # new style: UTC
+
+    bundled = _read_manifest_info(manifest_builder.BUNDLED_MANIFEST_PATH, source="bundled")
+    assert bundled.built_at.tzinfo is not None
+    assert abs((datetime.now(timezone.utc) - bundled.built_at) - timedelta(days=10)) < timedelta(minutes=1)
+    assert _select_manifest().source == "user"
 
 
 def test_manifest_stores_series_texts_dictionary_encoded(tmp_path):

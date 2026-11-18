@@ -39,7 +39,7 @@ raw manifest and will hence not be supported by the `worldpoppy` package.
 
 import secrets
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from math import floor
 from pathlib import Path
 
@@ -413,9 +413,10 @@ def _write_manifest(mdf, path, built_at=None, version=None):
 
     The file is written to a temporary name first and then moved into place,
     so that readers never see a half-written manifest. (`built_at` and
-    `version` default to now and the installed version; tests may set them.)
+    `version` default to now, in UTC, and the installed version; tests may set
+    them.)
     """
-    built_at = built_at or datetime.now()
+    built_at = built_at or datetime.now(timezone.utc)
     version = version or __version__
 
     table = pa.Table.from_pandas(mdf, preserve_index=False)
@@ -456,7 +457,7 @@ def _read_manifest_info(path, source):
     built_at = metadata.get(b"wpy_built_at")
     version = metadata.get(b"wpy_version")
     try:
-        built_at = datetime.fromisoformat(built_at.decode()) if built_at else None
+        built_at = _parse_build_time(built_at.decode()) if built_at else None
     except ValueError:
         built_at = None  # malformed: treated like an unknown build time
     return ManifestInfo(
@@ -465,6 +466,17 @@ def _read_manifest_info(path, source):
         built_at=built_at,
         version=version.decode() if version else None,
     )
+
+
+def _parse_build_time(text):
+    """
+    Parse a recorded build time into a time-zone-aware datetime. Manifests
+    built before 0.5.0 recorded the local time of the building machine without
+    a time zone; such times are read as local time (an approximation for
+    manifests built elsewhere), so that all build times can be compared.
+    """
+    built_at = datetime.fromisoformat(text)
+    return built_at if built_at.tzinfo is not None else built_at.astimezone()
 
 
 def _major_minor(version):
@@ -522,13 +534,13 @@ def _select_manifest():
     if not candidates:
         return None
     # Prefer the newer manifest (a manifest of unknown age counts as oldest)
-    return max(candidates, key=lambda info: info.built_at or datetime.min)
+    return max(candidates, key=lambda info: info.built_at or datetime.min.replace(tzinfo=timezone.utc))
 
 
 def _read_legacy_build_time(sidecar_path):
     """Return the build time stored in a legacy sidecar file, or None."""
     try:
-        return datetime.fromisoformat(sidecar_path.read_text().strip())
+        return _parse_build_time(sidecar_path.read_text().strip())
     except (OSError, ValueError):
         return None
 
@@ -537,7 +549,7 @@ def _warn_if_stale(info, max_age_days=180):
     """Suggest an optional update if the manifest in use is older than `max_age_days`."""
     if info.built_at is None:
         return
-    age_days = (datetime.now() - info.built_at).days
+    age_days = (datetime.now(timezone.utc) - info.built_at).days
     if age_days > max_age_days:
         logger.warning(
             f"worldpoppy's data manifest (its list of available WorldPop files) "

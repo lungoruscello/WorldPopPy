@@ -158,6 +158,7 @@ individually.
 
 import logging
 import sys
+from datetime import timezone
 from functools import lru_cache
 
 import numpy as np
@@ -511,7 +512,8 @@ def show_supported_data_products(
     info = _get_active_manifest_info()
     origin = "rebuilt by you" if info.source == "user" else "bundled with worldpoppy"
     if info.built_at is not None:
-        print(f"Data manifest built on: {info.built_at:%Y-%m-%d %H:%M:%S} ({origin}).\n")
+        built_at_utc = info.built_at.astimezone(timezone.utc)
+        print(f"Data manifest built on: {built_at_utc:%Y-%m-%d %H:%M:%S} UTC ({origin}).\n")
     else:
         print(f"Data manifest: build date unknown ({origin}).\n")
 
