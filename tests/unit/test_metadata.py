@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 import geopandas as gpd
 import numpy as np
 import pytest
+import rasterio
 import rioxarray
 import xarray as xr
 from shapely.geometry import box
@@ -166,21 +167,14 @@ def test_wp_raster_uses_custom_name(fake_wp):
 
 @pytest.mark.parametrize("years", [None, [2015, 2024]], ids=["static", "multi-year"])
 def test_wp_raster_attribute_values_are_saveable(fake_wp, years):
-    """
-    All attribute values are strings or numbers, except the band names in
-    `long_name` of multi-year results (a tuple of strings, following
-    rioxarray's convention).
-    """
+    """All attribute values are strings or numbers."""
     from worldpoppy import wp_raster
 
     fake_wp(years=years, multi_year=years is not None)
     da = wp_raster(PRODUCT, aoi=AOIS["bbox"], years=years)
 
     for key, value in da.attrs.items():
-        if key == "long_name" and years:
-            assert all(isinstance(name, str) for name in value)
-        else:
-            assert isinstance(value, (str, int, float)), f"{key}: {value!r}"
+        assert isinstance(value, (str, int, float)), f"{key}: {value!r}"
 
 
 def test_eager_and_lazy_results_have_the_same_attributes(fake_wp):
@@ -236,10 +230,11 @@ def test_years_of_static_products(fake_wp, static_year, expected):
     assert da.attrs.get("wpy_years") == expected
 
 
-def test_multi_year_bands_are_named_after_their_years(fake_wp):
+def test_multi_year_results_record_their_years(fake_wp):
     """
-    Multi-year results record their years in `wpy_years`, and name their
-    bands after the years in `long_name` (rioxarray's convention).
+    Multi-year results record their years in the `year` coordinate and in
+    `wpy_years`. They set no `long_name`: band names held in an attribute
+    would no longer match the bands once a year is selected.
     """
     from worldpoppy import wp_raster
 
@@ -248,13 +243,13 @@ def test_multi_year_bands_are_named_after_their_years(fake_wp):
 
     assert list(da.year.values) == [2015, 2024]
     assert da.attrs["wpy_years"] == "2015 2024"
-    assert da.attrs["long_name"] == ("2015", "2024")
+    assert "long_name" not in da.attrs
 
 
 def test_single_year_of_multi_year_product(fake_wp):
     """
-    A single year of a multi-year product has no `year` dimension, and thus
-    no band names, but still records its year.
+    A single year of a multi-year product has no `year` dimension, but still
+    records its year.
     """
     from worldpoppy import wp_raster
 
@@ -264,7 +259,6 @@ def test_single_year_of_multi_year_product(fake_wp):
     assert "year" not in da.dims
     assert da.attrs["wpy_product_type"] == "multi-year"
     assert da.attrs["wpy_years"] == "2015"
-    assert "long_name" not in da.attrs
 
 
 @pytest.mark.parametrize(
@@ -501,11 +495,8 @@ def test_manifest_build_time_format(built_at, expected):
 
 # --- Saving ---
 
-def test_geotiff_keeps_attributes_and_band_names(fake_wp, tmp_path):
-    """
-    A saved GeoTIFF keeps all attributes, and the bands of a multi-year
-    result are labelled with their years (restored when reading it back).
-    """
+def test_geotiff_keeps_attributes(fake_wp, tmp_path):
+    """A saved GeoTIFF keeps all attributes (read back as strings)."""
     from worldpoppy import wp_raster
 
     fake_wp(years=[2015, 2024], multi_year=True)
@@ -513,17 +504,71 @@ def test_geotiff_keeps_attributes_and_band_names(fake_wp, tmp_path):
     da.rio.to_raster(tmp_path / "saved.tif")
     saved = rioxarray.open_rasterio(tmp_path / "saved.tif")
 
-    assert saved.attrs["long_name"] == ("2015", "2024")
     for key, value in da.attrs.items():
-        if key != "long_name":
-            assert str(saved.attrs[key]) == str(value), key
+        assert str(saved.attrs[key]) == str(value), key
+
+
+def test_selected_years_and_derived_results_can_be_saved(fake_wp, tmp_path):
+    """
+    A single year selected from a multi-year result, and a difference of two
+    years, can be saved as GeoTIFF (bug 1.39: a `long_name` naming every year
+    made rioxarray refuse to save fewer bands).
+    """
+    from worldpoppy import wp_raster
+
+    fake_wp(years=[2015, 2024], multi_year=True)
+    da = wp_raster(PRODUCT, aoi=AOIS["bbox"], years=[2015, 2024])
+
+    for name, result in [
+        ("selected", da.sel(year=2024)),
+        ("difference", da.sel(year=2024) - da.sel(year=2015)),
+    ]:
+        result.rio.to_raster(tmp_path / f"{name}.tif")
+        saved = rioxarray.open_rasterio(tmp_path / f"{name}.tif")
+        np.testing.assert_array_equal(saved.squeeze("band").values, result.values)
+
+
+def test_geotiff_nodata_recipe_for_derived_results(fake_wp, tmp_path):
+    """
+    Arithmetic loses the nodata value; the documented recipe (docs/metadata.md,
+    section 6) restores it, so that the saved GeoTIFF declares NaN as nodata.
+    """
+    from worldpoppy import wp_raster
+
+    fake_wp(years=[2015, 2024], multi_year=True)
+    da = wp_raster(PRODUCT, aoi=AOIS["bbox"], years=[2015, 2024])
+
+    result = da.sel(year=2024) - da.sel(year=2015)
+    assert result.rio.nodata is None  # as documented in section 5
+
+    result = result.rio.write_nodata(np.nan)
+    result.rio.to_raster(tmp_path / "derived.tif")
+    with rasterio.open(tmp_path / "derived.tif") as src:
+        assert np.isnan(src.nodata)
+
+
+def test_geotiff_year_labels_recipe(fake_wp, tmp_path):
+    """
+    The documented recipe (docs/metadata.md, section 6) labels the bands of
+    a saved multi-year GeoTIFF with their years.
+    """
+    from worldpoppy import wp_raster
+
+    fake_wp(years=[2015, 2024], multi_year=True)
+    da = wp_raster(PRODUCT, aoi=AOIS["bbox"], years=[2015, 2024])
+
+    years = tuple(str(year) for year in da.year.values)
+    da.assign_attrs(long_name=years).rio.to_raster(tmp_path / "saved.tif")
+
+    with rasterio.open(tmp_path / "saved.tif") as src:
+        assert src.descriptions == ("2015", "2024")
 
 
 @pytest.mark.parametrize("years", [None, [2015, 2024]], ids=["static", "multi-year"])
 def test_netcdf_recipe(fake_wp, tmp_path, years):
     """
     The documented netCDF recipe (docs/metadata.md, section 6) stores the
-    attributes at file level, and keeps the band names of multi-year results.
+    attributes at file level, and keeps the years of multi-year results.
     """
     from worldpoppy import wp_raster
 
@@ -538,4 +583,4 @@ def test_netcdf_recipe(fake_wp, tmp_path, years):
         for key in ALWAYS_PRESENT:
             assert saved.attrs[key] == da.attrs[key], key
         if years:
-            assert tuple(saved.attrs["long_name"]) == ("2015", "2024")
+            assert list(saved.year.values) == [2015, 2024]

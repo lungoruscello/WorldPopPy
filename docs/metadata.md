@@ -1,8 +1,7 @@
 # Metadata of WorldPopPy results
 
-> **DRAFT (2026-11-14).** This document defines the metadata that results of **WorldPopPy**
-> carry. It is the target for the 0.5.0 redesign (TODO 2.4, incl. bugs 1.14-1.18). All open points
-> were decided on 2026-11-14. Each rule below becomes a test.
+This document defines the metadata that results of **WorldPopPy** carry (from version 0.5.0), and
+how it behaves when results are processed further or saved. Each rule below is covered by tests.
 
 ## 1. Principles
 
@@ -18,9 +17,6 @@
 3. **Saveable values.** Attribute values are strings or numbers only (no `None`, no lists, no
    booleans), so that they survive saving to GeoTIFF and netCDF unchanged. Several values are
    separated by newlines (file names, URLs) or single spaces (country codes, years).
-   One deliberate exception: `long_name` on results with a `year` dimension is a tuple of band
-   names (one year per band), following rioxarray's convention for band descriptions (see
-   section 3).
 4. **History records every processing step.** Each public function that processes data appends
    exactly one line to `history`; nothing removes or rewrites earlier lines.
 5. **Attributes are only written by the metadata helpers:** `_set_result_metadata` for new
@@ -79,7 +75,7 @@ logged).
 | Unmasked results | the source files' data type; `rio.nodata` is the source files' nodata value. If the source files have none: NaN for floating-point data, none for integer data. |
 | CRS | in the `spatial_ref` coordinate (EPSG:4326 for all WorldPop data), not in the attributes |
 | Name | the product name, or the `name` passed by the user |
-| Results with several years | a `year` dimension with the years as coordinate values, and `long_name` set to the years as a tuple of strings, e.g. `('2015', '2024')`. This is rioxarray's convention for band descriptions: `rio.to_raster` labels each GeoTIFF band with its year, and `rioxarray.open_rasterio` restores the tuple when reading the file back. (Without it, every band would be named after the product, and the years would be lost in saved GeoTIFFs.) A single year of a multi-year product has no `year` dimension and no `long_name`; its year is in `wpy_years`. |
+| Results with several years | a `year` dimension with the years as coordinate values. No `long_name` is set: band labels held in an attribute would no longer match the bands once a year is selected, and `rio.to_raster` would then refuse to save the result. Saved GeoTIFF bands are therefore labelled with the result's name; section 6 shows how to label them with their years. A single year of a multi-year product has no `year` dimension; its year is in `wpy_years`. |
 | Scale and offset | `_FillValue`, `scale_factor`, `add_offset` only for raw reads (`masked=False`) |
 
 ## 4. `history`
@@ -103,13 +99,23 @@ Format: one line per public function call, oldest first, in UTC:
 |---|---|
 | `merge_rasters` (public, low-level; works on local files without manifest information) | the rules of section 3; one `history` line; `wpy_version`, `wpy_read_masked`, `wpy_read_mask_and_scale`, `wpy_pre_clip_bbox` (if applied) and `wpy_source_files` (local file names). No WorldPop provenance (`title`, `references`, ...), since the files may come from anywhere. Default name `'wpy_data'` (unchanged); pass `name=` for a meaningful one. |
 | `wp_warp` | keeps all attributes of its input; appends one `history` line; follows the rules of section 3; never modifies its input |
-| xarray operations (e.g. `da + 1`) | outside WorldPopPy's control: xarray drops attributes in most arithmetic unless `xr.set_options(keep_attrs=True)` is set. To be documented. |
+| xarray operations (e.g. `da.sel(year=2024)`, `da + 1`) | outside WorldPopPy's control. Whether xarray keeps the attributes depends on the operation and the xarray version (with xarray 2026.9, both examples keep them). Kept attributes still describe the result as returned by WorldPopPy, not the result of the operation: after `da.sel(year=2024)`, `wpy_years` and `wpy_source_files` still list all years, and `history` has no line for the selection. Arithmetic also loses the nodata value (`rio.nodata` becomes None). **After your own selections or arithmetic, update or drop the attributes before saving**, and restore the nodata value (see section 6). |
 
 ## 6. Saving
 
 - **GeoTIFF** (`da.rio.to_raster`): all attributes are written as GDAL metadata tags and read back
-  unchanged (as strings). For multi-year results, `long_name` becomes the band descriptions, so the
-  bands are labelled with their years.
+  unchanged (as strings). The bands are labelled with the result's name (the product name). To label
+  the bands of a multi-year result with their years, set `long_name` on the array you save, just
+  before saving:
+
+  ```python
+  years = tuple(str(year) for year in da.year.values)
+  da.assign_attrs(long_name=years).rio.to_raster("result.tif")
+  ```
+
+  Results of arithmetic have no nodata value (section 5); restore it before saving, so that the
+  GeoTIFF marks missing cells as such: `result = result.rio.write_nodata(np.nan)` (for masked
+  results).
 - **netCDF** (`da.to_netcdf`): xarray writes the attributes as *variable* attributes, while CF
   expects `title`, `history` and similar as *global* (file-level) attributes, where tools such as
   Panoply look for them. WorldPopPy provides no saving helper; the documentation gives this recipe:
@@ -120,9 +126,9 @@ Format: one line per public function call, oldest first, in UTC:
   ds.to_netcdf("result.nc", engine="netcdf4")
   ```
 
-  The `netCDF4` library (netCDF-4 format) is recommended: xarray's netCDF-3 fallback (`scipy`)
-  cannot store the tuple-valued `long_name` of multi-year results and fails with an unhelpful
-  `KeyError` (checked 2026-11-14). WorldPopPy itself depends on no netCDF library.
+  The recipe uses the `netCDF4` library (netCDF-4 format); xarray's netCDF-3 fallback (`scipy`,
+  `engine="scipy"`) works as well. Multi-year results keep their years as the `year` coordinate.
+  WorldPopPy itself depends on no netCDF library.
 
 ## 7. Testable invariants
 
@@ -140,8 +146,8 @@ bbox and geometry AoIs; eager and lazy; after `wp_warp`; after saving and reload
 9. `pre_clip_bbox` skips files without overlap (bug 1.16); `wpy_source_files` lists only
    contributing files.
 10. Files whose nodata is NaN are accepted as compatible (bug 1.18).
-11. Saved GeoTIFFs keep all attributes; multi-year bands carry their years (and reading the file
-    back with rioxarray restores `long_name`).
+11. Saved GeoTIFFs keep all attributes. A single year selected from a multi-year result, and
+    arithmetic on it, can be saved (bug 1.39).
 
 ## 8. Changes compared with 0.4.x
 
@@ -153,5 +159,3 @@ bbox and geometry AoIs; eager and lazy; after `wp_warp`; after saving and reload
 - New: `title`, `license`, `creator_name`, `creator_url`, `creator_institution`, `institution`, `source`,
   `references`, `comment`, and further `wpy_` attributes.
 - Static results now carry a nodata value (bug 1.14).
-- Multi-year results carry `long_name` (the years), so saved GeoTIFF bands are labelled with their
-  years instead of the product name.

@@ -30,7 +30,7 @@ def test_real_result_carries_manifest_provenance(tmp_path):
     """
     A real multi-year, multi-country result records the official titles and
     summary URLs, source files, countries, years and institution from the
-    data manifest, and keeps them (and its band names) when saved as GeoTIFF.
+    data manifest, and keeps them when saved as GeoTIFF.
     """
     from worldpoppy import wp_raster
     from worldpoppy.manifest_loader import _get_active_manifest_info, wp_manifest_constrained
@@ -55,6 +55,5 @@ def test_real_result_carries_manifest_provenance(tmp_path):
 
     da.rio.to_raster(tmp_path / "saved.tif")
     saved = rioxarray.open_rasterio(tmp_path / "saved.tif")
-    assert saved.attrs["long_name"] == ("2015", "2024")
     assert saved.attrs["references"] == attrs["references"]
     assert np.isnan(saved.rio.nodata)

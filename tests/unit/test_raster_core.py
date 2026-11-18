@@ -561,9 +561,6 @@ def test_multi_year_bands_hold_their_own_years_values(mock_raster_factory, mock_
     for year in [2015, 2020]:
         np.testing.assert_array_equal(result.sel(year=year).values, float(year))
 
-    # The band descriptions (written to GeoTIFFs) name the year of each band
-    assert result.attrs["long_name"] == tuple(str(year) for year in result.year.values)
-
 
 @pytest.mark.parametrize("chunks", [None, "auto"], ids=["eager", "lazy"])
 def test_years_with_grid_noise_are_stacked_on_one_grid(mock_raster_factory, mock_downloader, chunks):

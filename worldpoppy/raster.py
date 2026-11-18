@@ -1527,11 +1527,6 @@ def _set_result_metadata(da, attrs, masked, mask_and_scale, safe_attrs):
     da.attrs = {key: value for key, value in safe_attrs.items() if key != 'crs'}
     da.attrs.update(attrs)
 
-    if 'year' in da.dims:
-        # Band names, which `rio.to_raster` writes as band descriptions
-        # (rioxarray's convention; the one non-scalar attribute)
-        da.attrs['long_name'] = tuple(str(int(year)) for year in da.year.values)
-
     if masked or mask_and_scale:
         # Masked data is floating point with NaN as nodata. Drop any encoding
         # inherited from the source files (e.g., their data type and fill
