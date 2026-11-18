@@ -1,7 +1,9 @@
 # Metadata of WorldPopPy results
 
 This document defines the metadata that results of **WorldPopPy** carry (from version 0.5.0), and
-how it behaves when results are processed further or saved. Each rule below is covered by tests.
+how it behaves when results are processed further or saved. Each rule below is covered by tests. A
+worked example is
+[`examples/workflows/03_working_with_metadata.py`](https://github.com/lungoruscello/WorldPopPy/blob/master/examples/workflows/03_working_with_metadata.py).
 
 ## 1. Principles
 
@@ -99,7 +101,7 @@ Format: one line per public function call, oldest first, in UTC:
 |---|---|
 | `merge_rasters` (public, low-level; works on local files without manifest information) | the rules of section 3; one `history` line; `wpy_version`, `wpy_read_masked`, `wpy_read_mask_and_scale`, `wpy_pre_clip_bbox` (if applied) and `wpy_source_files` (local file names). No WorldPop provenance (`title`, `references`, ...), since the files may come from anywhere. Default name `'wpy_data'` (unchanged); pass `name=` for a meaningful one. |
 | `wp_warp` | keeps all attributes of its input; appends one `history` line; follows the rules of section 3; never modifies its input |
-| xarray operations (e.g. `da.sel(year=2024)`, `da + 1`) | outside WorldPopPy's control. Whether xarray keeps the attributes depends on the operation and the xarray version (with xarray 2026.9, both examples keep them). Kept attributes still describe the result as returned by WorldPopPy, not the result of the operation: after `da.sel(year=2024)`, `wpy_years` and `wpy_source_files` still list all years, and `history` has no line for the selection. Arithmetic also loses the nodata value (`rio.nodata` becomes None). **After your own selections or arithmetic, update or drop the attributes before saving**, and restore the nodata value (see section 6). |
+| xarray operations (e.g. `da.sel(year=2024)`, `da + 1`) | outside WorldPopPy's control. Whether xarray keeps the attributes depends on the operation and the xarray version (with xarray 2026.9, both examples keep them). Kept attributes still describe the result as returned by WorldPopPy, not the result of the operation: after `da.sel(year=2024)`, `wpy_years` and `wpy_source_files` still list all years, and `history` has no line for the selection. Arithmetic also loses the nodata value (`rio.nodata` becomes None). **If you save a result after your own selections or arithmetic, e.g. to pass the file on, update or drop its attributes first**, and restore the nodata value (see section 6, "Saving"). For results you only use in memory, this is not needed. |
 
 ## 6. Saving
 

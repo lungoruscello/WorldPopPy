@@ -90,6 +90,8 @@ target/
 # Jupyter Notebook
 .ipynb_checkpoints
 .*checkpoint.ipynb
+# Notebooks converted from the percent-format examples (the .py files are the source)
+examples/**/*.ipynb
 
 # IPython
 profile_default/

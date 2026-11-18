@@ -236,6 +236,15 @@ elevation = elevation.rio.reproject_match(pop_data)
 The cell coordinates of such results can differ by tiny floating-point amounts, and xarray, which matches cells by
 exactly equal coordinates, would silently drop the cells that differ.
 
+Every result carries WorldPop's recommended citations, the licence, and a processing history in its attributes.
+Importantly, these attributes describe the result as returned by **WorldPopPy**. After you select data or compute new
+values with xarray, some attributes no longer match the data (e.g., after selecting one year of a multi-year result,
+`wpy_years` still lists all years). If you save such results, e.g. to pass the files on, update or drop these
+attributes first. The [metadata guide](https://github.com/lungoruscello/WorldPopPy/blob/master/docs/metadata.md)
+describes all attributes, and the
+[metadata example](https://github.com/lungoruscello/WorldPopPy/blob/master/examples/workflows/03_working_with_metadata.py)
+shows how to handle them.
+
 ## Finding Data
 
 To simplify data discovery, **WorldPopPy** organises WorldPop's thousands of raw files into curated data products
