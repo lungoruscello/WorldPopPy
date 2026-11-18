@@ -93,6 +93,9 @@ target/
 # Notebooks converted from the percent-format examples (the .py files are the source)
 examples/**/*.ipynb
 
+# Local drafts, not yet researched for publication (e.g. notes on WorldPop's data)
+/drafts/
+
 # IPython
 profile_default/
 ipython_config.py
