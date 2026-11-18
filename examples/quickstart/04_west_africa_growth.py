@@ -31,7 +31,12 @@ pop_warped = wp_warp(
 )
 
 # 3. Compute Change
-pop_change = pop_warped.sel(year=2024) - pop_warped.sel(year=2015)
+# This product (pop_g2_1km_r25a) is "constrained": in each year, WorldPop places
+# people only in areas mapped as settled, and leaves all other cells empty (NaN).
+# Counting empty cells as zero people keeps areas first settled after 2015 in the
+# change map; cells empty in both years (e.g., the sea) stay empty.
+before, after = pop_warped.sel(year=2015), pop_warped.sel(year=2024)
+pop_change = (after.fillna(0) - before.fillna(0)).where(before.notnull() | after.notnull())
 
 # 4. Visualise the Change Raster
 # Make a standard canvas for the "repo gallery".
