@@ -519,6 +519,11 @@ def wp_warp(
     2. Resampling: Change resolution in current CRS (provide `res`, leave `to_crs=None`).
     3. Both: Change both CRS *and* resolution.
 
+    Every year of a multi-year result gives the same result as when warped
+    alone. Years whose empty cells differ (e.g., in constrained population
+    products, where settled areas grow) are therefore warped one by one; each
+    year then takes as long as the combined warp of all years.
+
     Parameters
     ----------
     da : xarray.DataArray
@@ -614,7 +619,33 @@ def wp_warp(
     # (kwargs overwrite defaults if conflicts exist, though unlikely given keys)
     reproject_kwargs.update(kwargs)
 
-    warped = da.rio.reproject(target_crs, **reproject_kwargs)
+    # Every band (e.g., every year) must give the same result as when warped
+    # alone. One warp of several bands ensures this only if all bands have the
+    # same empty cells: rasterio's default UNIFIED_SRC_NODATA=YES counts a cell
+    # as empty only if it is empty in all bands, so in years whose empty cells
+    # differ (e.g., constrained population products, where settled areas grow),
+    # a year's NaN entered its resampling (bug 1.40). Such bands are warped one
+    # by one; each then takes as long as the combined warp (GDAL's per-band
+    # settings NO and PARTIAL change bilinear and cubic results instead,
+    # checked 2026-11-18).
+    band_dims = [dim for dim in da.dims if dim not in (da.rio.x_dim, da.rio.y_dim)]
+    if (
+        band_dims
+        and da.sizes[band_dims[0]] > 1
+        and not _same_empty_cells(da, band_dims[0], fill_value)
+    ):
+        band_dim = band_dims[0]
+        warped = xr.concat(
+            [
+                da.isel({band_dim: i}, drop=True).rio.reproject(target_crs, **reproject_kwargs)
+                for i in range(da.sizes[band_dim])
+            ],
+            dim=da[band_dim],
+            join='exact',  # all bands land on the same grid; raise otherwise
+            combine_attrs='override',
+        )
+    else:
+        warped = da.rio.reproject(target_crs, **reproject_kwargs)
 
     # --- History (all other attributes are kept) ---
     call = f"wp_warp(to_crs={to_crs!r}, res={res!r}, resampling={resampling!r})"
@@ -1503,6 +1534,25 @@ def _standardise_rio_nodata_meta(da, masked=False, mask_and_scale=False):
         da.rio.write_nodata(np.nan, encoded=True, inplace=True)
 
     return da
+
+
+def _same_empty_cells(da, dim, nodata):
+    """
+    Return True if every slice of an (eager) array along `dim` (e.g., every
+    year) has the same empty cells: NaN, or the nodata value of raw data.
+    The slices are compared one at a time with the first, to keep only two
+    masks in memory.
+    """
+    def empty(values):
+        mask = np.isnan(values) if np.issubdtype(values.dtype, np.floating) else np.zeros(values.shape, bool)
+        if nodata is not None and not np.isnan(nodata):
+            mask |= values == nodata
+        return mask
+
+    first = empty(da.isel({dim: 0}).values)
+    return all(
+        np.array_equal(first, empty(da.isel({dim: i}).values)) for i in range(1, da.sizes[dim])
+    )
 
 
 def _set_result_metadata(da, attrs, masked, mask_and_scale, safe_attrs):

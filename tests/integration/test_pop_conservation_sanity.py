@@ -24,6 +24,11 @@ Test Cases:
     scenario since AZE is split by ARM. This tests the case in which a country
     is not a single contiguous blob of pixels.
 
+5. **Several years warped together (LIE, LUX, MCO):**
+    Constrained population data, in which the cells with people grow over time.
+    Liechtenstein and Luxembourg have cells empty in 2015 but populated in 2023
+    (bug 1.40); Monaco has none and serves as the control.
+
 Note on Terminology:
     This is classified as an **Integration Test** rather than a strict End-to-End (E2E)
     test because it respects the local raster-data cache. If raster files exist locally, the
@@ -142,3 +147,37 @@ def test_mass_conservation_eager(case_name, iso_codes, target_crs):
         f"Significant change in the total population for {case_name}! "
         f"Discrepancy: {discrepancy_ratio:.4%} (Limit: {MAX_DISCREPANCY:.2%})"
     )
+
+
+@pytest.mark.integration
+@needs_internet_or_cache
+@pytest.mark.parametrize(
+    "iso3, has_newly_populated_cells",
+    [("LIE", True), ("LUX", True), ("MCO", False)],
+)
+def test_mass_conservation_of_years_warped_together(iso3, has_newly_populated_cells):
+    """
+    Warping several years together keeps every year's total population (bug
+    1.40). In constrained population data, cells empty (NaN) in 2015 can hold
+    people in 2023; warped together with 2023, they emptied whole output cells
+    in 2015 (measured with the old code on 2026-11-18, 100 m cells: LIE 2015
+    lost 0.84% of its people, LUX 1.65%). Monaco has no such cells and checks
+    the combined warp that `wp_warp` keeps for years with the same empty cells.
+    About 1 MB in total without a cache.
+    """
+    from worldpoppy import wp_raster, wp_warp
+
+    da = wp_raster(product_name="pop_g2_r25a", aoi=iso3, years=[2015, 2023])
+    newly_populated = int((da.sel(year=2015).isnull() & da.sel(year=2023).notnull()).sum())
+    assert (newly_populated > 0) == has_newly_populated_cells, newly_populated
+
+    warped = wp_warp(da, to_crs=LAEA_EUROPE, res=100, resampling="sum")
+
+    for year in [2015, 2023]:
+        raw_total = float(da.sel(year=year).sum(dtype="float64"))
+        warped_total = float(warped.sel(year=year).sum(dtype="float64"))
+        discrepancy_ratio = abs(warped_total - raw_total) / raw_total
+        assert discrepancy_ratio < MAX_DISCREPANCY, (
+            f"{iso3} {year}: {raw_total:,.1f} people before warping, {warped_total:,.1f} after "
+            f"(discrepancy {discrepancy_ratio:.4%}, limit {MAX_DISCREPANCY:.2%})"
+        )

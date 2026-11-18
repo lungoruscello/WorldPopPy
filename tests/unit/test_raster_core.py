@@ -116,6 +116,97 @@ def test_warp_preserves_count(mock_raster_factory):
     assert discrepancy_ratio < 0.005
 
 
+@pytest.mark.parametrize("resampling", ["sum", "mean", "bilinear"])
+def test_warping_several_years_treats_each_years_nodata_separately(resampling):
+    """
+    Warping a multi-year result gives every year the same result as warping
+    that year alone (bug 1.40). In constrained population products, the cells
+    with data grow over time; a cell empty (NaN) in 2015 but populated in 2023
+    must not turn its whole output cell into NaN in 2015. (rasterio's default
+    warp option UNIFIED_SRC_NODATA=YES treats a cell as nodata only if it is
+    nodata in all years; GDAL's per-band setting NO changes bilinear results.)
+    """
+    from worldpoppy import wp_warp
+
+    res = 0.01
+    data_2015 = np.ones((30, 30), dtype="float32")
+    data_2015[::2, ::2] = np.nan  # empty in 2015, populated in 2023
+    data_2023 = np.ones((30, 30), dtype="float32")
+    da = xr.DataArray(
+        np.stack([data_2015, data_2023]),
+        dims=("year", "y", "x"),
+        coords={
+            "year": [2015, 2023],
+            "y": 10 - (np.arange(30) + 0.5) * res,
+            "x": 10 + (np.arange(30) + 0.5) * res,
+        },
+    ).rio.write_crs("EPSG:4326").rio.write_nodata(np.nan, encoded=False)
+
+    warped = wp_warp(da, res=3 * res, resampling=resampling)
+
+    assert list(warped.year.values) == [2015, 2023]
+    for year, data in [(2015, data_2015), (2023, data_2023)]:
+        alone = wp_warp(da.sel(year=year), res=3 * res, resampling=resampling)
+        np.testing.assert_array_equal(warped.sel(year=year).values, alone.values, err_msg=str(year))
+        if resampling == "sum":
+            assert warped.sel(year=year).sum().item() == pytest.approx(np.nansum(data)), year
+
+
+@pytest.mark.parametrize("same_empty_cells, expected_warps", [(True, 1), (False, 2)], ids=["same", "different"])
+def test_years_are_warped_together_only_if_their_empty_cells_agree(monkeypatch, same_empty_cells, expected_warps):
+    """
+    Years with the same empty cells are warped in one call (as fast as before
+    bug 1.40 was fixed); years whose empty cells differ are warped one by one.
+    """
+    from rioxarray.raster_array import RasterArray
+    from worldpoppy import wp_warp
+
+    calls = []
+    original = RasterArray.reproject
+
+    def counting_reproject(self, *args, **kwargs):
+        calls.append(self._obj.dims)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(RasterArray, "reproject", counting_reproject)
+
+    data_2015 = np.ones((30, 30), dtype="float32")
+    data_2015[:5, :5] = np.nan
+    data_2023 = data_2015.copy()
+    if not same_empty_cells:
+        data_2023[0, 0] = 1.0
+    da = xr.DataArray(
+        np.stack([data_2015, data_2023]),
+        dims=("year", "y", "x"),
+        coords={"year": [2015, 2023], "y": 10 - (np.arange(30) + 0.5) * 0.01, "x": 10 + (np.arange(30) + 0.5) * 0.01},
+    ).rio.write_crs("EPSG:4326").rio.write_nodata(np.nan, encoded=False)
+
+    wp_warp(da, res=0.03, resampling="sum")
+
+    assert len(calls) == expected_warps, calls
+
+
+@pytest.mark.parametrize("values_2023, nodata, expected", [
+    ([[1.0, np.nan], [1.0, 1.0]], np.nan, True),     # same NaN cell
+    ([[np.nan, 1.0], [1.0, 1.0]], np.nan, False),    # NaN in another cell
+    ([[1, -99999], [1, 1]], -99999, True),           # raw data: same nodata cell
+    ([[1, 1], [1, 1]], -99999, False),               # raw data: nodata cell now valid
+    ([[1, -99999], [1, 1]], None, True),             # integers without nodata: no empty cells
+], ids=["nan-same", "nan-differs", "nodata-same", "nodata-differs", "no-nodata"])
+def test_same_empty_cells(values_2023, nodata, expected):
+    """`_same_empty_cells` recognises NaN and the nodata value of raw data."""
+    from worldpoppy.raster import _same_empty_cells
+
+    is_float = isinstance(values_2023[0][0], float)
+    values_2015 = [[1.0, np.nan], [1.0, 1.0]] if is_float else [[1, -99999], [1, 1]]
+    da = xr.DataArray(
+        np.array([values_2015, values_2023], dtype="float32" if is_float else "int32"),
+        dims=("year", "y", "x"),
+    )
+
+    assert _same_empty_cells(da, "year", nodata) is expected
+
+
 @pytest.mark.parametrize("kwargs", [{}, {"resampling": "sum"}], ids=["no-arguments", "resampling-only"])
 def test_wp_warp_without_crs_or_resolution_raises(mock_raster_factory, kwargs):
     """
