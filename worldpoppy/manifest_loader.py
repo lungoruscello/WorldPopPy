@@ -231,7 +231,7 @@ def wp_manifest(
     Parameters
     ----------
     product_name : str, optional
-        The *exact*, curate name of the data product (e.g., 'pop_g1') for which to
+        The *exact*, curated name of the data product (e.g., 'pop_g1') for which to
         return manifest entries. Mutually exclusive with 'keyword'.
     iso3_codes : str or List[str], optional
         One or more three-letter ISO codes indicating the countries
