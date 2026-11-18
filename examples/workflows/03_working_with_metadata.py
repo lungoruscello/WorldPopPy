@@ -41,7 +41,7 @@ print(list(pop.attrs))
 # ## 2. Provenance and citation
 #
 # WorldPopPy provides no data of its own. `references` lists WorldPop's recommended citations
-# (with DOI links), followed by the official titles and summary pages of the datasets used.
+# (with DOIs), followed by the official titles and summary pages of the datasets used.
 # Cite these in publications, and respect the licence given in `license`.
 #
 # Some of this information is inferred rather than read for each dataset. To keep the load on

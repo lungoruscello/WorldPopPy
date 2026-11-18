@@ -38,7 +38,7 @@ EXPECTED_AOI_ATTR = {
     "geometry": "geometry: 1 feature, bounds 5.0 2.0 15.0 8.0",
 }
 
-# Attributes that every `wp_raster` result carries (docs/metadata.md, section 2)
+# Attributes that every `wp_raster` result carries (docs/metadata.md, "Attributes of `wp_raster` results")
 ALWAYS_PRESENT = [
     "title", "creator_name", "creator_url", "creator_institution", "institution",
     "source", "references", "comment", "history", "wpy_version", "wpy_product_name",
@@ -531,7 +531,7 @@ def test_selected_years_and_derived_results_can_be_saved(fake_wp, tmp_path):
 def test_geotiff_nodata_recipe_for_derived_results(fake_wp, tmp_path):
     """
     Arithmetic loses the nodata value; the documented recipe (docs/metadata.md,
-    section 6) restores it, so that the saved GeoTIFF declares NaN as nodata.
+    "Saving") restores it, so that the saved GeoTIFF declares NaN as nodata.
     """
     from worldpoppy import wp_raster
 
@@ -539,7 +539,7 @@ def test_geotiff_nodata_recipe_for_derived_results(fake_wp, tmp_path):
     da = wp_raster(PRODUCT, aoi=AOIS["bbox"], years=[2015, 2024])
 
     result = da.sel(year=2024) - da.sel(year=2015)
-    assert result.rio.nodata is None  # as documented in section 5
+    assert result.rio.nodata is None  # as documented in "Your own processing"
 
     result = result.rio.write_nodata(np.nan)
     result.rio.to_raster(tmp_path / "derived.tif")
@@ -549,7 +549,7 @@ def test_geotiff_nodata_recipe_for_derived_results(fake_wp, tmp_path):
 
 def test_geotiff_year_labels_recipe(fake_wp, tmp_path):
     """
-    The documented recipe (docs/metadata.md, section 6) labels the bands of
+    The documented recipe (docs/metadata.md, "Saving") labels the bands of
     a saved multi-year GeoTIFF with their years.
     """
     from worldpoppy import wp_raster
@@ -567,7 +567,7 @@ def test_geotiff_year_labels_recipe(fake_wp, tmp_path):
 @pytest.mark.parametrize("years", [None, [2015, 2024]], ids=["static", "multi-year"])
 def test_netcdf_recipe(fake_wp, tmp_path, years):
     """
-    The documented netCDF recipe (docs/metadata.md, section 6) stores the
+    The documented netCDF recipe (docs/metadata.md, "Saving") stores the
     attributes at file level, and keeps the years of multi-year results.
     """
     from worldpoppy import wp_raster
