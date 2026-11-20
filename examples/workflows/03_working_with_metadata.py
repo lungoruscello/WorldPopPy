@@ -95,17 +95,19 @@ print(pop.sel(year=2023).attrs["wpy_years"])  # still '2015 2023'
 # %% [markdown]
 # A common next step is to compute the change between two years, here the change in
 # population from 2015 to 2023. This needs care with empty cells. The population product used
-# in this example, `pop_g2_r25a`, is "constrained": in each year, WorldPop places people only
-# in areas mapped as settled, and leaves all other cells empty (NaN). Areas first settled after
-# 2015 are therefore empty in 2015, and a plain difference (2023 minus 2015) would be empty
-# there as well. Counting empty cells as zero people keeps them in the result; cells empty in
-# both years (e.g., the sea) stay empty. (Unconstrained products have the same empty cells in
-# every year, so a plain difference suffices for them.)
+# in this example, `pop_g2_r25a`, is "constrained" (as its citation in `references` says):
+# WorldPop assigns people only to cells identified as settled, and maps settlements for each
+# year. In this product, some cells are empty (NaN) in 2015 but hold people in 2023, and a
+# plain difference (2023 minus 2015) would be empty there. Here, we count empty cells as zero
+# people, so that these cells stay in the result; cells empty in both years (e.g., the sea)
+# stay empty. Counting empty cells as zero people is an assumption of this example; WorldPop
+# does not state it.
 
 # %%
 before, after = pop.sel(year=2015), pop.sel(year=2023)
 growth = (after.fillna(0) - before.fillna(0)).where(before.notnull() | after.notnull())
-print(f"{int((before.isnull() & after.notnull()).sum()):,} cells were first settled after 2015")
+n_cells = int((before.isnull() & after.notnull()).sum())
+print(f"{n_cells:,} cells are empty in 2015 but not in 2023")
 
 # %% [markdown]
 # Arithmetic also loses the nodata value, and a difference of two years has no `year`
