@@ -50,7 +50,7 @@ pop_change.plot(
     vmax=2_000, add_colorbar=False,
 )
 clean_axes(
-    title="The Abidjan-Lagos Corridor:\nPopulation Boom (2015-2024)",
+    title="The Abidjan-Lagos Corridor:\nPopulation Growth (2015-2024)",
     fontweight='bold'
 )
 
