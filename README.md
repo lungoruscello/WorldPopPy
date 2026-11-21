@@ -165,7 +165,7 @@ plt.show()
         <b><a href="./examples/large_rasters/01_moscow_built_volume.py">Greater Moscow</a></b>
       </div>
       <div align="left">
-        Use any shapely geometry as the AoI. Only the cells near it are read, reducing memory load for large country rasters (here: about 1 GB instead of 84 GB).
+        Use any shapely geometry as the AoI. Only the cells near it are read, reducing memory load for large country rasters (here: about 0.8 GB instead of 84 GB).
       </div>
     </td>
   </tr>
@@ -200,7 +200,7 @@ plt.show()
         <b><a href="./examples/large_rasters/03_andes_topo_dask.py">The Andes</a></b>
       </div>
       <div align="left">
-        Merge the elevation rasters of six countries lazily with Dask (here: an 11 GB grid in about 3 GB of memory).
+        Merge the elevation rasters of six countries lazily with Dask (here: an 11 GB grid in about 2.8 GB of memory).
       </div>
     </td>
   </tr>
