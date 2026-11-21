@@ -8,7 +8,43 @@ import pytest
 from tests.helpers import needs_raw_manifest
 
 
+# Text columns kept compact in the cached manifest (see `_get_raw_manifest`)
+CATEGORICAL_COLUMNS = {
+    'api_series_desc', 'api_series_category', 'api_source', 'citation', 'doi', 'license'
+}
+
+
+def _as_plain_text(mdf):
+    """Return `mdf` with every categorical column converted to plain text."""
+    categorical = [c for c in mdf.columns if isinstance(mdf[c].dtype, pd.CategoricalDtype)]
+    return mdf.astype({c: mdf[c].cat.categories.dtype for c in categorical})
+
+
 # --- Fixtures ---
+
+@pytest.fixture(scope="module")
+def cleaned_manifests():
+    """
+    The cleaned manifest as worldpoppy caches it, and a reference built from
+    the same file with every text column read as plain text (no categories).
+    """
+    import worldpoppy.manifest_loader as ml
+
+    ml._clear_manifest_caches()  # earlier tests may have cached another manifest
+    path = ml._get_active_manifest_info().path
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(ml, "_get_raw_manifest", lambda: _as_plain_text(pd.read_feather(path)))
+        reference = ml._get_cleaned_manifest.__wrapped__()
+    ml._clear_manifest_caches()
+    actual = ml._get_cleaned_manifest()
+
+    categorical = [c for c in reference.columns if isinstance(reference[c].dtype, pd.CategoricalDtype)]
+    assert not categorical, (
+        f"the plain-text reference has categorical columns {categorical}: the manifest must be "
+        "encoded in `_get_raw_manifest`, which this fixture replaces"
+    )
+    return actual, reference
+
 
 @pytest.fixture
 def augmented_raw_manifest(tmp_path, monkeypatch):
@@ -286,6 +322,78 @@ def test_filtering_the_manifest_gives_back_working_memory(monkeypatch, call, pro
     call(ml)
 
     assert released, "the unused memory of pyarrow's pool was not given back"
+
+
+@pytest.mark.integration
+@needs_raw_manifest
+def test_cached_manifest_stores_repeated_text_compactly(cleaned_manifests):
+    """
+    The cached manifest stores the long, repeated text columns (e.g., the
+    series descriptions) as categories, which saves about 130 MB, and holds
+    exactly the data of a manifest read as plain text: same values, same row
+    order, and the same types for all other columns.
+    """
+    actual, reference = cleaned_manifests
+
+    categorical = {c for c in actual.columns if isinstance(actual[c].dtype, pd.CategoricalDtype)}
+    assert categorical == CATEGORICAL_COLUMNS
+    pd.testing.assert_frame_equal(_as_plain_text(actual), reference)
+
+
+@pytest.mark.integration
+@needs_raw_manifest
+@pytest.mark.parametrize("call", [
+    lambda ml: ml.wp_manifest(),
+    lambda ml: ml.wp_manifest('pop_g1'),
+    lambda ml: ml.wp_manifest('pop_g2_r25a', iso3_codes=['GHA', 'TGO'], years='last'),
+    lambda ml: ml.wp_manifest(keywords=['population', 'global2']),
+    lambda ml: ml.wp_manifest(iso3_codes='KEN', years=2020),
+    lambda ml: ml.wp_manifest(static_only=True, iso3_codes='BRA'),
+    lambda ml: ml.wp_manifest(keywords='no such product'),
+    lambda ml: ml.wp_manifest_constrained('pop_g1', iso3_codes=['LUX', 'BEL'], years=[2000, 2020]),
+    lambda ml: ml.get_product_info('ntl_viirs_g2'),
+    lambda ml: ml.resolve_product_years('pop_g2_r25a', ['first', 'last']),
+    lambda ml: ml.show_supported_data_products(),
+    lambda ml: ml.show_supported_data_products(iso3_codes='LUX', keywords='population'),
+], ids=[
+    "wp_manifest", "wp_manifest-product", "wp_manifest-countries-last-year", "wp_manifest-keywords",
+    "wp_manifest-country-year", "wp_manifest-static", "wp_manifest-no-match", "wp_manifest_constrained",
+    "get_product_info", "resolve_product_years", "show_supported_data_products",
+    "show_supported_data_products-filtered",
+])
+def test_public_functions_return_what_a_plain_text_manifest_gives(
+    cleaned_manifests, monkeypatch, capsys, call
+):
+    """
+    The compact storage of the cached manifest is invisible to users: the public
+    functions that return manifest rows, or information drawn from them, return
+    and print exactly what they return for a manifest read as plain text,
+    including the column types (users get plain text, so that operations such as
+    `value_counts` and assigning new values behave as for any text column). The
+    calls leave the cached manifest compact.
+    """
+    import worldpoppy.manifest_loader as ml
+
+    actual, reference = cleaned_manifests
+    monkeypatch.delitem(sys.modules, 'ipykernel', raising=False)  # console output
+
+    def run(manifest):
+        ml._clear_manifest_caches()
+        monkeypatch.setattr(ml, "_get_cleaned_manifest", lambda: manifest)
+        result = call(ml)
+        return result, capsys.readouterr().out
+
+    expected, expected_out = run(reference)
+    result, out = run(actual)
+
+    if isinstance(expected, pd.DataFrame):
+        pd.testing.assert_frame_equal(result, expected)
+    else:
+        assert result == expected
+    assert out == expected_out
+    still_categorical = {c for c in actual.columns if isinstance(actual[c].dtype, pd.CategoricalDtype)}
+    assert still_categorical == CATEGORICAL_COLUMNS, "the call changed the cached manifest"
+    ml._clear_manifest_caches()
 
 
 @pytest.mark.integration

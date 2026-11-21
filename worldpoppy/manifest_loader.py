@@ -187,6 +187,18 @@ from worldpoppy.manifest_utils import (
 
 _IS_NOTEBOOK = "ipykernel" in sys.modules
 
+# Long text columns with few distinct values, stored as categories in the cached
+# manifest (the series descriptions alone take about 120 MB as plain text). The
+# public functions return them as plain text (see `_returns_plain_text`).
+_CATEGORICAL_COLUMNS = (
+    "api_series_desc",
+    "api_series_category",
+    "api_source",
+    "citation",
+    "doi",
+    "license",
+)
+
 
 __all__ = [
     "wp_manifest",
@@ -234,7 +246,22 @@ def _releases_arrow_memory(func):
     return wrapper
 
 
+def _returns_plain_text(func):
+    """
+    Decorate a function that returns part of the cached manifest, so that its
+    categorical columns (see `_CATEGORICAL_COLUMNS`) are returned as plain text,
+    as for any other text column.
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        return _as_plain_text(func(*args, **kwargs))
+
+    return wrapper
+
+
 @_releases_arrow_memory
+@_returns_plain_text
 def wp_manifest(
     product_name=None,
     iso3_codes=None,
@@ -356,6 +383,7 @@ def wp_manifest(
 
 
 @_releases_arrow_memory
+@_returns_plain_text
 def wp_manifest_constrained(product_name, iso3_codes, years=None):
     """
     A strict wrapper for `wp_manifest` that validates a specific download request.
@@ -757,9 +785,30 @@ def _get_cleaned_manifest():
 
 def _get_raw_manifest():
     """
-    Load the raw manifest selected by `_get_active_manifest_info`.
+    Load the raw manifest selected by `_get_active_manifest_info`, with the
+    long, repeated text columns stored as categories (see `_CATEGORICAL_COLUMNS`).
     """
-    return pd.read_feather(_get_active_manifest_info().path)
+    mdf = pd.read_feather(_get_active_manifest_info().path)
+    present = [col for col in _CATEGORICAL_COLUMNS if col in mdf.columns]
+    return mdf.astype({col: "category" for col in present})
+
+
+def _as_plain_text(mdf):
+    """
+    Return `mdf` with its categorical columns as plain text, in the data type
+    of their values. Each row's text is taken from the categories, without
+    first converting every value to a Python string. `mdf` itself is unchanged.
+    """
+    mdf = mdf.copy(deep=False)
+    for col in mdf.columns:
+        values = mdf[col]
+        if isinstance(values.dtype, pd.CategoricalDtype):
+            codes = values.cat.codes.to_numpy()
+            # Code -1 marks a missing value; pandas fills it only for a fill
+            # value other than None (with None, it takes the last category)
+            text = values.cat.categories.take(codes, allow_fill=True, fill_value=np.nan)
+            mdf[col] = pd.Series(text, index=mdf.index, name=col)
+    return mdf
 
 
 @lru_cache(maxsize=1)

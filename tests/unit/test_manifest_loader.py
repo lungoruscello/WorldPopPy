@@ -29,3 +29,23 @@ def test_build_final_notes_map(monkeypatch):
     assert notes["lc_a"] == "Description of band A"
     assert notes["prod_x"] == "Note for slug X"
     assert pd.isna(notes["prod_unmapped"])
+
+
+# --- Tests: Compact Text Columns ---
+
+def test_categorical_text_comes_back_as_plain_text_with_missing_values():
+    """
+    `_as_plain_text` turns categorical columns back into the original text, in
+    the original data type, with missing values still missing (a rebuilt
+    manifest can lack a citation, DOI or licence), and leaves its input unchanged.
+    """
+    plain = pd.DataFrame({
+        "citation": pd.Series(["Citation A", None, "Citation B", "Citation A"]),
+        "year": [2000, 2001, 2002, 2003],
+    })
+    compact = plain.astype({"citation": "category"})
+
+    result = manifest_loader._as_plain_text(compact)
+
+    pd.testing.assert_frame_equal(result, plain)
+    assert isinstance(compact["citation"].dtype, pd.CategoricalDtype)
