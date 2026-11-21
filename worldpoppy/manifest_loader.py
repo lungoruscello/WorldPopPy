@@ -156,6 +156,7 @@ individually.
     dataset per series).
 """
 
+import difflib
 import logging
 import sys
 from datetime import timezone
@@ -1292,11 +1293,42 @@ def _validate_manifest(mdf):
 
 
 def _validate_product_name(product_name):
-    if product_name not in get_all_product_names():
-        raise ValueError(
-            f"Product '{product_name}' not found. Use "
-            "`show_supported_data_products()` for details."  # TODO
-        )
+    """
+    Validate a product name against the manifest; for an unknown name, suggest
+    similar names and show how to search the products by keyword.
+    """
+    if product_name in get_all_product_names():
+        return
+
+    suggestions = [repr(name) for name in _similar_product_names(product_name)]
+    if len(suggestions) > 1:
+        suggestions = [", ".join(suggestions[:-1]) + " or " + suggestions[-1]]
+    hint = f" Did you mean {suggestions[0]}?" if suggestions else ""
+    raise ValueError(
+        f"Product '{product_name}' not found.{hint} You can search the supported "
+        f"data products by keyword as follows:\n\n"
+        f">>> from worldpoppy import show_supported_data_products\n"
+        f">>> show_supported_data_products(keywords={str(product_name).strip()!r})"
+    )
+
+
+def _similar_product_names(text, n=3):
+    """
+    Return up to `n` supported product names that `text` is clearly a mistyped
+    or shortened form of (case-insensitive), or an empty list: names starting
+    with `text` (e.g., a missing suffix), or else names that look alike (e.g.,
+    a typo), closest first. More than `n` names starting with `text` are
+    ambiguous and give no suggestion, as do texts shorter than three characters.
+    Topic words (e.g., 'temperature') are left to the keyword search.
+    """
+    query = str(text).strip().lower()
+    if len(query) < 3:
+        return []
+    names = sorted(get_all_product_names())
+
+    if starting := [name for name in names if name.startswith(query)]:
+        return starting if len(starting) <= n else []
+    return difflib.get_close_matches(query, names, n=n, cutoff=0.7)
 
 
 def _validate_isos(iso3_codes):

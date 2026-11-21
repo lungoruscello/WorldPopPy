@@ -401,6 +401,7 @@ def test_public_functions_return_what_a_plain_text_manifest_gives(
 @pytest.mark.parametrize("validator, invalid_values", [
     ("_validate_isos", ["XXX"]),
     ("_validate_years", [1066]),
+    ("_validate_product_name", "pop_g2_1km"),
 ])
 def test_validation_errors_suggest_working_imports(validator, invalid_values):
     """

@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from worldpoppy import manifest_loader
 
@@ -49,3 +50,42 @@ def test_categorical_text_comes_back_as_plain_text_with_missing_values():
 
     pd.testing.assert_frame_equal(result, plain)
     assert isinstance(compact["citation"].dtype, pd.CategoricalDtype)
+
+
+# --- Tests: Unknown Product Names ---
+
+@pytest.mark.parametrize("typed, suggested", [
+    # Clear suggestions
+    ("pop_g2_1km", "'pop_g2_1km_r25a'"),  # a name starting with the text
+    ("ntl_viirs", "'ntl_viirs_filtered_g2', 'ntl_viirs_g1' or 'ntl_viirs_g2'"),
+    ("popg2_r25a", "'pop_g2_r25a', 'pop_g2_1km_r25a' or 'pop_g2_r24b'"),  # look alike (typo), closest first
+    ("POPG2_R25A", "'pop_g2_r25a', 'pop_g2_1km_r25a' or 'pop_g2_r24b'"),  # case-insensitive
+    # No suggestion rather than a doubtful one
+    ("pop_g2", None),  # more than three names start with it
+    ("te", None),  # too short (would find 'temp_mean_g2')
+    ("temperature", None),  # a topic word, left to the keyword search
+    ("landcover", None),  # nothing similar
+    ("", None),
+])
+def test_unknown_product_names_get_suggestions_only_when_clear(monkeypatch, typed, suggested):
+    """
+    An unknown product name raises an error that shows how to search the
+    products by keyword and, only for a clearly mistyped or shortened name,
+    suggests the names meant: none for ambiguous, very short or other text.
+    """
+    names = [
+        "pop_g2_1km_r25a", "pop_g2_r25a", "pop_g2_r24b", "pop_g2_alt", "temp_mean_g2",
+        "ntl_viirs_g2", "ntl_viirs_filtered_g2", "ntl_dmsp_g1", "ntl_viirs_g1",
+    ]
+    monkeypatch.setattr(manifest_loader, "get_all_product_names", lambda: names)
+
+    with pytest.raises(ValueError) as exc:
+        manifest_loader._validate_product_name(typed)
+
+    message = str(exc.value)
+    assert message.startswith(f"Product '{typed}' not found.")
+    if suggested:
+        assert f"Did you mean {suggested}?" in message
+    else:
+        assert "Did you mean" not in message
+    assert f">>> show_supported_data_products(keywords={typed!r})" in message
