@@ -7,7 +7,7 @@ message: >-
 title: "WorldPopPy: A Python client for WorldPop data"
 type: software
 version: 0.5.0
-date-released: 2026-11-20
+date-released: 2026-11-21
 authors:
   - family-names: Langenbach
     given-names: Sascha
