@@ -15,7 +15,7 @@ Main methods
         not exist.
 
 For a detailed, high-level explanation of this module's API traversal strategy,
-related terminology (e.g., "Leaf Node", "Sample Payload"), and data-parsing
+related terminology (e.g. "Leaf Node", "Sample Payload"), and data-parsing
 logic, please see the `manifest_build_strategy.md` document in the `docs/` folder.
 
 ----
@@ -77,7 +77,7 @@ SKIPPED_API_PATHS = {
     ),
 }
 
-# Columns of the raw manifest, i.e., the keys of each record created by
+# Columns of the raw manifest, i.e. the keys of each record created by
 # `_build_dataset_record`. The manifest loader requires all of them.
 RAW_MANIFEST_COLUMNS = (
     "wpy_id",
@@ -118,7 +118,7 @@ class ManifestBuildReport:
 
     Manifest builds are "robust": API branches or data series that fail are
     logged and skipped, and the manifest is saved with everything else. This
-    report makes such gaps visible, so that callers (e.g., release scripts)
+    report makes such gaps visible, so that callers (e.g. release scripts)
     can refuse to ship an incomplete manifest.
 
     Attributes
@@ -322,7 +322,7 @@ def _build_manifest(output_path, save_incomplete=True):
 
         # NOTE
         # The `try...except Exception` block *inside* this loop is intentional.
-        # It ensures that a failure on a single Leaf Node (e.g., an APIRequestError
+        # It ensures that a failure on a single Leaf Node (e.g. an APIRequestError
         # from _get_sample_payload or a parsing error) is logged and skipped.
         # This allows the build to continue for all other nodes.
         #
@@ -340,7 +340,7 @@ def _build_manifest(output_path, save_incomplete=True):
                 raw_manifest_rows_nested.append(result_list)
 
             except Exception as e:
-                # If one Leaf Node fails (e.g., unexpected JSON),
+                # If one Leaf Node fails (e.g. unexpected JSON),
                 # we log the *specific* failure but *continue* the loop.
                 logger.error(
                     f"Failed to process Leaf Node: {leaf_node.get('api_path')}. "
@@ -574,7 +574,7 @@ def _query_metadata_api(url):
     Raises
     ------
     APIRequestError
-        On a non-retryable error (e.g., 404 Not Found), after all retries
+        On a non-retryable error (e.g. 404 Not Found), after all retries
         have failed, or if the response is not valid JSON.
     """
     try:
@@ -621,7 +621,7 @@ def _discover_leaf_nodes(report):
     be crawled are recorded in `report.failed_branches`.
 
     This function starts the recursive crawl from the API root and traverses
-    WorldPop's top-level "Branch Nodes" (e.g., 'pop', 'covariates') serially.
+    WorldPop's top-level "Branch Nodes" (e.g. 'pop', 'covariates') serially.
 
     After the crawl, it filters the results to exclude data series that appear
     to have global coverage (based no the returned meta-data).
@@ -632,7 +632,7 @@ def _discover_leaf_nodes(report):
     """
     logger.info("Phase 1: Discovering API Leaf Nodes...")
 
-    # get the top nodes in WorldPop's data hierarchy (e.g., 'pop' or 'covariates')
+    # get the top nodes in WorldPop's data hierarchy (e.g. 'pop' or 'covariates')
     try:
         response = _query_metadata_api(f'{METADATA_API_URL}')
         top_nodes = response.get("data", [])
@@ -961,8 +961,8 @@ def _get_sample_payload(
     Perform the "Details Call" for a sample country.
 
     Given an API Leaf Node (`api_path`), query the exact same API again
-    for *one* concrete example country (e.g., ?iso3=AFG). Then return
-    JSON details for the *first* entry of the resulting listing (e.g.,
+    for *one* concrete example country (e.g. ?iso3=AFG). Then return
+    JSON details for the *first* entry of the resulting listing (e.g.
     the first available year). This is what we call a "Sample Payload*,
     which we can then analyse with `_analyse_sample_payload` to check
     whether the current data series is supported or not, as well as to
@@ -973,9 +973,9 @@ def _get_sample_payload(
     -------
     tuple[dict, list]:
         - `sample_details` (dict): The *first* entry from the `data`
-          array of the Sample Payload (e.g., `data[0]`).
+          array of the Sample Payload (e.g. `data[0]`).
         - `sample_filenames` (list): The `files` array from that first
-          entry (e.g., `data[0].get("files")`).
+          entry (e.g. `data[0].get("files")`).
 
     Raises
     ------
@@ -988,8 +988,8 @@ def _get_sample_payload(
     response = _query_metadata_api(url)
 
     # --- Robustness Check ---
-    # If _query_metadata_api failed (e.g., 404, 500) it will raise an error
-    # after all retries. If it returns None (i.e., the API sent a JSON `null`
+    # If _query_metadata_api failed (e.g. 404, 500) it will raise an error
+    # after all retries. If it returns None (i.e. the API sent a JSON `null`
     # body) or empty data, we raise an error here.
     if response is None:
         raise APIRequestError(
@@ -1004,7 +1004,7 @@ def _get_sample_payload(
             f"returned no valid 'data' array."
         )
 
-    # use the *first* dataset entry (e.g., first year) as our sample
+    # use the *first* dataset entry (e.g. first year) as our sample
     sample_details = sample_payload_data[0]
     sample_filenames = sample_details.get("files", [])
 
@@ -1023,14 +1023,14 @@ def _analyse_sample_payload(
     sample_filenames
 ):
     """
-    Analyse the "Sample Payload" to determine the file organization scheme.
+    Analyse the "Sample Payload" to determine the file organisation scheme.
 
     This function distinguishes between three supported patterns:
-    1.  **"flat"**: One file per country-year (e.g., population).
+    1.  **"flat"**: One file per country-year (e.g. population).
     2.  **"multi-year"**: Multiple files for one country, each representing
-        a different year (e.g., DMSP nighttime lights 2000-2011).
+        a different year (e.g. DMSP nighttime lights 2000-2011).
     3.  **"multi-band"**: Multiple files for one country-year, each
-        representing a different thematic class or band (e.g., land-cover
+        representing a different thematic class or band (e.g. land-cover
         classes for 2017).
 
     Returns
@@ -1045,7 +1045,7 @@ def _analyse_sample_payload(
     if not are_all_files_tif(sample_filenames):
         logger.info(
             f"Skipping {api_path}: Format of sample file(s) is not TIF "
-            f"(e.g., {sample_filenames[0]})."
+            f"(e.g. {sample_filenames[0]})."
         )
         return "unsupported", {}
 
@@ -1127,7 +1127,7 @@ def _analyse_sample_payload(
 
         # --- Test B: Is it "multi-band"? ---
         # This is the case where the Coverage Index entry has a *single* year
-        # (e.g., "2001") and the files contain different "bands" or "classes".
+        # (e.g. "2001") and the files contain different "bands" or "classes".
         else: # (sample_year_from_coverage is NOT None)
             bands = extract_unique_bands(sample_filenames)
 
@@ -1230,7 +1230,7 @@ def _infer_summary_url_template(sample_details):
     Returns
     -------
     str | None
-        The template (e.g., "...?id={id}") or None if templating fails.
+        The template (e.g. "...?id={id}") or None if templating fails.
     """
     sample_summary_url = sample_details.get("url_summary")
     sample_id_str = sample_details.get("id")
@@ -1324,7 +1324,7 @@ def _build_dataset_record(
         year = coverage_entry.get("popyear")  # will be None for static data
 
         # This is `worldpoppy`'s own ID for the manifest, which *must* be unique.
-        # For "multi-year" and "multi-band" data, this will be synthetic (e.g., "62514_2020")
+        # For "multi-year" and "multi-band" data, this will be synthetic (e.g. "62514_2020")
         unique_idx = str(coverage_entry["id"])
 
         # --- 1. Build Download URL ---
@@ -1391,9 +1391,9 @@ def _validate_download_url_template(template_string, api_path, required_placehol
     data series and records it as failed in the build report.
 
     Parameters:
-    - template_string (str): The generated URL template (e.g., "...{iso3_lower}_{year}.tif")
+    - template_string (str): The generated URL template (e.g. "...{iso3_lower}_{year}.tif")
     - api_path (str): The API path, for the error message.
-    - required_placeholders (list[str]): A list of placeholders (e.g., ["{year}", "{band}"])
+    - required_placeholders (list[str]): A list of placeholders (e.g. ["{year}", "{band}"])
                                          that *must* be in the template.
 
     Raises:

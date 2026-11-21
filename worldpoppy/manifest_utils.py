@@ -7,7 +7,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 year_extract_pattern = re.compile(r"(?<!\d{4}_)(\d{4})(?!_\d{4})")
-# > lookback and lookahead used to exclude year ranges (e.g., "2000_2020")
+# > lookback and lookahead used to exclude year ranges (e.g. "2000_2020")
 
 
 def extract_year_from_filename(file_path_or_url):
@@ -20,18 +20,18 @@ def extract_year_from_filename(file_path_or_url):
     Parameters
     ----------
     file_path_or_url : str
-        The full URL or file path (e.g., ".../afg_..._2020_100m.tif")
+        The full URL or file path (e.g. ".../afg_..._2020_100m.tif")
 
     Returns
     -------
     int | None
-        The extracted year (e.g., 2020), or None if the year is ambiguous,
+        The extracted year (e.g. 2020), or None if the year is ambiguous,
         implausible, or not found.
     """
 
     min_plausible_year, max_plausible_year = 1995, 2040
 
-    # get just the filename (e.g., "afg_..._2020_100m.tif")
+    # get just the filename (e.g. "afg_..._2020_100m.tif")
     filename = Path(file_path_or_url).name
 
     # get year-pattern matches
@@ -168,7 +168,7 @@ def are_all_files_tif(file_list):
     try:
         return all(Path(f).suffix.lower() in valid_suffixes for f in file_list)
     except Exception as e:
-        # safety net for weird inputs (e.g., list contains non-strings)
+        # safety net for weird inputs (e.g. list contains non-strings)
         logger.warning(f"Error while validating file list: {e}")
         return False
 
@@ -217,9 +217,9 @@ def are_unique_integers_consecutive(unique_int_list):
     max_val = max(unique_int_list)
 
     # If a list of 5 unique integers is consecutive
-    # (e.g., [20, 24, 22, 21, 23]),
+    # (e.g. [20, 24, 22, 21, 23]),
     # then max-min+1 (24-20+1) *must* equal its length (5).
-    # If a number were missing (e.g., [20, 24, 22, 21]),
+    # If a number were missing (e.g. [20, 24, 22, 21]),
     # then (24-20+1) = 5, but len = 4.
     return (max_val - min_val + 1) == len(unique_int_list)
 

@@ -32,7 +32,7 @@ def no_network(monkeypatch):
     in unit tests.
 
     Unit tests must fake every external service. This guard ensures that a
-    fake which fails to intercept (e.g., due to a wrong patch target) makes
+    fake which fails to intercept (e.g. due to a wrong patch target) makes
     the test fail immediately, rather than sending real traffic to WorldPop
     or Nominatim. (`pytest.fail` raises a BaseException, so the library's own
     `except Exception` blocks cannot swallow it.)
@@ -50,9 +50,9 @@ def no_user_cache(monkeypatch, tmp_path):
     Fixture that points the cache directory to an empty temporary directory
     in unit tests.
 
-    Unit tests must never read from or write to the user's cache (e.g., lazy
+    Unit tests must never read from or write to the user's cache (e.g. lazy
     merges write VRT files there). Fixtures that need a cache of their own
-    (e.g., `isolated_raster_cache`) set the variable again, which takes
+    (e.g. `isolated_raster_cache`) set the variable again, which takes
     precedence.
     """
     monkeypatch.setenv("WORLDPOPPY_CACHE_DIR", str(tmp_path / "unit_test_cache"))

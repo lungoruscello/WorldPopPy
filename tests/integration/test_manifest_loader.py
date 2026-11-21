@@ -328,7 +328,7 @@ def test_filtering_the_manifest_gives_back_working_memory(monkeypatch, call, pro
 @needs_raw_manifest
 def test_cached_manifest_stores_repeated_text_compactly(cleaned_manifests):
     """
-    The cached manifest stores the long, repeated text columns (e.g., the
+    The cached manifest stores the long, repeated text columns (e.g. the
     series descriptions) as categories, which saves about 130 MB, and holds
     exactly the data of a manifest read as plain text: same values, same row
     order, and the same types for all other columns.

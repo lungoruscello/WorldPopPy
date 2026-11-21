@@ -74,7 +74,7 @@ def test_common_names_resolve(name, expected):
 def test_only_congo_is_ambiguous():
     """
     'Congo' is the only name (or alias) that exactly matches several
-    countries. Any other collision (e.g., from a new alias, or from renamed
+    countries. Any other collision (e.g. from a new alias, or from renamed
     countries in a new `pycountry` release) would make that name fail to
     resolve, or would point to an unexpected country, so it must be reviewed
     (and this test updated) deliberately.
@@ -95,7 +95,7 @@ def test_only_congo_is_ambiguous():
 def test_every_supported_country_has_a_name():
     """
     Every country in the data manifest has a proper name (not just its code),
-    incl. countries that ISO 3166 lacks (e.g., Kosovo).
+    incl. countries that ISO 3166 lacks (e.g. Kosovo).
     """
     from worldpoppy.country_names import find_country_code
     from worldpoppy.manifest_loader import get_all_isos

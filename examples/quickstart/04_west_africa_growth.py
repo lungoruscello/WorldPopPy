@@ -35,7 +35,7 @@ pop_warped = wp_warp(
 # cells identified as settled, and maps settlements for each year. Some cells are
 # empty (NaN) in 2015 but populated in 2024. Counting empty cells as zero people
 # (an assumption; WorldPop does not state it) keeps them in the change map; cells
-# empty in both years (e.g., the sea) stay empty.
+# empty in both years (e.g. the sea) stay empty.
 before, after = pop_warped.sel(year=2015), pop_warped.sel(year=2024)
 pop_change = (after.fillna(0) - before.fillna(0)).where(before.notnull() | after.notnull())
 

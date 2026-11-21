@@ -112,7 +112,7 @@ def mock_raster_factory(tmp_path):
         # (Top-left X, Pixel Width, 0, Top-left Y, 0, -Pixel Height)
         transform = Affine.translation(x_start, y_start) @ Affine.scale(res, -res)
 
-        # Generate Coordinate Arrays (Pixel Centers)
+        # Generate Coordinate Arrays (Pixel Centres)
         #   X: start + half_res, start + 1.5*res, ...
         xs = np.arange(width) * res + x_start + (res / 2)
         #   Y: start - half_res, start - 1.5*res, ... (negative because Y goes down)

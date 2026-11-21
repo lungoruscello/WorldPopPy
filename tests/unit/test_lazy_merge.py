@@ -35,7 +35,7 @@ from worldpoppy import merge_rasters
 # ECOWAS (West Africa) has 15 member states
 WEST_AFRICA_COUNT = 15
 
-# Approximate count for a full continent (e.g., Africa ~54)
+# Approximate count for a full continent (e.g. Africa ~54)
 CONTINENTAL_COUNT = 54
 
 

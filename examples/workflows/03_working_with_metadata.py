@@ -99,7 +99,7 @@ print(pop.sel(year=2023).attrs["wpy_years"])  # still '2015 2023'
 # WorldPop assigns people only to cells identified as settled, and maps settlements for each
 # year. In this product, some cells are empty (NaN) in 2015 but hold people in 2023, and a
 # plain difference (2023 minus 2015) would be empty there. Here, we count empty cells as zero
-# people, so that these cells stay in the result; cells empty in both years (e.g., the sea)
+# people, so that these cells stay in the result; cells empty in both years (e.g. the sea)
 # stay empty. Counting empty cells as zero people is an assumption of this example; WorldPop
 # does not state it.
 

@@ -142,7 +142,7 @@ def build_country_borders(overwrite=False):
         raise ModuleNotFoundError(
             "Error: An installation of 'ogeo.gdal' is required to build country "
             "borders from scratch. Please install `gdal` using pip, conda, or "
-            "mamba (e.g., `conda install -c conda-forge gdal`)."
+            "mamba (e.g. `conda install -c conda-forge gdal`)."
         )
 
     all_isos = get_all_isos()

@@ -70,7 +70,7 @@ def plot_country_borders(iso3_codes, ax=None, to_crs=None, **kwargs):
         gdf = gdf.to_crs(to_crs)
 
     # The borders are drawn onto an existing map, so its axis labels stay as
-    # they are: geopandas labels empty axes after the CRS (e.g., "Easting
+    # they are: geopandas labels empty axes after the CRS (e.g. "Easting
     # [metre]"), which would undo `clean_axes` on maps cleaned beforehand
     xlabel, ylabel = ax.get_xlabel(), ax.get_ylabel()
     gdf.plot(ax=ax, **kwargs)
@@ -102,7 +102,7 @@ def plot_location_markers(
     locations : str, tuple, or list of (str or tuple)
         The locations to plot. Can be:
 
-        - A location name string (e.g., "Nairobi").
+        - A location name string (e.g. "Nairobi").
         - A tuple of (location_name, display_label) to search for "location_name"
           but annotate with "display_label".
         - A coordinate tuple (longitude, latitude) in WGS84.
@@ -116,9 +116,9 @@ def plot_location_markers(
     color : str, default='k'
         Colour to use for both the scatter marker and the annotation text.
     fontsize : int or str, optional
-        Font size for the annotation text (e.g., 10, 'small', 'medium').
+        Font size for the annotation text (e.g. 10, 'small', 'medium').
     fontweight : int or str, optional
-        Font weight for the annotation text (e.g., 'bold', 'normal', 700).
+        Font weight for the annotation text (e.g. 'bold', 'normal', 700).
     textcoords : str, default="offset points"
         Coordinate system for annotation positioning.
     xytext : tuple of int, default=(0, -10)
@@ -128,7 +128,7 @@ def plot_location_markers(
     va : str, default='center'
         Vertical alignment of the annotation text.
     other_annotate_kwargs : dict, optional
-        Additional keyword arguments passed to `annotate` (e.g., rotation, bbox).
+        Additional keyword arguments passed to `annotate` (e.g. rotation, bbox).
     to_crs : pyproj.CRS or str, optional
         If specified, projects the geo-coordinate from WGS84 to this CRS.
     **scatter_kwargs :

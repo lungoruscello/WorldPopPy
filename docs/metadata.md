@@ -16,7 +16,7 @@ Metadata handling in WorldPopPy is designed to follow these principles:
    are marked as such.
 2. **Standard names first.** Attributes follow the CF conventions and the Attribute Convention for
    Data Discovery (ACDD) where a standard name exists, with the meaning these conventions define
-   (e.g., CF's `source` describes how a file was produced, not who provides the data; the creator
+   (e.g. CF's `source` describes how a file was produced, not who provides the data; the creator
    of the data is named by ACDD's `creator_*` attributes). WorldPopPy-specific attributes start
    with `wpy_`.
 3. **Saveable values.** Attribute values are strings or numbers only (no `None`, no lists, no
@@ -112,7 +112,7 @@ often the result of complex modelling.
 ## 7. Your own processing
 
 The attributes of a WorldPopPy result describe the result as returned by WorldPopPy. Your own
-selections and arithmetic with xarray (e.g., `da.sel(year=2024)`, `da + 1`) do not update them.
+selections and arithmetic with xarray (e.g. `da.sel(year=2024)`, `da + 1`) do not update them.
 Whether xarray keeps the attributes at all depends on the operation and the xarray version (with
 xarray 2026.9, both examples keep them). After `da.sel(year=2024)`, for example, `wpy_years` and
 `wpy_source_files` still list all years, and `history` has no line for the selection. Arithmetic on

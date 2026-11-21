@@ -322,7 +322,7 @@ def test_unmasked_results_keep_the_source_nodata(fake_wp, tmp_path, years):
 @pytest.mark.parametrize("chunks", [None, "auto"], ids=["eager", "lazy"])
 def test_masked_results_from_integer_files_save_as_float(mock_raster_factory, tmp_path, chunks):
     """
-    Masked results from integer source files (e.g., uint8 with fill value
+    Masked results from integer source files (e.g. uint8 with fill value
     255) are saved as floating point with NaN as nodata, eager and lazy alike:
     they do not inherit the source files' data type or fill value.
     """

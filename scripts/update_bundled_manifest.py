@@ -60,7 +60,7 @@ def update_bundled_manifest(bundled_path=BUNDLED_MANIFEST_PATH, legacy_sidecar_p
 def main():
     """
     Run the update, after checking that the bundled manifest lives in this
-    repository (and not, e.g., in an installed copy of worldpoppy).
+    repository (and not, e.g. in an installed copy of worldpoppy).
     """
     if not BUNDLED_MANIFEST_PATH.resolve().is_relative_to(REPO_ROOT):
         print(

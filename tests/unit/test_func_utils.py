@@ -312,7 +312,7 @@ def test_request_throttle_spaces_requests(monkeypatch):
 ])
 def test_request_throttle_honours_deferral(monkeypatch, defer_seconds, min_elapsed):
     """
-    A deferral (e.g., from a `Retry-After` header) delays the next request by
+    A deferral (e.g. from a `Retry-After` header) delays the next request by
     at least the requested time, but never shortens the minimum interval.
     """
     clock = _FakeClock()

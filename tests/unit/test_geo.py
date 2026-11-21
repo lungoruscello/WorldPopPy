@@ -75,7 +75,7 @@ def test_bbox_area_km_high_lats():
         )
         box_gdf_eqa = box_gdf_wgs84.to_crs(world_eqa)
         ref_area_km = box_gdf_eqa.area.iloc[0] / 1e6
-        assert np.isclose(ref_area_km, width_km ** 2, rtol=0.05)  # within 5 percent
+        assert np.isclose(ref_area_km, width_km ** 2, rtol=0.05)  # within 5 per cent
 
 
 def test_bbox_area_km_extreme_lats():
@@ -93,7 +93,7 @@ def test_bbox_area_km_extreme_lats():
         )
         box_gdf_eqa = box_gdf_wgs84.to_crs(world_eqa)
         ref_area_km = box_gdf_eqa.area.iloc[0] / 1e6
-        assert np.isclose(ref_area_km, width_km ** 2, rtol=0.05)  # within 5 percent
+        assert np.isclose(ref_area_km, width_km ** 2, rtol=0.05)  # within 5 per cent
 
 
 def test_bbox_date_line_crash():
@@ -132,7 +132,7 @@ def test_bbox_validation_rejects_non_finite_values(validator, position, bad_valu
 
 def test_bbox_validation_in_any_crs():
     """
-    `validate_bbox` accepts boxes in any CRS (e.g., metres), but rejects
+    `validate_bbox` accepts boxes in any CRS (e.g. metres), but rejects
     boxes whose minimum exceeds the maximum on either axis.
     """
     from worldpoppy.func_utils import validate_bbox
@@ -209,7 +209,7 @@ def test_aoi_ignores_offshore_geometries_with_warning(synthetic_borders, caplog)
 def test_aoi_offshore_count_with_duplicate_index(synthetic_borders, caplog):
     """
     The offshore warning counts geometries, not index labels: duplicate index
-    values in the user's GeoDataFrame (e.g., after `pd.concat`) must not
+    values in the user's GeoDataFrame (e.g. after `pd.concat`) must not
     distort the count.
     """
     from worldpoppy.raster import _standardise_aoi
@@ -228,7 +228,7 @@ def test_aoi_offshore_count_with_duplicate_index(synthetic_borders, caplog):
 
 def test_aoi_gdf_with_own_iso3_column(synthetic_borders):
     """
-    A user GeoDataFrame may carry its own 'iso3' column (e.g., admin
+    A user GeoDataFrame may carry its own 'iso3' column (e.g. admin
     boundaries). This must not clash with the country lookup.
     """
     from worldpoppy.raster import _standardise_aoi

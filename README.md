@@ -226,7 +226,7 @@ from worldpoppy import wp_warp
 pop_warped = wp_warp(pop_data, to_crs="EPSG:32647", res=1_000, resampling="sum")
 ```
 
-To combine results for different products or areas of interest (e.g., population and elevation), align one result to
+To combine results for different products or areas of interest (e.g. population and elevation), align one result to
 the other first:
 
 ```python
@@ -238,7 +238,7 @@ exactly equal coordinates, would silently drop the cells that differ.
 
 Every result carries WorldPop's recommended citations, the licence, and a processing history in its attributes.
 Importantly, these attributes describe the result as returned by **WorldPopPy**. After you select data or compute new
-values with xarray, some attributes no longer match the data (e.g., after selecting one year of a multi-year result,
+values with xarray, some attributes no longer match the data (e.g. after selecting one year of a multi-year result,
 `wpy_years` still lists all years). If you save such results, e.g. to pass the files on, update or drop these
 attributes first. The [metadata guide](./docs/metadata.md) describes all attributes, and the
 [metadata example](./examples/workflows/03_working_with_metadata.py) shows how to handle them.
@@ -281,7 +281,7 @@ sorted(info["years"])  # -> [2015, 2016, ..., 2023]
 ```
 
 WorldPop organises its data by country, and **WorldPopPy** identifies countries by their three-letter ISO codes
-(ISO 3166-1 alpha-3, e.g., "KEN" for Kenya). These codes select countries in `wp_raster`, `wp_manifest`,
+(ISO 3166-1 alpha-3, e.g. "KEN" for Kenya). These codes select countries in `wp_raster`, `wp_manifest`,
 `show_supported_data_products`, and `plot_country_borders`. To look up a country's code, search for (part of) its name.
 The result lists all matching countries, exact matches first:
 
@@ -293,7 +293,7 @@ find_country_code("ivory")
 # 0  CIV  Côte d'Ivoire  Ivory Coast
 ```
 
-`wp_raster` also accepts country names (e.g., `aoi="Kenya"`) if they match exactly one country, and reports the code 
+`wp_raster` also accepts country names (e.g. `aoi="Kenya"`) if they match exactly one country, and reports the code 
 it used. Ambiguous names such as "Congo" raise an error that lists the candidates.
 
 ## Documentation
@@ -349,7 +349,7 @@ wp_raster(
 project and is not affiliated with or endorsed by WorldPop. Please note the following points regarding data provenance
 and citation:
 
-1. **Curated "Product Names"**: The product names used by this library (e.g., `pop_g1_alt` or `pop_g2_alt`) are 
+1. **Curated "Product Names"**: The product names used by this library (e.g. `pop_g1_alt` or `pop_g2_alt`) are 
 specific to **WorldPopPy**; WorldPop does not use them. When citing data, please refer to WorldPop's official 
 dataset titles (see `api_entry_title` below).
 

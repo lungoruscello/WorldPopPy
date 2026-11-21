@@ -79,7 +79,7 @@ def test_incomplete_build_leaves_bundled_manifest_unchanged(script, monkeypatch,
 
 def test_refuses_to_update_a_manifest_outside_the_repo(script, monkeypatch, tmp_path, capsys):
     """
-    If the bundled-manifest path lies outside this repository (e.g., because an
+    If the bundled-manifest path lies outside this repository (e.g. because an
     installed worldpoppy got imported), the script refuses to run at all.
     """
     built = []

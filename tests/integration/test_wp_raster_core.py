@@ -85,7 +85,7 @@ def test_explicit_single_year_is_2d():
 def test_raster_keyword_resolution():
     """
     Verify that passing `years='last'` works end-to-end:
-    1. Resolves to a concrete integer (e.g., 2020).
+    1. Resolves to a concrete integer (e.g. 2020).
     2. Fetches that specific slice.
     3. Returns a 2D array (because the single year is squeezed).
     """
@@ -182,7 +182,7 @@ def test_years_with_grid_noise_are_stacked_on_one_grid(aoi, chunks):
 @needs_internet_or_cache
 def test_mixed_year_keywords_resolution():
     """
-    Verify that passing a list of keywords (e.g., ['first', 'last']) works.
+    Verify that passing a list of keywords (e.g. ['first', 'last']) works.
     """
     from worldpoppy import wp_raster
     from worldpoppy.manifest_loader import get_product_info

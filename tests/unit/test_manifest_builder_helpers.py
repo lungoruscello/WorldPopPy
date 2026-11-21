@@ -27,7 +27,7 @@ def test_validate_url_template_raises_on_missing_placeholder():
     # Valid: all required placeholders present (no exception)
     _validate_download_url_template('{year}/{iso3_upper}/{iso3_lower}_{year}.tif', 'pop/x', ['{year}'])
 
-    # Invalid: e.g., WorldPop changed its file naming, so the year was not found
+    # Invalid: e.g. WorldPop changed its file naming, so the year was not found
     with pytest.raises(ValueError, match="missing required placeholder"):
         _validate_download_url_template('2020/{iso3_upper}/{iso3_lower}.tif', 'pop/x', ['{year}'])
 
@@ -44,7 +44,7 @@ def test_dataset_record_has_raw_manifest_columns():
         coverage_entry={"id": "7", "iso3": "AFG", "popyear": "2020", "title": "Population 2020"},
         download_url_template="https://data.example/{year}/{iso3_lower}_ppp_{year}.tif",
         summary_url_template="https://hub.example/summary?id={id}",
-        id_for_summary="42",  # e.g., the country-level entry of a multi-year series
+        id_for_summary="42",  # e.g. the country-level entry of a multi-year series
         api_path="pop/wpgp",
         series_metadata={"license": "https://hub.example/licence.txt", "citation": "WorldPop (2018).",
                          "doi": "10.5258/SOTON/WP00645"},

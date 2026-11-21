@@ -27,7 +27,7 @@ def needs_internet_or_cache(func):
     """
     Decorator: Run test if online OR if data is cached.
 
-    Behavior:
+    Behaviour:
     1. If online: Run normally. All failures are reported as real failures.
     2. If offline: Try running.
        - If `DownloadError` or `httpx.HTTPError`: SKIP (Data missing & cannot fetch).
@@ -48,7 +48,7 @@ def needs_internet_or_cache(func):
             if not is_online():
                 pytest.skip(f"No cached rasters and no internet): {e}")
 
-            # If we ARE online, this is a real failure (e.g., 404, Server Error).
+            # If we ARE online, this is a real failure (e.g. 404, Server Error).
             raise e
 
     return wrapper

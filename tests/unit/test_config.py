@@ -43,7 +43,7 @@ def test_load_country_borders_builds_into_current_cache_dir(monkeypatch, tmp_pat
     cache_dir = tmp_path / "cache"
     monkeypatch.setenv('WORLDPOPPY_CACHE_DIR', str(cache_dir))
     # Safety: never let the synthetic borders be built outside the test's cache dir
-    # (e.g., into the user's real cache, should the path resolution ever regress)
+    # (e.g. into the user's real cache, should the path resolution ever regress)
     assert borders._border_buffered_fpath().parent == cache_dir
 
     borders.load_country_borders.cache_clear()

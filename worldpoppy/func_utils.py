@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 # Geocoding errors that a retry can fix: timeouts (incl. HTTP 408/503/504),
 # connection problems, and rate limiting (HTTP 429). All other geopy errors
-# (e.g., HTTP 403 for a blocked user agent, or a malformed query) are final.
+# (e.g. HTTP 403 for a blocked user agent, or a malformed query) are final.
 # Note: geopy maps HTTP 500/502 to its generic `GeocoderServiceError`, which
 # is also the base class of the final errors. Hence, 500/502 are not retried.
 _RETRYABLE_GEOCODER_ERRORS = (GeocoderTimedOut, GeocoderUnavailable, GeocoderRateLimited)
@@ -73,7 +73,7 @@ class _RequestThrottle:
     """
     Enforce a minimum interval between requests to a web service (thread-safe).
 
-    The service can also push the next request further out, e.g., when it
+    The service can also push the next request further out, e.g. when it
     answers with HTTP 429 and a `Retry-After` header (see `defer`).
     """
 
@@ -216,7 +216,7 @@ def _geocode_with_retries(query):
 def standardise_iso3_codes(iso3_codes):
     """
     Return one or more ISO3 country codes as a list of upper-case strings,
-    with surrounding whitespace removed (e.g., ' tha' -> 'THA').
+    with surrounding whitespace removed (e.g. ' tha' -> 'THA').
 
     Parameters
     ----------
@@ -289,7 +289,7 @@ def log_info_context(logger):
     Parameters
     ----------
     logger : logging.Logger
-        The logger instance to use (e.g., from `logging.getLogger(__name__)`).
+        The logger instance to use (e.g. from `logging.getLogger(__name__)`).
     """
     effective_level = logger.getEffectiveLevel()
 
@@ -367,7 +367,7 @@ def validate_bbox_wgs84(bounds):
         )
 
     # --- Longitude / Anti-Meridian Checks ---
-    # Check for projection wrap-around artifacts
+    # Check for projection wrap-around artefacts
     if min_lon < -180 or max_lon > 180:
         raise BboxInvalidError(
             f"Longitude out of bounds ({min_lon}, {max_lon}). "
@@ -375,7 +375,7 @@ def validate_bbox_wgs84(bounds):
             "the Anti-Meridian (Date Line)."
         )
 
-    # Check for geometric crossing (e.g., min=179.0, max=-179.0)
+    # Check for geometric crossing (e.g. min=179.0, max=-179.0)
     if min_lon > max_lon:
         raise BboxInvalidError(
             f"Invalid longitude range: min_lon ({min_lon}) is greater than "

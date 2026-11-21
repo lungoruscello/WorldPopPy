@@ -64,7 +64,7 @@ class _MidStreamFailure(httpx.SyncByteStream):
 class _InterruptedStream(httpx.SyncByteStream):
     """
     A response body that calls `interruption()` halfway through the download,
-    e.g., to simulate another process acting on the same cache meanwhile.
+    e.g. to simulate another process acting on the same cache meanwhile.
     """
 
     def __init__(self, interruption):
@@ -356,7 +356,7 @@ def test_download_does_not_retry_fatal_client_errors(tmp_path, monkeypatch, no_b
 
 def test_download_does_not_retry_unsupported_protocol(tmp_path, monkeypatch, no_backoff_sleep):
     """
-    httpx files an unsupported URL scheme (e.g., 'ftp://') under transport
+    httpx files an unsupported URL scheme (e.g. 'ftp://') under transport
     errors, but retrying cannot fix it, so the download fails immediately.
     """
     calls = []
@@ -431,7 +431,7 @@ def test_size_check_does_not_retry_fatal_client_errors(tmp_path, monkeypatch, no
 
 def test_download_follows_redirects(tmp_path, monkeypatch, no_backoff_sleep):
     """
-    Downloads must follow redirects (e.g., WorldPop's 'http://' -> 'https://').
+    Downloads must follow redirects (e.g. WorldPop's 'http://' -> 'https://').
     """
     calls = []
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _fake_https_redirect_handler(calls))
@@ -509,7 +509,7 @@ def test_download_survives_cache_cleanup_by_another_process(isolated_raster_cach
 def test_overlapping_downloads_of_same_raster(tmp_path, monkeypatch):
     """
     A second download of the same raster that runs while the first one is
-    still in progress (e.g., by a parallel job) must not break either of them:
+    still in progress (e.g. by a parallel job) must not break either of them:
     each writes to its own temporary file in the cache dir.
     """
     downloader = WorldPopDownloader(directory=tmp_path)
@@ -598,7 +598,7 @@ def test_purge_cache_keeps_country_borders_by_default(isolated_raster_cache):
     raster_fpath = isolated_raster_cache / "pop_g1_AFG_2020.tif"
     raster_fpath.write_bytes(b"fake raster")
     borders_fpath = _border_buffered_fpath()
-    # Safety: never write fake borders outside the isolated cache (e.g., into
+    # Safety: never write fake borders outside the isolated cache (e.g. into
     # the user's real cache, should the path resolution ever regress)
     assert borders_fpath.parent == isolated_raster_cache
     borders_fpath.write_bytes(b"fake borders")

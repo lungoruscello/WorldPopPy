@@ -4,7 +4,7 @@ alpha-3) that `worldpoppy` uses to identify countries.
 
 Country names come from `pycountry` (official ISO 3166 names, incl. their
 long and common forms), complemented by a small set of common English
-aliases (e.g., 'Turkey', 'Ivory Coast'). Only countries for which WorldPop
+aliases (e.g. 'Turkey', 'Ivory Coast'). Only countries for which WorldPop
 offers data are considered.
 
 Main methods
@@ -29,10 +29,10 @@ __all__ = [
     "find_country_code",
 ]
 
-# Common English names that ISO 3166 lacks, e.g., because a country was
+# Common English names that ISO 3166 lacks, e.g. because a country was
 # renamed or is usually known by a shorter name. Note that 'Congo' is a common
 # name for both the Democratic Republic of the Congo (COD) and the Republic of
-# the Congo (COG), so it is ambiguous on purpose. Three-letter aliases (e.g.,
+# the Congo (COG), so it is ambiguous on purpose. Three-letter aliases (e.g.
 # 'DRC') only help the search, since `wp_raster` reads any three-letter AoI
 # string as a country code.
 COUNTRY_NAME_ALIASES = {
@@ -118,7 +118,7 @@ def resolve_country_name(name):
     Parameters
     ----------
     name : str
-        A country name, e.g., 'Kenya' or 'Ivory Coast'.
+        A country name, e.g. 'Kenya' or 'Ivory Coast'.
 
     Returns
     -------
@@ -164,7 +164,7 @@ def resolve_country_name(name):
         raise ValueError(
             f"{name!r} is neither a three-letter country code nor a known country "
             "name. To search country codes by (part of) a name, use "
-            "`worldpoppy.find_country_code`, e.g., `find_country_code('turk')`. "
+            "`worldpoppy.find_country_code`, e.g. `find_country_code('turk')`. "
             "(To pass a vector file instead, use a path with a file suffix, or a "
             "`pathlib.Path`.)"
         )
@@ -247,7 +247,7 @@ def _tidy_search_result(df):
 def _normalise_name(name):
     """
     Normalise a country name for matching: remove accents, lower the case,
-    and replace punctuation with single spaces (e.g., "Côte d'Ivoire" ->
+    and replace punctuation with single spaces (e.g. "Côte d'Ivoire" ->
     'cote d ivoire').
     """
     decomposed = unicodedata.normalize('NFKD', name)

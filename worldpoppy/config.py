@@ -13,7 +13,7 @@ except ModuleNotFoundError:
     except ModuleNotFoundError:
         print(
             "Error: The 'tomli' package is required. Please install it "
-            "using pip, conda, or mamba (e.g., `conda install tomli`)."
+            "using pip, conda, or mamba (e.g. `conda install tomli`)."
         )
         raise
 
@@ -76,7 +76,7 @@ GOLDEN = 'xkcd:goldenrod'
 
 ENABLE_HEAVY_TESTS = os.getenv("WPY_RUN_HEAVY_TESTS") == "1"
 # > Set the above environment variable only if you explicitly want
-#   to run API-heavy integration / E2E tests (e.g., performing full
+#   to run API-heavy integration / E2E tests (e.g. performing full
 #   API traversals and testing raster URL availability)
 DEBUG = False
 

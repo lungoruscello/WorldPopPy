@@ -10,12 +10,12 @@ The border data is not intended for geo-data analysis, but serves two other purp
 
 Simplified country borders were extracted from WorldPop's [*level0_100m*](https://hub.worldpop.org/geodata/listing?id=62) 
 rasters, after down-sampling these by a factor of 5. The full data-processing code can be found in `worldpoppy.borders`. 
-The original WorldPop *level0_100m* rasters are licenced under the [Creative Commons Attribution 4.0 International License](https://hub.worldpop.org/data/licence.txt).
+The original WorldPop *level0_100m* rasters are licensed under the [Creative Commons Attribution 4.0 International License](https://hub.worldpop.org/data/licence.txt).
 
 ### global_nb_db.json
 
 This file contains ISO3 country codes supported by the WorldPop project. The file is provided by WorldPop itself and 
-likewise licenced under the Creative Commons Attribution 4.0 International License.  
+likewise licensed under the Creative Commons Attribution 4.0 International License.  
 
 ### southern_kamchatka.feather
 

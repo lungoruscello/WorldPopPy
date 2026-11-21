@@ -164,7 +164,7 @@ class WorldPopDownloader:
         chunk_size : int, optional, default=4MB
             The size (in bytes) of chunks to read/write during download. Larger chunks
             may improve performance, especially on systems with real-time file scanning
-            (e.g., antivirus).
+            (e.g. antivirus).
 
         Returns
         -------
@@ -297,7 +297,7 @@ class WorldPopDownloader:
         chunk_size : int, optional, default=4MB
             The size (in bytes) of chunks to read/write during download.
             Larger chunks may improve performance, especially on systems
-            with real-time file scanning (e.g., antivirus).
+            with real-time file scanning (e.g. antivirus).
 
         Returns
         -------
@@ -310,7 +310,7 @@ class WorldPopDownloader:
         local_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Download the raster to a uniquely named temporary file in the same
-        # directory, so that concurrent downloads of the same raster (e.g., by
+        # directory, so that concurrent downloads of the same raster (e.g. by
         # parallel jobs) never share, truncate or delete each other's files
         tmp_path = _create_unique_temp_file(local_path)
 
@@ -490,12 +490,12 @@ def purge_cache(dry_run=True, keep_country_borders=True, keep_manifest=True):
 def _create_unique_temp_file(local_path):
     """
     Create an empty, uniquely named temporary file next to `local_path`
-    (e.g., 'x.tif.3f9a1c2e.download') and return its path.
+    (e.g. 'x.tif.3f9a1c2e.download') and return its path.
 
     Unlike `tempfile.mkstemp`, which creates files readable only by their
     owner, this file gets the usual permissions (subject to the umask). The
     cached raster keeps them after the final move, so that it stays readable
-    in shared caches (e.g., a group cache on a cluster).
+    in shared caches (e.g. a group cache on a cluster).
     """
     while True:
         tmp_path = local_path.with_name(f"{local_path.name}.{secrets.token_hex(4)}.download")

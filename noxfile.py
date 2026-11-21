@@ -14,7 +14,7 @@ environment from the lockfile (`uv.lock`):
     uv sync
 
 If a conda or mamba environment is active in your shell, deactivate it first
-(e.g., `mamba deactivate`). Otherwise, it leaks variables such as `PROJ_DATA`
+(e.g. `mamba deactivate`). Otherwise, it leaks variables such as `PROJ_DATA`
 and `GDAL_DATA`, which make rasterio read the conda environment's (possibly
 incompatible) PROJ and GDAL data files. The sessions below remove these
 variables themselves, but plain `uv run pytest` does not.
@@ -76,7 +76,7 @@ version for which it passes.
 Minimum versions of rasterio and GDAL
 -------------------------------------
 The numerical accuracy of merging and warping depends on the versions of
-rasterio and the GDAL it bundles (e.g., older versions lose population when
+rasterio and the GDAL it bundles (e.g. older versions lose population when
 warping). `accuracy_versions` runs the accuracy tests (marker `accuracy`) on
 the hardest case only, for the minimum rasterio version and the latest series,
 with all other dependencies resolved to match. Run it by hand when changing the

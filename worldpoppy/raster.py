@@ -179,9 +179,9 @@ def wp_raster(
         - a GeoDataFrame or GeoSeries with one or more geometries (in any CRS);
         - a shapely geometry, whose coordinates are assumed to be longitude and
           latitude (WGS84), as for bounding boxes; or
-        - the path to a vector file (e.g., GeoPackage, GeoJSON or Shapefile) that
+        - the path to a vector file (e.g. GeoPackage, GeoJSON or Shapefile) that
           `geopandas.read_file` can read. A string counts as a path if it contains
-          a path separator or ends in a file suffix (e.g., 'districts.gpkg'). To
+          a path separator or ends in a file suffix (e.g. 'districts.gpkg'). To
           read a specific layer or a subset of a file, read it with
           `geopandas.read_file` yourself and pass the resulting GeoDataFrame.
 
@@ -204,7 +204,7 @@ def wp_raster(
             * For **static** products, returns the single available raster.
         * 'first': Retrieve data for the earliest available year.
         * 'last': Retrieve data for the most recent available year.
-        * List: A list containing integers and/or keywords (e.g.,
+        * List: A list containing integers and/or keywords (e.g.
           ``[2010, 'last']``).
         * None: (Default) for static data products.
     name : str, optional
@@ -218,7 +218,7 @@ def wp_raster(
         - If 'auto', Dask chooses the chunk size.
         - If int K, the data is loaded in chunks of size (K, K).
           Equivalent to passing {'x': K, 'y': K}.
-        - If dict (e.g., {'x': 1024, 'y': 1024}), that specific chunking is used.
+        - If dict (e.g. {'x': 1024, 'y': 1024}), that specific chunking is used.
 
         Lazy reading requires `masked=True` and `cache_downloads=True`.
         Several country rasters are merged lazily as one virtual mosaic (see
@@ -257,7 +257,7 @@ def wp_raster(
     other_read_kwargs : dict, optional
         Dictionary with additional keyword arguments that are passed to
         `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
-        when reading input rasters (e.g., `lock`).
+        when reading input rasters (e.g. `lock`).
         Note that `chunks` passed here will be ignored in favour of the
         explicit `chunks` argument. The read settings (`masked`,
         `mask_and_scale`) cannot be passed here, and `band_as_variable` is not
@@ -268,7 +268,7 @@ def wp_raster(
     download_chunk_size : int, optional, default=4MB
         The size (in bytes) of chunks to read/write during raster downloads.
         The large, default chunk size aims to improve performance on systems
-        with real-time file scanning (e.g., antivirus).
+        with real-time file scanning (e.g. antivirus).
     download_dry_run : bool, optional, default=False
         If True, only check how many raster files would need to be downloaded
         from WorldPop if `download_dry_run` was False. Report the number and
@@ -526,7 +526,7 @@ def wp_warp(
     3. Both: Change both CRS *and* resolution.
 
     Every year of a multi-year result gives the same result as when warped
-    alone. Years whose empty cells differ (e.g., in constrained population
+    alone. Years whose empty cells differ (e.g. in constrained population
     products, where settled areas grow) are therefore warped one by one; each
     year then takes as long as the combined warp of all years.
 
@@ -535,7 +535,7 @@ def wp_warp(
     da : xarray.DataArray
         The input raster data (usually from `wp_raster`).
     to_crs : str or pyproj.CRS, optional
-        The target Coordinate Reference System (e.g., "EPSG:3035").
+        The target Coordinate Reference System (e.g. "EPSG:3035").
         If None, the raster's current CRS is used (enabling pure resampling).
     res : tuple or float, optional
         Target resolution in the units of `to_crs` (if provided) or
@@ -543,7 +543,7 @@ def wp_warp(
         If a single float is provided, it is used for both X and Y axes.
         If None, the resolution is determined automatically by rioxarray.
     resampling : str or rasterio.enums.Resampling, optional
-        The resampling method to use (e.g., 'nearest', 'bilinear', 'sum').
+        The resampling method to use (e.g. 'nearest', 'bilinear', 'sum').
         If None, defaults to 'nearest'.
     **kwargs : dict
         Additional keyword arguments passed directly to
@@ -625,11 +625,11 @@ def wp_warp(
     # (kwargs overwrite defaults if conflicts exist, though unlikely given keys)
     reproject_kwargs.update(kwargs)
 
-    # Every band (e.g., every year) must give the same result as when warped
+    # Every band (e.g. every year) must give the same result as when warped
     # alone. One warp of several bands ensures this only if all bands have the
     # same empty cells: rasterio's default UNIFIED_SRC_NODATA=YES counts a cell
     # as empty only if it is empty in all bands, so in years whose empty cells
-    # differ (e.g., constrained population products, where settled areas grow),
+    # differ (e.g. constrained population products, where settled areas grow),
     # a year's NaN entered its resampling (bug 1.40). Such bands are warped one
     # by one; each then takes as long as the combined warp (GDAL's per-band
     # settings NO and PARTIAL change bilinear and cubic results instead,
@@ -693,7 +693,7 @@ def merge_rasters(
         * If 'auto', Dask chooses the chunk size.
         * If int K, the data is loaded in chunks of size (K, K).
           Equivalent to passing {'x': K, 'y': K}.
-        * If dict (e.g., {'x': 1024, 'y': 1024}), that specific chunking is used.
+        * If dict (e.g. {'x': 1024, 'y': 1024}), that specific chunking is used.
         * If None (default), data loading with Dask is *disabled*.
 
     masked: bool, optional, default=True
@@ -709,7 +709,7 @@ def merge_rasters(
     other_read_kwargs : dict, optional
         Dictionary with additional keyword arguments that are passed to
         `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
-        when reading input rasters (e.g., `lock`). Note that `chunks` passed
+        when reading input rasters (e.g. `lock`). Note that `chunks` passed
         here will be ignored in favour of the explicit `chunks` argument. The
         read settings (`masked`, `mask_and_scale`) cannot be passed here, and
         `band_as_variable` is not supported.
@@ -780,7 +780,7 @@ def merge_rasters(
 
     Two settings affect the remaining memory use: GDAL's block cache (the
     environment variable `GDAL_CACHEMAX`, by default 5% of the computer's
-    memory; e.g., `GDAL_CACHEMAX=64` limits it to 64 MB), and the chunk size
+    memory; e.g. `GDAL_CACHEMAX=64` limits it to 64 MB), and the chunk size
     (larger chunks need more memory per Dask thread; before a `coarsen`,
     chunk sizes that are a multiple of its window avoid re-chunking).
 
@@ -951,7 +951,7 @@ def _merge_rasters(
                             ) from e
                         # The automatic pre-clip only saves memory: fall back
                         logger.warning(
-                            f"Pre-clipping optimization failed for {Path(path).name}. "
+                            f"Pre-clipping optimisation failed for {Path(path).name}. "
                             f"Proceeding with full raster load. Reason: {e}"
                         )
 
@@ -1013,25 +1013,25 @@ def _merge_rasters(
 
 def bbox_from_location(centre, width_degrees=None, width_km=None):
     """
-    Construct a bounding box centered on a given geographic location.
+    Construct a bounding box centred on a given geographic location.
 
     The `centre` argument can be either a place name (which is geocoded
     using `geolocate_name`) or a (longitude, latitude) coordinate pair.
 
     If `width_km` is specified, the bounding box is computed in a local
-    Azimuthal Equidistant projection centered on the specified location,
+    Azimuthal Equidistant projection centred on the specified location,
     and then reprojected back to WGS84 longitude/latitude coordinates.
 
     Parameters
     ----------
     centre : str or Tuple(float, float)
-        Either a human-readable location name (e.g., "Nairobi, Kenya")
+        Either a human-readable location name (e.g. "Nairobi, Kenya")
         or a tuple of (longitude, latitude).
     width_degrees : float, optional
         Width/height of the bounding box in decimal degrees. Must be
         None if `width_km` is specified.
     width_km : float, optional
-        Width/height of the bounding box in kilometers. Must be None if
+        Width/height of the bounding box in kilometres. Must be None if
         `width_degrees` is specified.
 
     Returns
@@ -1230,8 +1230,8 @@ def _is_country_aoi(aoi):
 def _looks_like_path(text):
     """
     Return True if a string looks like a file path rather than a country code
-    or name: it contains a path separator, or it ends in a file suffix (e.g.,
-    '.gpkg'). Country names with abbreviations (e.g., 'St. Lucia') do not.
+    or name: it contains a path separator, or it ends in a file suffix (e.g.
+    '.gpkg'). Country names with abbreviations (e.g. 'St. Lucia') do not.
     """
     return bool(re.search(r'[/\\]|\.[A-Za-z0-9_]+$', text.strip()))
 
@@ -1289,7 +1289,7 @@ def _wgs84_geometry_to_gdf(geom):
     ValueError
         If the geometry is empty.
     BboxInvalidError
-        If the geometry's bounds are not valid WGS84 coordinates (e.g., because
+        If the geometry's bounds are not valid WGS84 coordinates (e.g. because
         it uses a projected CRS).
     """
     if geom.is_empty:
@@ -1301,7 +1301,7 @@ def _wgs84_geometry_to_gdf(geom):
         raise BboxInvalidError(
             "A shapely geometry AoI must use longitude/latitude coordinates (WGS84), "
             f"but its bounds {geom.bounds} are invalid. If the geometry uses another "
-            "CRS, pass it as a GeoSeries with that CRS instead, e.g., "
+            "CRS, pass it as a GeoSeries with that CRS instead, e.g. "
             "`geopandas.GeoSeries([geom], crs=...)`."
         ) from e
 
@@ -1313,7 +1313,7 @@ def _iso3_codes_intersecting(aoi_gdf):
     Return the sorted ISO3 codes of all countries that intersect at least
     one geometry of the AoI GeoDataFrame.
 
-    AoI geometries that intersect no country (e.g., because they lie at sea)
+    AoI geometries that intersect no country (e.g. because they lie at sea)
     contribute no codes; a warning reports how many there are.
 
     Raises
@@ -1326,7 +1326,7 @@ def _iso3_codes_intersecting(aoi_gdf):
         raise ValueError("The AoI GeoDataFrame is empty (it contains no geometries).")
     if aoi_gdf.crs is None:
         raise ValueError(
-            "The AoI has no coordinate reference system (CRS). Please set one, e.g., "
+            "The AoI has no coordinate reference system (CRS). Please set one, e.g. "
             "with `.set_crs('EPSG:4326')` for longitude/latitude coordinates. (For a "
             "vector file without a CRS, read it with `geopandas.read_file`, set the "
             "CRS, and pass the resulting GeoDataFrame.)"
@@ -1334,7 +1334,7 @@ def _iso3_codes_intersecting(aoi_gdf):
 
     # Join only the border geometries and their codes, under a private
     # column name. This avoids name clashes with the user's own columns
-    # (e.g., an 'iso3' column, which `sjoin` would rename to 'iso3_left').
+    # (e.g. an 'iso3' column, which `sjoin` would rename to 'iso3_left').
     world = load_country_borders()
     world = world[['iso3', 'geometry']].rename(columns={'iso3': '_wpy_iso3'})
     joined = gpd.sjoin(
@@ -1348,7 +1348,7 @@ def _iso3_codes_intersecting(aoi_gdf):
     if not iso3_codes:
         raise ValueError(
             "The area of interest does not intersect any country supported by "
-            "WorldPopPy (e.g., because it lies entirely at sea)."
+            "WorldPopPy (e.g. because it lies entirely at sea)."
         )
 
     # Each unmatched AoI geometry appears exactly once in a right join, so
@@ -1357,7 +1357,7 @@ def _iso3_codes_intersecting(aoi_gdf):
     if num_unmatched := int(unmatched.sum()):
         logger.warning(
             f"{num_unmatched} of {len(aoi_gdf)} AoI geometries do not intersect any "
-            "supported country (e.g., because they lie at sea) and contribute no data."
+            "supported country (e.g. because they lie at sea) and contribute no data."
         )
 
     return iso3_codes
@@ -1379,7 +1379,7 @@ def _validate_raster_attrs(raster_fpaths, masked, mask_and_scale):
         from the lazy-loaded DataArray.
     4.  `_read_raster_attrs` therefore (correctly) reads these
         attributes as `None`.
-    5.  This function's validation (e.g., comparing `None == None`)
+    5.  This function's validation (e.g. comparing `None == None`)
         will then (correctly) pass, cleanly skipping the validation
         for attributes that `rioxarray` is about to handle anyway.
     6.  The one exception is `crs`, which `rioxarray` does not
@@ -1457,7 +1457,7 @@ def _same_value(a, b):
         if np.isnan(a) and np.isnan(b):
             return True
     except TypeError:
-        pass  # not a number (e.g., a CRS string or None)
+        pass  # not a number (e.g. a CRS string or None)
     return a == b
 
 
@@ -1568,12 +1568,12 @@ def _standardise_rio_nodata_meta(da, masked=False, mask_and_scale=False):
     data, but lack the specific metadata attribute telling downstream tools
     that `NaN` is indeed the nodata value.
 
-    Behavior:
+    Behaviour:
     1. If `masked` or `mask_and_scale` is True:
        The array is treated as Float/NaN. We strictly enforce `nodata=np.nan`.
     2. If Raw Data (`masked=False`):
        - If the array is Float and `nodata` is missing, we default it to `np.nan`.
-       - If the array is Integer OR already has a valid `nodata` (e.g., -9999),
+       - If the array is Integer OR already has a valid `nodata` (e.g. -9999),
          we leave it *unchanged* to avoid corrupting raw data.
     """
     # Case A: Explicit Masking requested
@@ -1595,7 +1595,7 @@ def _standardise_rio_nodata_meta(da, masked=False, mask_and_scale=False):
 
 def _same_empty_cells(da, dim, nodata):
     """
-    Return True if every slice of an (eager) array along `dim` (e.g., every
+    Return True if every slice of an (eager) array along `dim` (e.g. every
     year) has the same empty cells: NaN, or the nodata value of raw data.
     The slices are compared one at a time with the first, to keep only two
     masks in memory.
@@ -1636,13 +1636,13 @@ def _set_result_metadata(da, attrs, masked, mask_and_scale, safe_attrs):
 
     if masked or mask_and_scale:
         # Masked data is floating point with NaN as nodata. Drop any encoding
-        # inherited from the source files (e.g., their data type and fill
+        # inherited from the source files (e.g. their data type and fill
         # value), so that eager and lazy results are saved alike.
         da.encoding = {key: value for key, value in da.encoding.items() if key == 'grid_mapping'}
         da.rio.write_nodata(np.nan, encoded=True, inplace=True)
     elif (fill_value := safe_attrs.get('_FillValue')) is not None:
         # Raw data keeps the source files' nodata value (validated to be the
-        # same for all files). Earlier steps (e.g., stacking years) may have
+        # same for all files). Earlier steps (e.g. stacking years) may have
         # left a different fill value in the encoding, which would take
         # precedence over the one in the attributes.
         da.encoding.pop('_FillValue', None)
@@ -1718,7 +1718,7 @@ def _processing_attrs(call, steps, *, source_files, masked, mask_and_scale, pre_
 
 def _describe_aoi(aoi, iso3_codes, orig_aoi_type):
     """
-    Return a short description of the AoI for the `wpy_aoi` attribute, e.g.,
+    Return a short description of the AoI for the `wpy_aoi` attribute, e.g.
     'countries: KHM VNM' or 'bbox: 103.0 10.0 105.0 12.0'.
     """
     if orig_aoi_type == 'iso':

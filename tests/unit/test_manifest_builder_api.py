@@ -65,7 +65,7 @@ def clean_api_query_log():
 #   - an HTTP status code to respond with (200 carries FAKE_PAYLOAD as JSON);
 #   - a dict to serve as a 200 JSON body;
 #   - raw bytes to serve as a 200 body; or
-#   - a ready-made `httpx.Response` (e.g., a redirect).
+#   - a ready-made `httpx.Response` (e.g. a redirect).
 
 
 def _scripted_handler(outcomes, calls):
@@ -500,7 +500,7 @@ def test_manifest_stores_series_texts_dictionary_encoded(tmp_path):
 
 def test_failed_manifest_write_leaves_existing_manifest_intact(tmp_path, monkeypatch):
     """
-    If writing a manifest fails halfway (e.g., disk full), the existing
+    If writing a manifest fails halfway (e.g. disk full), the existing
     manifest is untouched: the new one is only moved into place when complete.
     """
     path = tmp_path / "manifest.feather"

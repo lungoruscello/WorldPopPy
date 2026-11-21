@@ -14,7 +14,7 @@ Note:
     WorldPop rasters that span thousands of kilometres of empty ocean.
     To address this issue, `wp_raster` provides the `pre_clip_bbox`
     argument. This forces a lazy pre-clip of the source raster to a
-    specific region (e.g., the Chilean mainland), avoiding the processing
+    specific region (e.g. the Chilean mainland), avoiding the processing
     of irrelevant data.
 """
 
