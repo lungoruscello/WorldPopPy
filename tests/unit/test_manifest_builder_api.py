@@ -673,12 +673,12 @@ def test_clear_manifest_caches_covers_all_cached_loader_functions(isolated_manif
     assert cached and all(f.cache_info().currsize == 0 for f in cached)
 
 
-@pytest.mark.parametrize("age_days, expect_hint", [(200, True), (10, False)])
+@pytest.mark.parametrize("age_days, expect_hint", [(400, True), (10, False)])
 def test_stale_manifest_suggests_optional_update(isolated_manifest_assets, caplog, age_days, expect_hint):
     """
-    An old manifest is kept as is (no build). The log says so and points expert
-    users to the rebuild function, asking them to use it sparingly. A recent
-    manifest stays quiet.
+    An old manifest (older than the threshold of 365 days) is kept as is (no
+    build). The log says so and points expert users to the rebuild function,
+    asking them to use it sparingly. A recent manifest stays quiet.
     """
     _write_fake_manifest(get_user_manifest_path(), days_old=age_days)
 

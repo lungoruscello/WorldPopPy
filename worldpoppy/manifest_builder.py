@@ -545,7 +545,7 @@ def _read_legacy_build_time(sidecar_path):
         return None
 
 
-def _warn_if_stale(info, max_age_days=180):
+def _warn_if_stale(info, max_age_days=365):
     """Suggest an optional update if the manifest in use is older than `max_age_days`."""
     if info.built_at is None:
         return

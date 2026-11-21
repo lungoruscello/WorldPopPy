@@ -58,7 +58,7 @@ def test_e2e_manifest_builder_lifecycle(isolated_manifest_assets, caplog, monkey
     assert "Manifest build finished" in caplog.text
 
     # --- 2. Second call (Warm Cache) ---
-    # Nothing should happen; cache is fresh (< 180 days).
+    # Nothing should happen; cache is fresh (< 365 days).
     caplog.clear()
     time.sleep(0.1)  # Sleep to ensure system time advances
 
