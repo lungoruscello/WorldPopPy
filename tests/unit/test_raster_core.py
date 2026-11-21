@@ -889,6 +889,115 @@ def test_replaced_files_are_validated_with_their_new_attributes(mock_raster_fact
     assert merge_rasters([path_a, path_b], masked=False).rio.nodata == -9999
 
 
+@pytest.mark.parametrize("case", ["two rasters", "a raster outside the pre-clip box", "an error"])
+def test_eager_merges_leave_no_file_open(mock_raster_factory, case):
+    """
+    Eager merges close every raster they opened, also one skipped for lying
+    outside the pre-clip box, and also when the merge fails. Files left open in
+    xarray's file cache are closed late at interpreter exit; with rasterio 1.5,
+    each one then prints an empty "Error in sys.excepthook" message (TODO 4.8).
+    The result is read before counting, since reading would reopen a closed file.
+    """
+    from xarray.backends.file_manager import FILE_CACHE
+    from worldpoppy import merge_rasters
+
+    path_a = mock_raster_factory("A.tif", np.ones((4, 5)), origin=(0, 4))
+    path_b = mock_raster_factory("B.tif", np.ones((4, 5)), origin=(5, 4))
+    path_far = mock_raster_factory("FAR.tif", np.ones((4, 5)), origin=(50, 4))
+    FILE_CACHE.clear()
+
+    if case == "two rasters":
+        result = merge_rasters([path_a, path_b])
+        assert float(result.sum()) == 40
+    elif case == "a raster outside the pre-clip box":
+        result = merge_rasters([path_a, path_b, path_far], pre_clip_bbox=(0, 0, 10, 4))
+        assert float(result.sum()) == 40
+    else:
+        with pytest.raises(ValueError, match="No raster data found"):
+            merge_rasters([path_far], pre_clip_bbox=(0, 0, 10, 4))
+
+    assert len(FILE_CACHE) == 0, f"files left open: {list(FILE_CACHE)}"
+
+
+@pytest.mark.parametrize("paths", [["A.tif"], ["A.tif", "B.tif"]], ids=["one raster", "mosaic"])
+def test_lazy_results_read_their_data_after_the_input_files_are_closed(mock_raster_factory, paths):
+    """
+    Lazy results stay readable although `merge_rasters` closes the rasters it
+    opened: Dask reopens a file when it reads the data. They can also be
+    warped, with the same result as eager results.
+    """
+    from worldpoppy import merge_rasters, wp_warp
+
+    origins = {"A.tif": (0, 4), "B.tif": (5, 4)}
+    files = [mock_raster_factory(name, np.ones((4, 5)), origin=origins[name]) for name in paths]
+
+    result = merge_rasters(files, chunks=2)
+
+    assert float(result.sum().compute()) == 20 * len(paths)
+    warp = dict(to_crs="EPSG:3857", res=100_000, resampling="sum")
+    np.testing.assert_array_equal(
+        wp_warp(result, **warp).values, wp_warp(merge_rasters(files), **warp).values
+    )
+
+
+def test_files_opened_by_worldpoppy_are_closed_at_exit(mock_raster_factory):
+    """
+    At interpreter exit, `_close_opened_files` closes the files of lazy results
+    that are still open in xarray's file cache, but leaves files opened by
+    other code open.
+    """
+    from xarray.backends.file_manager import FILE_CACHE
+    from worldpoppy import merge_rasters
+    from worldpoppy.raster import _close_opened_files
+
+    path_a = mock_raster_factory("A.tif", np.ones((4, 5)), origin=(0, 4))
+    path_b = mock_raster_factory("B.tif", np.ones((4, 5)), origin=(5, 4))
+    path_other = mock_raster_factory("OTHER.tif", np.ones((4, 5)), origin=(0, 4))
+    FILE_CACHE.clear()
+
+    single = merge_rasters([path_a], chunks=2)
+    mosaic = merge_rasters([path_a, path_b], chunks=2)
+    other = rioxarray.open_rasterio(path_other)
+    for result in (single, mosaic, other):
+        float(result.sum())  # reading opens the files
+    assert len(FILE_CACHE) == 3  # A.tif, the mosaic's VRT file, OTHER.tif
+
+    _close_opened_files()
+
+    assert len(FILE_CACHE) == 1 and "OTHER.tif" in str(list(FILE_CACHE)), list(FILE_CACHE)
+
+
+def test_scripts_exit_without_excepthook_messages(mock_raster_factory, tmp_path):
+    """
+    A script that keeps lazy and eager results until it ends exits without the
+    empty "Error in sys.excepthook" messages that rasterio 1.5 prints for files
+    still open at shutdown (TODO 4.8). With rasterio 1.4, the messages never
+    appear, so the test then passes regardless.
+    """
+    import subprocess
+    import sys
+
+    paths = [
+        mock_raster_factory(name, np.ones((4, 5)), origin=origin)
+        for name, origin in [("A.tif", (0, 4)), ("B.tif", (5, 4))]
+    ]
+    script = tmp_path / "script.py"
+    script.write_text(
+        "from worldpoppy import merge_rasters\n"
+        f"paths = {[str(p) for p in paths]}\n"
+        "eager = merge_rasters(paths)\n"
+        "single = merge_rasters(paths[:1], chunks=2)\n"
+        "mosaic = merge_rasters(paths, chunks=2)\n"
+        "print(float(eager.sum()), float(single.sum()), float(mosaic.sum()))\n"
+    )
+
+    run = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=120)
+
+    assert run.returncode == 0, run.stderr
+    assert run.stdout.split() == ["40.0", "20.0", "40.0"]
+    assert "Error in sys.excepthook" not in run.stderr, run.stderr
+
+
 @pytest.mark.parametrize(
     "cache_downloads, skip_download_if_exists, expected_skip, expect_warning",
     [

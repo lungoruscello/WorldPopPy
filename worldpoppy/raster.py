@@ -17,8 +17,10 @@ Main methods
         The result can be used to specify the AoI for `wp_raster`.
 
 """
+import atexit
 import hashlib
 import logging
+import os
 import re
 import warnings
 from collections import defaultdict
@@ -84,6 +86,10 @@ RESAMPLING_MAP = {
 
 # Subfolder of the cache directory for the VRT files of lazy merges
 MOSAIC_DIRNAME = 'mosaics'
+
+# Paths of the raster files opened by WorldPopPy in this session, closed at
+# interpreter exit if they are still open (see `_close_opened_files`)
+_OPENED_FILES = set()
 
 # --- Metadata of results (see docs/metadata.md) ---
 # Fixed attribute values. The creator of the data is WorldPop; WorldPopPy
@@ -907,87 +913,100 @@ def _merge_rasters(
     # ------------------------------------------------------------------
     # --- Open Input Rasters ---
     # ------------------------------------------------------------------
-    rasters_to_merge, used_paths = [], []
+    # Every raster opened here is closed again before returning, also when an
+    # error occurs: eager results are in memory by then, and a lazy result
+    # reopens its file when Dask reads it; files still open at interpreter
+    # exit are closed by `_close_opened_files`. (Files left open in xarray's
+    # file cache are otherwise closed late during shutdown; with rasterio 1.5,
+    # each one then prints an empty "Error in sys.excepthook" message.)
+    rasters_to_merge, used_paths, opened = [], [], []
 
-    for path in raster_fpaths:
-        try:
-            # --- Open ---
-            # We fix a missing 'nodata' attribute from .rio immediately
-            # upon load to avoid metada ambiguity
-            da = rioxarray.open_rasterio(path, **read_options)
-            da = _standardise_rio_nodata_meta(da, masked, mask_and_scale)
+    try:
+        for path in raster_fpaths:
+            try:
+                # --- Open ---
+                # We fix a missing 'nodata' attribute from .rio immediately
+                # upon load to avoid metada ambiguity
+                src = _open_raster(path, **read_options)
+                opened.append(src)
+                da = _standardise_rio_nodata_meta(src, masked, mask_and_scale)
 
-            # --- Apply Pre-Clipping Slice (Lazy with Dask) ---
-            if processing_clip_box is not None:
-                try:
-                    # A raster that overlaps the box by a single row or column
-                    # still contributes that strip
-                    da = da.rio.clip_box(*processing_clip_box, allow_one_dimensional_raster=True)
-                except NoDataInBounds:
-                    # No overlap with the pre-clip box: the raster contributes
-                    # nothing (rather than the full raster being used)
-                    da = None
-                except Exception as e:
-                    if pre_clip_bbox is not None:
-                        # A user-provided box is applied or the call fails, so
-                        # that the result agrees with its history
-                        raise RasterReadError(
-                            f"Failed to apply `pre_clip_bbox` {tuple(pre_clip_bbox)} to "
-                            f"{Path(path).name}: {e}"
-                        ) from e
-                    # The automatic pre-clip only saves memory: fall back
-                    logger.warning(
-                        f"Pre-clipping optimization failed for {Path(path).name}. "
-                        f"Proceeding with full raster load. Reason: {e}"
-                    )
+                # --- Apply Pre-Clipping Slice (Lazy with Dask) ---
+                if processing_clip_box is not None:
+                    try:
+                        # A raster that overlaps the box by a single row or column
+                        # still contributes that strip
+                        da = da.rio.clip_box(*processing_clip_box, allow_one_dimensional_raster=True)
+                    except NoDataInBounds:
+                        # No overlap with the pre-clip box: the raster contributes
+                        # nothing (rather than the full raster being used)
+                        da = None
+                    except Exception as e:
+                        if pre_clip_bbox is not None:
+                            # A user-provided box is applied or the call fails, so
+                            # that the result agrees with its history
+                            raise RasterReadError(
+                                f"Failed to apply `pre_clip_bbox` {tuple(pre_clip_bbox)} to "
+                                f"{Path(path).name}: {e}"
+                            ) from e
+                        # The automatic pre-clip only saves memory: fall back
+                        logger.warning(
+                            f"Pre-clipping optimization failed for {Path(path).name}. "
+                            f"Proceeding with full raster load. Reason: {e}"
+                        )
 
-            if da is None or da.sizes['x'] == 0 or da.sizes['y'] == 0:
-                logger.info(f"Skipping {Path(path).name}: no overlap with the pre-clip box.")
-                continue
+                if da is None or da.sizes['x'] == 0 or da.sizes['y'] == 0:
+                    logger.info(f"Skipping {Path(path).name}: no overlap with the pre-clip box.")
+                    continue
 
-            # Assign fixed variable name for mosaicking
-            da.name = "wpy_data"
+                # Assign fixed variable name for mosaicking
+                da.name = "wpy_data"
 
-            rasters_to_merge.append(da)
-            used_paths.append(path)
+                rasters_to_merge.append(da)
+                used_paths.append(path)
 
-        except RasterReadError:
-            raise
-        except Exception as e:
-            raise RasterReadError(f"Failed to read {path}: {e}")
+            except RasterReadError:
+                raise
+            except Exception as e:
+                raise RasterReadError(f"Failed to read {path}: {e}")
 
-    if not rasters_to_merge:
-        raise ValueError(
-            "No raster data found intersecting the buffered AoI. "
-            "Check your AoI coordinates."
-        )
+        if not rasters_to_merge:
+            raise ValueError(
+                "No raster data found intersecting the buffered AoI. "
+                "Check your AoI coordinates."
+            )
 
-    # --- Merge! ---
-    if not use_dask:
-        # On the grid of the lazy mosaic, so that eager and lazy merges give the
-        # same grid (`merge_arrays` would otherwise derive its grid from the
-        # rasters' bounds, which can add an empty row and column where pixel
-        # sizes differ by floating-point noise)
-        transform, width, height, _ = mosaic_grid(
-            [(r.rio.transform(), r.rio.width, r.rio.height) for r in rasters_to_merge]
-        )
-        bounds = (transform.c, transform.f + height * transform.e,
-                  transform.c + width * transform.a, transform.f)
-        da = merge_arrays(rasters_to_merge, bounds=bounds, res=(transform.a, -transform.e))
-    elif len(rasters_to_merge) == 1:
-        da = rasters_to_merge[0]
-    else:
-        # Several rasters are read lazily as one virtual mosaic, which Dask
-        # reads chunk by chunk. (The arrays opened above only served to find
-        # the rasters that overlap the pre-clip box.)
-        da = _open_lazy_mosaic(
-            used_paths, read_options, masked, mask_and_scale, processing_clip_box
-        )
+        # --- Merge! ---
+        if not use_dask:
+            # On the grid of the lazy mosaic, so that eager and lazy merges give the
+            # same grid (`merge_arrays` would otherwise derive its grid from the
+            # rasters' bounds, which can add an empty row and column where pixel
+            # sizes differ by floating-point noise)
+            transform, width, height, _ = mosaic_grid(
+                [(r.rio.transform(), r.rio.width, r.rio.height) for r in rasters_to_merge]
+            )
+            bounds = (transform.c, transform.f + height * transform.e,
+                      transform.c + width * transform.a, transform.f)
+            da = merge_arrays(rasters_to_merge, bounds=bounds, res=(transform.a, -transform.e))
+        elif len(rasters_to_merge) == 1:
+            da = rasters_to_merge[0]
+        else:
+            # Several rasters are read lazily as one virtual mosaic, which Dask
+            # reads chunk by chunk. (The arrays opened above only served to find
+            # the rasters that overlap the pre-clip box.)
+            da = _open_lazy_mosaic(
+                used_paths, read_options, masked, mask_and_scale, processing_clip_box
+            )
 
-    # --- Final Precise Clipping ---
-    if clipping_gdf is not None:
-        geoms = clipping_gdf.geometry.apply(shapely.geometry.mapping)
-        da = da.rio.clip(geoms, clipping_gdf.crs, drop=True, all_touched=True)
+        # --- Final Precise Clipping ---
+        if clipping_gdf is not None:
+            geoms = clipping_gdf.geometry.apply(shapely.geometry.mapping)
+            da = da.rio.clip(geoms, clipping_gdf.crs, drop=True, all_touched=True)
+
+    finally:
+        # --- Close Input Rasters ---
+        for src in opened:
+            src.close()
 
     return da, used_paths, safe_attrs
 
@@ -1490,7 +1509,6 @@ def _read_raster_attrs(path, masked, mask_and_scale, file_state):
         ) from e
 
 
-
 def _file_state(path):
     """
     Return the modification time and size of a file, or None if it cannot be
@@ -1501,6 +1519,45 @@ def _file_state(path):
     except OSError:
         return None
     return stat.st_mtime_ns, stat.st_size
+
+
+def _open_raster(path, **read_options):
+    """
+    Open a raster with `rioxarray.open_rasterio`, and record its path, so that
+    the file is closed at interpreter exit if it is still open then (see
+    `_close_opened_files`).
+    """
+    _OPENED_FILES.add(os.fspath(path))
+    return rioxarray.open_rasterio(path, **read_options)
+
+
+@atexit.register
+def _close_opened_files():
+    """
+    Close the raster files opened by WorldPopPy that are still open in xarray's
+    file cache, e.g. those of lazy results, at interpreter exit. Files opened by
+    other code are left alone.
+
+    Files still open in that cache are otherwise closed late during shutdown;
+    with rasterio 1.5, each one then prints an empty "Error in sys.excepthook"
+    message (rasterio issue 3646). Closing them here, while Python is still
+    intact, avoids this. The file cache is not public xarray API: if it
+    changes, nothing is closed here, and the messages return (results are not
+    affected).
+    """
+    if not _OPENED_FILES:
+        return
+    try:
+        from xarray.backends.file_manager import FILE_CACHE
+
+        for key in list(FILE_CACHE.keys()):
+            # A key holds the opener's arguments, the file path first
+            args = key[1] if len(key) > 1 and isinstance(key[1], tuple) else ()
+            if args and isinstance(args[0], (str, os.PathLike)) and os.fspath(args[0]) in _OPENED_FILES:
+                FILE_CACHE.pop(key).close()
+    except Exception:
+        pass  # never fail at exit
+
 
 def _standardise_rio_nodata_meta(da, masked=False, mask_and_scale=False):
     """
@@ -1794,7 +1851,7 @@ def _open_lazy_mosaic(raster_fpaths, read_options, masked, mask_and_scale, clip_
         finally:
             tmp_fpath.unlink(missing_ok=True)
 
-    da = rioxarray.open_rasterio(vrt_fpath, **read_options)
+    da = _open_raster(vrt_fpath, **read_options)
     da = _standardise_rio_nodata_meta(da, masked, mask_and_scale)
     if clip_box is not None:
         da = da.rio.clip_box(*clip_box, allow_one_dimensional_raster=True)
