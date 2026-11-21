@@ -255,6 +255,41 @@ def test_show_supported_data_products_console_hides_summary_urls(capsys, monkeyp
 
 @pytest.mark.integration
 @needs_raw_manifest
+@pytest.mark.parametrize("call, product_info_cached", [
+    (lambda ml: ml.wp_manifest('pop_g1'), True),
+    (lambda ml: ml.wp_manifest(keywords='population'), True),
+    (lambda ml: ml.wp_manifest_constrained('pop_g1', iso3_codes='LUX', years=2020), True),
+    (lambda ml: ml.get_product_info('pop_g1'), False),
+], ids=["wp_manifest", "wp_manifest-keywords", "wp_manifest_constrained", "get_product_info"])
+def test_filtering_the_manifest_gives_back_working_memory(monkeypatch, call, product_info_cached):
+    """
+    Functions that filter the full manifest give the unused memory of
+    pyarrow's pool back to the system (otherwise 120-160 MB per call stay
+    reserved for the session; see `_releases_arrow_memory`).
+    """
+    import pyarrow as pa
+    import worldpoppy.manifest_loader as ml
+
+    ml._get_cleaned_manifest()  # loaded before counting (loading releases memory too)
+    # Other functions call `get_product_info`; its cached result keeps it from
+    # releasing memory on their behalf, so only the function under test counts
+    ml.get_product_info.cache_clear()
+    if product_info_cached:
+        ml.get_product_info('pop_g1')
+    released = []
+
+    class CountingPool:
+        def release_unused(self):
+            released.append(True)
+
+    monkeypatch.setattr(pa, "default_memory_pool", CountingPool)
+    call(ml)
+
+    assert released, "the unused memory of pyarrow's pool was not given back"
+
+
+@pytest.mark.integration
+@needs_raw_manifest
 @pytest.mark.parametrize("validator, invalid_values", [
     ("_validate_isos", ["XXX"]),
     ("_validate_years", [1066]),

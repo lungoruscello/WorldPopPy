@@ -159,7 +159,7 @@ individually.
 import logging
 import sys
 from datetime import timezone
-from functools import lru_cache
+from functools import lru_cache, wraps
 
 import numpy as np
 import pandas as pd
@@ -212,6 +212,29 @@ class ManifestValidationError(RuntimeError):
     pass
 
 
+# Defined before the public functions, since it decorates them
+def _releases_arrow_memory(func):
+    """
+    Decorate a function that filters the full manifest, so that it gives the
+    unused memory of pyarrow's pool back to the system when it returns.
+
+    pandas stores the manifest's text with pyarrow. Filtering it briefly needs
+    about 100 MB of working memory, which pyarrow's pool would otherwise keep
+    for the rest of the session (measured with pandas 3.1: 120-160 MB per
+    call; giving it back takes about 15 ms).
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        finally:
+            pa.default_memory_pool().release_unused()
+
+    return wrapper
+
+
+@_releases_arrow_memory
 def wp_manifest(
     product_name=None,
     iso3_codes=None,
@@ -332,6 +355,7 @@ def wp_manifest(
         return mdf
 
 
+@_releases_arrow_memory
 def wp_manifest_constrained(product_name, iso3_codes, years=None):
     """
     A strict wrapper for `wp_manifest` that validates a specific download request.
@@ -857,6 +881,7 @@ def _filter_manifest_by_keyword(mdf, keywords=None):
 # --- Manifest-dependent helper functions ---
 
 @lru_cache()
+@_releases_arrow_memory
 def get_product_info(product_name):
     """
     Retrieve coverage and type information for a specific data product.
