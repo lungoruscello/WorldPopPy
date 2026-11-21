@@ -7,7 +7,7 @@ sys.path.insert(0, str(_root_dir))
 import worldpoppy as wpp
 
 project = "WorldPopPy"
-copyright = f"2025, {wpp.__author__}"
+copyright = f"2025-2026, {wpp.__author__}"
 author = wpp.__author__
 version = release = wpp.__version__
 
