@@ -209,7 +209,7 @@ plt.show()
 ## Working with Results
 
 `wp_raster` returns an `xarray.DataArray` with geospatial metadata (handled by
-[`rioxarray`](https://corteva.github.io/rioxarray/)). Results can therefore be analysed with xarray and saved as a
+[`rioxarray`](https://vylor.github.io/rioxarray/)). Results can therefore be analysed with xarray and saved as a
 GeoTIFF:
 
 ```python

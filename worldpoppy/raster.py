@@ -245,7 +245,7 @@ def wp_raster(
     masked: bool, optional, default=True
         If True, set the nodata values of all input rasters to NaN and apply
         their scale and offset, if any (`mask_and_scale=True` in
-        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__).
+        `rioxarray.open_rasterio <https://vylor.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__).
         The result is then floating-point data. If False, read the raw values
         in the source files' data type, with their nodata value. (WorldPop
         rasters carry no scale or offset, so masking does not change any
@@ -256,7 +256,7 @@ def wp_raster(
         `rioxarray.open_rasterio` directly for this).
     other_read_kwargs : dict, optional
         Dictionary with additional keyword arguments that are passed to
-        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
+        `rioxarray.open_rasterio <https://vylor.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
         when reading input rasters (e.g. `lock`).
         Note that `chunks` passed here will be ignored in favour of the
         explicit `chunks` argument. The read settings (`masked`,
@@ -547,7 +547,7 @@ def wp_warp(
         If None, defaults to 'nearest'.
     **kwargs : dict
         Additional keyword arguments passed directly to
-        `rioxarray.reproject <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray.raster_array.RasterArray.reproject>`__.
+        `rioxarray.reproject <https://vylor.github.io/rioxarray/stable/rioxarray.html#rioxarray.raster_array.RasterArray.reproject>`__.
         Useful for passing specific GDAL warp options.
 
     Returns
@@ -699,7 +699,7 @@ def merge_rasters(
     masked: bool, optional, default=True
         If True, set the nodata values of all input rasters to NaN and apply
         their scale and offset, if any (`mask_and_scale=True` in
-        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__).
+        `rioxarray.open_rasterio <https://vylor.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__).
         The result is then floating-point data. If False, read the raw values
         in the source files' data type, with their nodata value.
     mask_and_scale: bool, optional
@@ -708,7 +708,7 @@ def merge_rasters(
         `rioxarray.open_rasterio` directly for this).
     other_read_kwargs : dict, optional
         Dictionary with additional keyword arguments that are passed to
-        `rioxarray.open_rasterio <https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
+        `rioxarray.open_rasterio <https://vylor.github.io/rioxarray/stable/rioxarray.html#rioxarray-open-rasterio>`__
         when reading input rasters (e.g. `lock`). Note that `chunks` passed
         here will be ignored in favour of the explicit `chunks` argument. The
         read settings (`masked`, `mask_and_scale`) cannot be passed here, and
