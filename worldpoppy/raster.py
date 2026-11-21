@@ -484,7 +484,7 @@ def wp_raster(
         used = {str(p) for p in used_paths}
         used_rows = filtered_mdf[[str(p) in used for p in all_raster_paths]]
 
-        steps = [f"merged {len(used_rows)} files"]
+        steps = [f"merged {_count_files(len(used_rows))}"]
         if pre_clip_bbox is not None:
             steps.append("pre-clipped to bbox")
         if clipping_gdf is not None:
@@ -809,7 +809,7 @@ def merge_rasters(
 
     # --- Metadata (see docs/metadata.md) ---
     # The files may come from anywhere, so no WorldPop provenance is recorded
-    steps = [f"merged {len(used_paths)} files"]
+    steps = [f"merged {_count_files(len(used_paths))}"]
     if pre_clip_bbox is not None:
         steps.append("pre-clipped to bbox")
     if clipping_gdf is not None:
@@ -1764,6 +1764,11 @@ def _format_build_time(built_at):
 def _format_numbers(values):
     """Format numbers as a space-separated string, e.g. '103.0 10.0 105.0 12.0'."""
     return " ".join(str(float(value)) for value in values)
+
+
+def _count_files(n):
+    """Return e.g. '1 file' or '3 files'."""
+    return f"{n} file" if n == 1 else f"{n} files"
 
 
 def _unique(values):

@@ -408,7 +408,7 @@ def test_merge_rasters_records_pre_clipping(mock_raster_factory):
 
     assert da.attrs["wpy_source_files"] == "AAA.tif"
     assert da.attrs["wpy_pre_clip_bbox"] == "2.0 2.0 8.0 8.0"
-    assert "merged 1 files; pre-clipped to bbox" in da.attrs["history"]
+    assert "merged 1 file; pre-clipped to bbox" in da.attrs["history"]
 
 
 def test_merge_rasters_accepts_nan_nodata(mock_raster_factory):

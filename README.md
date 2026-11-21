@@ -271,14 +271,26 @@ mdf = wp_manifest()
 mdf.head()
 ```
 
+To see which years and countries a data product covers, use `get_product_info`:
+
+```python
+from worldpoppy import get_product_info
+
+info = get_product_info("ntl_viirs_g2")
+sorted(info["years"])  # -> [2015, 2016, ..., 2023]
+```
+
 WorldPop organises its data by country, and **WorldPopPy** identifies countries by their three-letter ISO codes
 (ISO 3166-1 alpha-3, e.g., "KEN" for Kenya). These codes select countries in `wp_raster`, `wp_manifest`,
-`show_supported_data_products`, and `plot_country_borders`. To look up a country's code, search for (part of) its name:
+`show_supported_data_products`, and `plot_country_borders`. To look up a country's code, search for (part of) its name.
+The result lists all matching countries, exact matches first:
 
 ```python
 from worldpoppy import find_country_code
 
-find_country_code("ivory")  # -> CIV (Côte d'Ivoire)
+find_country_code("ivory")
+#   iso3           name matched_name
+# 0  CIV  Côte d'Ivoire  Ivory Coast
 ```
 
 `wp_raster` also accepts country names (e.g., `aoi="Kenya"`) if they match exactly one country, and reports the code 
@@ -305,8 +317,8 @@ from worldpoppy import purge_cache, get_cache_dir
 # Print the cache directory
 print(get_cache_dir())
 
-# Check local cache size
-purge_cache(dry_run=True)
+# Check the size of the local cache (deletes nothing; see 'total_size_mb')
+print(purge_cache(dry_run=True))
 
 # Delete all downloaded rasters (keeps the cached country borders)
 purge_cache(dry_run=False)

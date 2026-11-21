@@ -121,7 +121,7 @@ def plot_location_markers(
         Font weight for the annotation text (e.g., 'bold', 'normal', 700).
     textcoords : str, default="offset points"
         Coordinate system for annotation positioning.
-    xytext : tuple of int, default=(7, -7)
+    xytext : tuple of int, default=(0, -10)
         Offset of annotation text from the marker.
     ha : str, default='left'
         Horizontal alignment of the annotation text.
