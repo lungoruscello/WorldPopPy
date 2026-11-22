@@ -535,12 +535,12 @@ def show_supported_data_products(
         One or more three-letter ISO codes indicating the countries for which to
         show supported data products.
     years : int or List[int] or str, optional
-        For annual data products, either one or more years (int or List[int]) for
-        which to show results, or the 'all' keyword (str).
-
-        - If specific years are provided, products are filtered to match those years.
-        - If 'all' or None is provided, all products (including static ones) are considered.
-
+        One or more years (int or List[int]), or the keyword 'all' (str).
+        A product is listed if it has data for at least one of the given
+        years (in at least one of the countries in `iso3_codes`, if given).
+        Static products are listed only if the manifest records one of the
+        given years for them (e.g. 2023 for `dist_roads_g2`).
+        If 'all' or None (default), products are not filtered by year.
     keywords : str or List[str], optional
         A single search term (str) or a list of search terms.
         If None or empty, the original DataFrame is returned.
