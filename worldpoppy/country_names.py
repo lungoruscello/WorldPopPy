@@ -59,7 +59,7 @@ COUNTRY_NAME_ALIASES = {
     "SXM": ["Sint Maarten"],
     "TLS": ["East Timor"],
     "TUR": ["Turkey"],
-    "USA": ["US", "U.S.", "U.S.A."],
+    "USA": ["US", "USA", "U.S.", "U.S.A."],
     "VAT": ["Vatican", "Vatican City"],
     "VIR": ["US Virgin Islands", "U.S. Virgin Islands"],
 }
@@ -70,13 +70,18 @@ NON_ISO_COUNTRY_NAMES = {
     "SPR": "Spratly Islands",
 }
 
+# Apostrophes, which users may also leave out (e.g. 'cote divoire'): plain,
+# typographic (right and left single quotation marks), and modifier letter
+APOSTROPHES = r"['’‘ʼ]"
+
 
 def find_country_code(query=None):
     """
     Search the three-letter country codes (ISO 3166-1 alpha-3) of all
     countries supported by `worldpoppy`, by (part of) their name.
 
-    The search is case- and accent-insensitive and treats punctuation as spaces. It
+    The search is case- and accent-insensitive and treats punctuation as spaces;
+    apostrophes may also be left out (e.g. 'cote divoire'). It
     covers the official ISO names in their short, long and common forms, plus
     common English aliases. For example, 'turk' finds Türkiye (TUR), and
     'ivory' finds Côte d'Ivoire (CIV).
@@ -112,7 +117,8 @@ def resolve_country_name(name):
     unambiguously denotes one supported country.
 
     The name must match one of the country's names or aliases exactly (ignoring
-    case and accents, and treating punctuation as spaces). Each conversion is
+    case and accents, and treating punctuation as spaces; apostrophes may also
+    be left out). Each conversion is
     reported with a logged warning, so that users can see how the name was
     interpreted.
 
@@ -142,7 +148,7 @@ def resolve_country_name(name):
         raise ValueError(f"{name!r} is neither a country code nor a country name.")
 
     table = _country_name_table()
-    exact_matches = table.loc[table['key'] == key, ['iso3', 'name']]
+    exact_matches = table.loc[_matches(table, key, exact=True), ['iso3', 'name']]
     exact_matches = exact_matches.drop_duplicates('iso3')
 
     if len(exact_matches) == 1:
@@ -182,7 +188,8 @@ def _country_name_table():
     Return a table of all names and aliases of the supported countries, with
     one row per (country, name) pair and the columns 'iso3', 'name' (the
     country's common name, used for display), 'variant' (the name or alias),
-    and 'key' (the normalised variant used for matching).
+    'key' (the normalised variant used for matching), and 'key_joined' (the
+    same with its apostrophes left out, e.g. 'cote divoire').
     """
     names_by_iso3 = {}
     for iso3 in get_all_isos():
@@ -207,11 +214,26 @@ def _build_name_table(names_by_iso3):
     display name.
     """
     rows = [
-        (iso3, names[0], variant, _normalise_name(variant))
+        (iso3, names[0], variant, _normalise_name(variant),
+         _normalise_name(variant, drop_apostrophes=True))
         for iso3, names in names_by_iso3.items()
         for variant in dict.fromkeys(names)  # drop duplicates, keep order
     ]
-    return pd.DataFrame(rows, columns=['iso3', 'name', 'variant', 'key'])
+    return pd.DataFrame(rows, columns=['iso3', 'name', 'variant', 'key', 'key_joined'])
+
+
+def _matches(table, key, exact=False):
+    """
+    Return a boolean mask of the table rows whose name matches `key` (a
+    normalised query), with or without the name's apostrophes: exactly, or
+    else as part of the name.
+    """
+    if exact:
+        return (table['key'] == key) | (table['key_joined'] == key)
+    return (
+        table['key'].str.contains(key, regex=False)
+        | table['key_joined'].str.contains(key, regex=False)
+    )
 
 
 def _search_country_names(table, query):
@@ -227,11 +249,11 @@ def _search_country_names(table, query):
         result = table.drop_duplicates('iso3').assign(matched_name=None)
         return _tidy_search_result(result.sort_values('name', key=_normalise_names))
 
-    hits = table[table['key'].str.contains(key, regex=False)].copy()
+    hits = table[_matches(table, key)].copy()
 
     # Report the best-matching name per country: an exact match if there is
     # one, otherwise the shortest name containing the query
-    hits['is_exact'] = hits['key'] == key
+    hits['is_exact'] = _matches(hits, key, exact=True)
     hits['key_len'] = hits['key'].str.len()
     hits = hits.sort_values(['is_exact', 'key_len'], ascending=[False, True])
     hits = hits.drop_duplicates('iso3').rename(columns={'variant': 'matched_name'})
@@ -245,12 +267,15 @@ def _tidy_search_result(df):
     return df[['iso3', 'name', 'matched_name']].reset_index(drop=True)
 
 
-def _normalise_name(name):
+def _normalise_name(name, drop_apostrophes=False):
     """
     Normalise a country name for matching: remove accents, lower the case,
     and replace punctuation with single spaces (e.g. "Côte d'Ivoire" ->
-    'cote d ivoire').
+    'cote d ivoire'). With `drop_apostrophes`, apostrophes are removed
+    instead (-> 'cote divoire').
     """
+    if drop_apostrophes:
+        name = re.sub(APOSTROPHES, '', name)
     decomposed = unicodedata.normalize('NFKD', name)
     without_accents = ''.join(c for c in decomposed if not unicodedata.combining(c))
     return re.sub(r'[^a-z0-9]+', ' ', without_accents.lower()).strip()

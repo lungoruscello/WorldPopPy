@@ -43,6 +43,7 @@ COMMON_NAMES = {
     "Oman": "OMN",
     "Niger": "NER",
     "China": "CHN",
+    "Peoples Republic of China": "CHN",
     "Taiwan": "TWN",
     "United States": "USA",
     "US": "USA",
@@ -85,6 +86,7 @@ def test_only_congo_is_ambiguous():
     codes_by_key = defaultdict(set)
     for row in table.itertuples():
         codes_by_key[row.key].add(row.iso3)
+        codes_by_key[row.key_joined].add(row.iso3)
     ambiguous = {key: codes for key, codes in codes_by_key.items() if len(codes) > 1}
 
     assert ambiguous == {"congo": {"COD", "COG"}}
@@ -132,6 +134,7 @@ def test_name_tables_only_list_supported_countries():
     ("britain", {"GBR"}),
     ("bolivarian", {"VEN"}),
     ("korea", {"KOR", "PRK"}),
+    ("usa", {"USA"}),
 ])
 def test_partial_names_find_the_country(query, expected):
     """

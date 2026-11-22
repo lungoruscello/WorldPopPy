@@ -19,6 +19,8 @@ from worldpoppy.country_names import find_country_code, resolve_country_name
     ("  KENYA ", "KEN"),
     ("cote d'ivoire", "CIV"),
     ("Côte d’Ivoire", "CIV"),  # typographic apostrophe
+    ("cote divoire", "CIV"),  # apostrophe left out
+    ("cote d ivoire", "CIV"),  # apostrophe as a space
     ("Ivory Coast", "CIV"),  # alias
     ("turkey", "TUR"),  # alias
     ("St. Lucia", "LCA"),
@@ -28,7 +30,8 @@ from worldpoppy.country_names import find_country_code, resolve_country_name
 def test_resolve_exact_name(synthetic_country_names, caplog, name, expected):
     """
     A name that exactly matches one country's name or alias (ignoring case,
-    accents, punctuation and surrounding whitespace) resolves to its code,
+    accents, punctuation and surrounding whitespace, with or without its
+    apostrophes) resolves to its code,
     even if it also occurs *within* other countries' names. Each conversion
     is reported with a warning.
     """
@@ -140,6 +143,15 @@ def test_find_reports_matched_alias(synthetic_country_names):
     assert result.to_dict("records") == [
         {"iso3": "CIV", "name": "Côte d'Ivoire", "matched_name": "Ivory Coast"}
     ]
+
+
+@pytest.mark.parametrize("query", ["d'ivoire", "divoire", "d ivoire"])
+def test_find_with_or_without_apostrophe(synthetic_country_names, query):
+    """
+    A query finds a name with an apostrophe whether the apostrophe is typed,
+    left out, or typed as a space.
+    """
+    assert list(find_country_code(query).iso3) == ["CIV"]
 
 
 def test_find_without_match_is_empty(synthetic_country_names):
