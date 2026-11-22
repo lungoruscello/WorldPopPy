@@ -293,6 +293,12 @@ to check the `summary_url` for details.
 **WorldPopPy** is inspired by the World Bank's [BlackMarblePy](https://github.com/worldbank/blackmarblepy/tree/main) package, which provided the blueprint for 
 this library's download module and informed the API design.
 
+## Feedback
+
+Questions, bug reports, and ideas are very welcome as [GitHub issues](https://github.com/lungoruscello/WorldPopPy/issues).
+If **WorldPopPy** is useful for your work, a [star on GitHub](https://github.com/lungoruscello/WorldPopPy) will help
+others find it, too.
+
 ## Licence
 
 This project is licensed under the [Mozilla Public License](https://www.mozilla.org/en-US/MPL/2.0/).
