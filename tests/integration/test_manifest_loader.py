@@ -116,13 +116,18 @@ def test_bundled_manifest_has_expected_schema():
     writes (the dataset records, plus the result of the URL Check), and every
     column except 'year' (empty for static products) and 'band' (empty for
     single-band datasets) is filled in for all datasets, incl. the download and
-    summary URLs.
+    summary URLs. Only the series in COUNTRY_SPECIFIC_CITATION_SERIES have no
+    citation and no DOI.
     """
     from worldpoppy.config import BUNDLED_MANIFEST_PATH
-    from worldpoppy.manifest_builder import RAW_MANIFEST_COLUMNS, URL_CHECK_COLUMN
+    from worldpoppy.manifest_builder import (
+        COUNTRY_SPECIFIC_CITATION_SERIES, RAW_MANIFEST_COLUMNS, URL_CHECK_COLUMN
+    )
 
     raw_mdf = pd.read_feather(BUNDLED_MANIFEST_PATH)
     empty_counts = raw_mdf.drop(columns=["year", "band"]).isna().sum()
+    has_series_citation = ~raw_mdf["api_path"].str.lower().isin(COUNTRY_SPECIFIC_CITATION_SERIES)
+    empty_counts[["citation", "doi"]] = raw_mdf.loc[has_series_citation, ["citation", "doi"]].isna().sum()
 
     assert tuple(raw_mdf.columns) == RAW_MANIFEST_COLUMNS + (URL_CHECK_COLUMN,)
     assert not empty_counts.any(), f"Empty values per column:\n{empty_counts[empty_counts > 0]}"
@@ -150,6 +155,23 @@ def test_bundled_manifest_has_checked_global1_urls():
     assert "/2020/BSGM/LUX/" in mdf.loc["LUX", "remote_path"]
     assert "/2020/maxar_v1/RWA/" in mdf.loc["RWA", "remote_path"]
     assert "url_check" not in wp_manifest().columns
+
+
+@pytest.mark.integration
+@needs_raw_manifest
+def test_bundled_manifest_has_no_citation_where_it_differs_by_country():
+    """
+    `pop_g1_alt` and `pop_g1_alt_unadj` combine datasets that WorldPop cites
+    differently by country, so the bundled manifest stores no citation and no
+    DOI for them (results then list only the titles and summary pages), while
+    other series, e.g. `pop_g1`, keep theirs.
+    """
+    from worldpoppy import wp_manifest
+
+    for product in ("pop_g1_alt", "pop_g1_alt_unadj"):
+        mdf = wp_manifest(product_name=product)
+        assert mdf["citation"].isna().all() and mdf["doi"].isna().all(), product
+    assert wp_manifest(product_name="pop_g1")["citation"].notna().all()
 
 
 @pytest.mark.integration

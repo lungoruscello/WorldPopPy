@@ -443,6 +443,42 @@ def test_build_summary_caps_long_path_lists():
     assert "... and 5 more" in summary
 
 
+# --- Tests: Series Metadata ---
+
+
+@pytest.mark.parametrize("api_path, expect_citation", [
+    ("pop/wpgp", True),
+    ("pop/cic2020_100m", False),
+], ids=["series-citation-stored", "country-specific-citation-left-out"])
+def test_processing_a_series_stores_its_citation_only_where_it_applies(monkeypatch, api_path, expect_citation):
+    """
+    Processing a data series stores the sample dataset's citation and DOI in
+    every row of the series, except for series whose citation differs by
+    country (COUNTRY_SPECIFIC_CITATION_SERIES): their rows have neither.
+    """
+    url = "https://data.worldpop.org/GIS/Population/Global_2000_2020_Constrained/2020/maxar_v1/AGO/ago_ppp_2020_constrained.tif"
+    sample_details = {
+        "id": "1", "title": "The spatial distribution of population in 2020, Angola", "desc": "People per cell.",
+        "popyear": "2020", "citation": "WorldPop (2020). 51 countries.", "doi": "10.5258/SOTON/WP00682",
+        "files": [url], "license": "https://hub.worldpop.org/data/licence.txt",
+        "url_summary": "https://hub.worldpop.org/geodata/summary?id=1", "category": "Constrained",
+        "project": "Population Counts", "source": "WorldPop",
+    }
+    monkeypatch.setattr(manifest_builder, "_query_metadata_api", lambda request_url: {"data": [sample_details]})
+    coverage_index = [
+        {"id": "1", "iso3": "AGO", "popyear": "2020", "title": "Angola"},
+        {"id": "2", "iso3": "LUX", "popyear": "2020", "title": "Luxembourg"},
+    ]
+
+    rows = manifest_builder._process_leaf_node(api_path, "Some series", coverage_index)
+
+    assert len(rows) == 2
+    for row in rows:
+        assert (row["citation"], row["doi"]) == (
+            ("WorldPop (2020). 51 countries.", "10.5258/SOTON/WP00682") if expect_citation else (None, None)
+        )
+
+
 # --- Tests: URL Check ---
 
 

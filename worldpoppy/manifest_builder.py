@@ -87,8 +87,17 @@ SKIPPED_API_PATHS = {
     "covariates/merit_elevation_200": (
         "not reachable: WorldPop's API answers HTTP 500 for every spelling (the listed "
         "alias ' MERIT_Elevation_200' has a leading space and a truncated name, 'MERIT "
-        "Elevation 2007'; checked on 2026-11-17). Re-check at the next rebuild."
+        "Elevation 2007'; checked on 2026-11-17 and 2026-11-22). Re-check at the next rebuild."
     ),
+}
+
+# Data series whose recommended citation differs by country (keys in lower case),
+# with the reason. The citation and DOI of the sample dataset are not stored for
+# them: results then list only the official dataset titles and their summary
+# pages, which give each dataset's citation.
+COUNTRY_SPECIFIC_CITATION_SERIES = {
+    "pop/cic2020_100m": "WorldPop cites different datasets for the 'maxar_v1' and 'BSGM' countries",
+    "pop/cic2020_unadj_100m": "WorldPop cites different datasets for the 'maxar_v1' and 'BSGM' countries",
 }
 
 # Columns of the raw manifest, i.e. the keys of each record created by
@@ -917,14 +926,15 @@ def _process_leaf_node(
         return []  # skip this Leaf Node
 
     # --- 3A. Extract *series-level* meta-data ---
+    citation, doi = _series_citation_and_doi(sample_details, sample_iso, api_path)
     series_metadata = {
         "desc": sample_details.get("desc"),
         "source": sample_details.get("source"),
         "project": sample_details.get("project"),
         "category": sample_details.get("category").strip(),
         "license": sample_details.get("license") or None,
-        "citation": _series_citation(sample_details, sample_iso, api_path),
-        "doi": sample_details.get("doi") or None,
+        "citation": citation,
+        "doi": doi,
     }
 
     summary_url_template = _infer_summary_url_template(sample_details)
@@ -1274,6 +1284,23 @@ def _infer_download_url_template(literal_url, sample_iso, sample_year, sample_ba
     template = template.replace(sample_iso.upper(), "{iso3_upper}", 1)
 
     return template
+
+
+def _series_citation_and_doi(sample_details, sample_iso, api_path):
+    """
+    Return the citation and DOI of a sample dataset, for use for its whole data
+    series, or (None, None) if they may not apply to the series' other countries:
+    for the series in COUNTRY_SPECIFIC_CITATION_SERIES, and where the citation
+    names the sample country (see `_series_citation`).
+    """
+    reason = COUNTRY_SPECIFIC_CITATION_SERIES.get(api_path.lower())
+    if reason is not None:
+        logger.info(f"Not storing the citation of {api_path}: {reason}.")
+        return None, None
+    citation = _series_citation(sample_details, sample_iso, api_path)
+    if citation is None and sample_details.get("citation"):
+        return None, None  # dropped as country-specific: its DOI may be too
+    return citation, sample_details.get("doi") or None
 
 
 def _series_citation(sample_details, sample_iso, api_path):

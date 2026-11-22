@@ -81,6 +81,30 @@ def test_series_citation_is_dropped_where_it_names_the_sample_country(citation, 
     assert ("names the sample country" in caplog.text) == names_country
 
 
+@pytest.mark.parametrize("api_path, citation, expected", [
+    ("pop/wpgp", "WorldPop (2018). Global Project.", ("WorldPop (2018). Global Project.", "10.5258/X")),
+    ("pop/cic2020_100m", "WorldPop (2020). 51 countries.", (None, None)),
+    ("pop/cic2020_UNadj_100m", "WorldPop (2020). 51 countries.", (None, None)),
+    ("pop/wpgp", "WorldPop (2018). Population of Afghanistan.", (None, None)),
+], ids=["series-level", "listed-series", "listed-series-mixed-case", "names-the-country"])
+def test_series_citation_and_doi_are_left_out_where_they_may_not_apply(api_path, citation, expected, caplog):
+    """
+    The sample dataset's citation and DOI are stored for the whole data series,
+    unless they may not apply to its other countries: for the series listed in
+    COUNTRY_SPECIFIC_CITATION_SERIES (with the reason logged), and where the
+    citation names the sample country. The DOI is left out together with the
+    citation.
+    """
+    import logging
+    from worldpoppy.manifest_builder import _series_citation_and_doi
+
+    caplog.set_level(logging.INFO, logger="worldpoppy.manifest_builder")
+    details = {"citation": citation, "doi": "10.5258/X"}
+
+    assert _series_citation_and_doi(details, "AFG", api_path) == expected
+    assert ("'maxar_v1' and 'BSGM'" in caplog.text) == api_path.startswith("pop/cic2020")
+
+
 GLOBAL1_FILE_LIST = [
     "GIS/Population/Global_2000_2020/2020/LUX/lux_ppp_2020.tif",
     "GIS/Covariates/Global_2000_2020/LUX/DMSP/lux_dmsp_100m_2001.tif",
