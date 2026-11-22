@@ -3,7 +3,7 @@
 *A Python client for downloading, merging, and processing WorldPop raster data.*
 
 <!-- 
-Keywords: WorldPop Python package, download and combine WorldPop datasets, global raster data, population rasters, land cover rasters, night lights imagery, Python GIS toolkit
+Keywords: WorldPop Python package, download and combine WorldPop datasets, gridded population data, global raster data, population rasters, land cover rasters, night lights imagery, elevation rasters, xarray, rioxarray, Dask, Python GIS toolkit
 -->
 
 
@@ -12,15 +12,15 @@ Keywords: WorldPop Python package, download and combine WorldPop datasets, globa
 WorldPop offers global, gridded datasets on population dynamics, night-light emissions, topography, and much more. 
 These datasets are typically distributed as individual files per country. **WorldPopPy** abstracts the process of
 data discovery, retrieval, and preprocessing. Users query data by Area of Interest (AoI). The library automatically 
-identifies the necessary country rasters, downloads them, and merges them into a unified dataset. For an area that
-spans several countries, such as a river basin or a border region, a single call to `wp_raster` replaces finding,
-downloading, merging, and clipping country files by hand.
+identifies the necessary country rasters, downloads them, and merges them into a unified dataset: an
+`xarray.DataArray` with geospatial metadata. For an area that spans several countries, such as a river basin or a
+border region, a single call to `wp_raster` replaces finding, downloading, merging, and clipping country files by hand.
 
 See the **[Example Gallery](#example-gallery)** below for a visual overview of the library's capabilities.
 
 ## Key Features
 
-* Fetch data for any region by passing country codes or names, bounding boxes, GeoDataFrames, shapely geometries, or vector files.
+* Fetch data for a region by passing country codes or names, bounding boxes, GeoDataFrames, shapely geometries, or vector files.
 * Built-in memory optimisations for massive country rasters: read only what your AoI needs, and process large areas lazily with Dask.
 * Easy handling of time-series through integration with [`xarray`](https://docs.xarray.dev/en/stable/).
 * Provenance metadata on every result (source datasets, references, processing history).
@@ -203,6 +203,28 @@ plt.show()
   </tr>
 </table>
 
+## Finding Data
+
+To simplify data discovery, **WorldPopPy** organises WorldPop's thousands of raw files into curated data products
+with a consistent naming scheme. For example, `pop_g2_r25a` denotes population counts (`pop`) from WorldPop's
+Global 2 series (`g2`), 2025 alpha release (`r25a`). Products cover population counts, night lights, 
+elevation, land cover, and climate variables, among others, and many are available for several years. Use
+`show_supported_data_products` for an overview, filtered by keyword, country, or year:
+
+```python
+from worldpoppy import show_supported_data_products
+
+# Print data products related to "population" from the Global 2 series 
+show_supported_data_products(keywords=["population", "global2"])
+```
+
+Countries are identified by their three-letter ISO codes (e.g. "KEN" for Kenya). To look up a country's code, search
+for (part of) its name with `find_country_code`. `wp_raster` also accepts country names (e.g. `aoi="Kenya"`) if they
+match exactly one country.
+
+The guide [Finding Data](https://github.com/lungoruscello/WorldPopPy/blob/master/docs/finding_data.md) covers the full data manifest, the years and countries of each
+product, and how to trace a product back to WorldPop's official datasets.
+
 ## Working with Results
 
 `wp_raster` returns an `xarray.DataArray` with geospatial metadata (handled by
@@ -223,122 +245,24 @@ from worldpoppy import wp_warp
 pop_warped = wp_warp(pop_data, to_crs="EPSG:32647", res=1_000, resampling="sum")
 ```
 
-To combine results for different products or areas of interest (e.g. population and elevation), align one result to
-the other first:
-
-```python
-elevation = elevation.rio.reproject_match(pop_data)
-```
-
-The cell coordinates of such results can differ by tiny floating-point amounts, and xarray, which matches cells by
-exactly equal coordinates, would silently drop the cells that differ.
+Before combining results for different products or areas of interest (e.g. population and elevation), align one
+result to the other with `rio.reproject_match`. Otherwise, xarray can silently drop cells whose coordinates differ by
+tiny floating-point amounts.
 
 Every result carries WorldPop's recommended citations, the licence, and a processing history in its attributes.
 Importantly, these attributes describe the result as returned by **WorldPopPy**. After you select data or compute new
-values with xarray, some attributes no longer match the data (e.g. after selecting one year of a multi-year result,
-`wpy_years` still lists all years). If you save such results, e.g. to pass the files on, update or drop these
-attributes first. The [metadata guide](https://github.com/lungoruscello/WorldPopPy/blob/master/docs/metadata.md) describes all attributes, and the
-[metadata example](https://github.com/lungoruscello/WorldPopPy/blob/master/examples/workflows/03_working_with_metadata.py) shows how to handle them.
+values with xarray, some attributes no longer match the data. If you save such results, e.g. to pass the files on,
+update or drop these attributes first.
 
-## Finding Data
-
-To simplify data discovery, **WorldPopPy** organises WorldPop's thousands of raw files into curated data products
-with a consistent naming scheme. For example, `pop_g2_r25a` denotes population counts (`pop`) from WorldPop's
-Global 2 series (`g2`), 2025 alpha release (`r25a`). Products cover population counts, night lights, 
-elevation, land cover, and climate variables, among others, and many are available for several years. Use
-`show_supported_data_products` for an overview, with a short description, the spatial resolution, and whether a
-data product covers several years or is static. The overview can be filtered by keyword, country, or year:
-
-```python
-from worldpoppy import show_supported_data_products
-
-# Print data products related to "population" from the Global 2 series 
-show_supported_data_products(keywords=["population", "global2"])
-
-# Print static (single-year) data products available for Brazil
-show_supported_data_products(static_only=True, iso3_codes="BRA")
-``` 
-
-Alternatively, you can also get the library's full data manifest as a pandas DataFrame:
-
-```python
-from worldpoppy import wp_manifest
-
-mdf = wp_manifest()
-mdf.head()
-```
-
-To see which years and countries a data product covers, use `get_product_info`:
-
-```python
-from worldpoppy import get_product_info
-
-info = get_product_info("ntl_viirs_g2")
-sorted(info["years"])  # -> [2015, 2016, ..., 2023]
-```
-
-WorldPop organises its data by country, and **WorldPopPy** identifies countries by their three-letter ISO codes
-(ISO 3166-1 alpha-3, e.g. "KEN" for Kenya). These codes select countries in `wp_raster`, `wp_manifest`,
-`show_supported_data_products`, and `plot_country_borders`. To look up a country's code, search for (part of) its name.
-The result lists all matching countries, exact matches first:
-
-```python
-from worldpoppy import find_country_code
-
-find_country_code("ivory")
-#   iso3           name matched_name
-# 0  CIV  Côte d'Ivoire  Ivory Coast
-```
-
-`wp_raster` also accepts country names (e.g. `aoi="Kenya"`) if they match exactly one country, and reports the code 
-it used. Ambiguous names such as "Congo" raise an error that lists the candidates.
+The guides [Working with Results](https://github.com/lungoruscello/WorldPopPy/blob/master/docs/working_with_results.md) (incl. memory use for large areas) and
+[Metadata of Results](https://github.com/lungoruscello/WorldPopPy/blob/master/docs/metadata.md) give the details.
 
 ## Documentation
 
+* **User guides:** [Finding Data](https://github.com/lungoruscello/WorldPopPy/blob/master/docs/finding_data.md), [Working with Results](https://github.com/lungoruscello/WorldPopPy/blob/master/docs/working_with_results.md),
+  [Metadata of Results](https://github.com/lungoruscello/WorldPopPy/blob/master/docs/metadata.md), [Cache and Downloads](https://github.com/lungoruscello/WorldPopPy/blob/master/docs/cache_and_downloads.md).
 * **API Reference:** https://worldpoppy.readthedocs.io/
-
 * **Examples:** See the [`examples/`](https://github.com/lungoruscello/WorldPopPy/blob/master/examples/) folder in this repository.
-
-## Utilities
-
-**WorldPopPy** includes helper functions to manage the local cache and download bandwidth.
-
-### 1. Managing the Cache
-
-Downloaded rasters are cached locally by default. You can change the location by setting the `WORLDPOPPY_CACHE_DIR` 
-environment variable.
-
-```python
-from worldpoppy import purge_cache, get_cache_dir
-
-# Print the cache directory
-print(get_cache_dir())
-
-# Check the size of the local cache (deletes nothing; see 'total_size_mb')
-print(purge_cache(dry_run=True))
-
-# Delete all downloaded rasters (keeps the cached country borders)
-purge_cache(dry_run=False)
-
-# Delete everything, incl. the country borders (rebuilt automatically when needed)
-purge_cache(dry_run=False, keep_country_borders=False)
-```
-
-### 2. Download Dry Run
-
-To estimate the size of a request before downloading, use the `download_dry_run` flag:
-
-```python
-from worldpoppy import wp_raster
-
-# Prints a summary of files to be downloaded without fetching them
-wp_raster(
-    product_name='pop_g1', 
-    aoi=['CAN', 'USA'], 
-    years='all', 
-    download_dry_run=True
-)
-```
 
 ## Data Usage & Attribution
 
@@ -348,37 +272,11 @@ and citation:
 
 1. **Curated "Product Names"**: The product names used by this library (e.g. `pop_g1_alt` or `pop_g2_alt`) are 
 specific to **WorldPopPy**; WorldPop does not use them. When citing data, please refer to WorldPop's official 
-dataset titles (see `api_entry_title` below).
+dataset titles (see [Finding Data](https://github.com/lungoruscello/WorldPopPy/blob/master/docs/finding_data.md#tracing-a-product-to-worldpops-datasets)).
 
 2. **Know Your Data:** While this library makes downloading and pre-processing easy, we strongly encourage you 
 to understand what you are downloading. WorldPop datasets are often the result of complex modelling. Always check 
-the `summary_url` provided in the manifest for details and further notes. To keep the load on WorldPop's servers 
-low, **WorldPopPy** does not request the file listing of every raster dataset when building the manifest. Instead, 
-we infer download and summary URLs from URL patterns, based on one sample dataset per data series, and only spot-check 
-the results. Download URLs of WorldPop's Global 1 series (2000-2020) are additionally checked against WorldPop's file
-list for that series. If a summary link does not work, the official dataset title (`api_entry_title`) helps to find the page 
-on WorldPop's website.
-
-```python
-from worldpoppy import wp_manifest
-
-# Select country entries for one "product" using its curated WorldPopPy alias
-mdf = wp_manifest(product_name='pop_g2_alt', iso3_codes='AFG')
-
-# Inspect the raw metadata for one raster file (sourced from the WorldPop API)
-row = mdf.iloc[0]
-
-print(f"Source File Name:       {row.dataset_name}")
-print(f"Official Dataset Title: {row.api_entry_title}")
-print(f"Official Data Category: {row.api_series_category}")
-print(f"Dataset Summary:        {row.summary_url}")  # Read this before using data!
-print("-----")
-
-# > The internal fields below are for data discovery in WorldPopPy
-print(f"Library Product Name:   {row.product_name}")
-print(f"Multi-year Product?     {row.multi_year}")
-print(f"Library Product Notes:  {row.product_notes}")
-```
+the summary page of each dataset (`summary_url` in the manifest) for details and further notes.
 
 3. **Cite the Source:** If you use this data, please cite its original creators ([WorldPop](https://www.worldpop.org/)). 
 The scientific credit belongs to them. Note that the recommended citation style can differ between datasets, so be sure 
