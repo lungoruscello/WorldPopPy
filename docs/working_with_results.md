@@ -45,16 +45,24 @@ pop_warped = wp_warp(pop_data, to_crs="EPSG:32647", res=1_000, resampling="sum")
 
 ## Combining results
 
-To combine results for different products or areas of interest (e.g. population and elevation), align one result to
-the other first:
+Within a single call, `wp_raster` places all the rasters it combines (be it from several countries or several years)
+on one grid. Grids that differ by at most 0.01 cell are "snapped" onto that grid; rasters that are offset by more raise
+an `IncompatibleRasterError` instead of being shifted.
+
+Importantly, results of separate `wp_raster` calls need not lie on exactly the same grid (they can differ by as little
+as floating-point noise), since each keeps the grid of its own source files. Before combining results for different
+areas of interest or products (e.g. population and elevation), check that their grids match exactly: the same CRS,
+resolution and cell coordinates. xarray matches cells by exactly equal coordinates and silently drops the cells that
+differ, so even a tiny offset can leave the combined result empty. `xr.align(a, b, join="exact")` raises an error if
+the grids differ.
+
+To align one result to the other, use `rio.reproject_match`:
 
 ```python
 elevation = elevation.rio.reproject_match(pop_data)
 ```
 
-The cell coordinates of such results can differ by tiny floating-point amounts, and xarray, which matches cells by
-exactly equal coordinates, would silently drop the cells that differ. Note that `reproject_match` loads lazy (Dask)
-results into memory, and that it resamples with nearest neighbour by default: where the resolutions differ, pass
+Note that `reproject_match` loads lazy (Dask) results into memory, and that it resamples with nearest neighbour by default: where the resolutions differ, pass
 `resampling=` (e.g. `Resampling.average` from `rasterio.enums`, or `Resampling.sum` to aggregate counts such as
 population to coarser cells).
 

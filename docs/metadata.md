@@ -67,7 +67,11 @@ check.)
 WorldPopPy provides no data of its own. `references` lists WorldPop's recommended citations (with
 DOIs), followed by the official titles and summary pages of the datasets used. Cite these in
 publications, and respect the licence given in `license`; WorldPop's licence text names the
-Creative Commons Attribution 4.0 International License.
+Creative Commons Attribution 4.0 International License. WorldPop's summary pages can state further
+terms for individual datasets, for example that "WorldPop datasets derived from OpenStreetMap,
+Microsoft Building Footprints or Microsoft Roads Detection are available under the Open Database
+License (ODbL)" (on the summary pages of the distance-to-roads datasets, `dist_roads_g2`). Check
+the summary page of each dataset you use.
 
 Some of this information is inferred rather than read for each dataset. To keep the load on
 WorldPop's servers low, WorldPopPy infers the summary URLs from URL patterns, and takes the licence

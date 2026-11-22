@@ -23,7 +23,7 @@ pop_data = wp_raster(
 )
 
 # Plot (Log-scale)
-# We use fillna(0) to represent areas without population and +1 to avoid log(0).
+# We fill empty cells with 0 and add 1 to avoid log(0).
 (pop_data.fillna(0) + 1).plot(norm=LogNorm(), cmap='inferno', size=6)
 
 plot_country_borders(countries, edgecolor='white', linewidth=0.5)

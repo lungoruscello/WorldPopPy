@@ -10,6 +10,33 @@ consistent naming scheme. For example, `pop_g2_r25a` denotes population counts (
 series (`g2`), 2025 alpha release (`r25a`). Products cover population counts, night lights, elevation, distances to
 land-cover classes, and climate variables, among others, and many are available for several years.
 
+Other parts of the product names:
+
+- `g1`, `g2`: WorldPop's Global 1 series (2000-2020) and Global 2 series (2015-2030).
+- `r24b`, `r25a`: releases of the Global 2 series (2024 beta release R2024B, 2025 alpha release R2025A).
+- `1km`: cells of about 1 km at the equator (30 arc seconds); most products have cells of about 100 m (3 arc seconds).
+- `uc`: unconstrained population estimates (`UC` in WorldPop's file names).
+- `unadj`: population estimates whose country totals were adjusted to match the corresponding estimates of the UN
+  Population Division (`UNadj` in WorldPop's file names). The name does not mean "unadjusted".
+- `alt`: alternative single-year datasets (`pop_g1_alt` for 2020; `pop_g2_alt` and `pop_uc_g2_alt` for 2024).
+
+The population products of the Global 2 series cover the years 2015 to 2030, so that `years='last'` returns 2030. For
+the 2025 alpha release (R2025A), WorldPop's release statement explains that "[f]or each country, the two timepoints of
+population data were interpolated and projected, providing a full set of annual population projections for the period
+2010-2030", and that "the uncertainty will increase for population datasets representing reference years further away
+from the input population dataset timepoints"
+([Global2 Release Statement R2025A](https://data.worldpop.org/repo/prj/Global_2015_2030/R2025A/doc/Global2_Release_Statement_R2025A_v1.pdf),
+pp. 3 and 7).
+
+Population products are either constrained or unconstrained, as their product notes say. WorldPop explains the two
+approaches on its page
+[Top-down estimation modelling: Constrained vs Unconstrained](https://www.worldpop.org/methods/top_down_constrained_vs_unconstrained/):
+unconstrained modelling makes "predictions about population numbers for all 100x100m land grid cells", while
+constrained modelling disaggregates population "to only those grid cells identified as containing residential
+buildings/built settlement". Read this page before choosing a population product. WorldPop's guide
+[Choosing the right WorldPop population data for you](https://www.worldpop.org/choosing-the-right-worldpop-population-data-for-you/)
+helps to choose between its population datasets, including some that WorldPopPy does not cover.
+
 Use `show_supported_data_products` for an overview, with a short description, the spatial resolution, and whether a
 data product covers several years or is static. The overview can be filtered by keyword, country, or year:
 

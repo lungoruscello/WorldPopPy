@@ -60,7 +60,7 @@ pop_data = wp_raster(
 )
 
 # Plot (Log-scale) 
-# We use fillna(0) to represent areas without population and +1 to avoid log(0).
+# We fill empty cells with 0 and add 1 to avoid log(0).
 (pop_data.fillna(0) + 1).plot(norm=LogNorm(), cmap='inferno', size=6)
 
 plot_country_borders(countries, edgecolor='white', linewidth=0.5)
@@ -249,10 +249,11 @@ from worldpoppy import wp_warp
 pop_warped = wp_warp(pop_data, to_crs="EPSG:32647", res=1_000, resampling="sum")
 ```
 
-Before combining results for different products or areas of interest (e.g. population and elevation), align one
-result to the other with `rio.reproject_match` (it resamples with nearest neighbour by default; pass `resampling=`
-where the resolutions differ). Otherwise, xarray can silently drop cells whose coordinates differ by tiny
-floating-point amounts.
+A single call to `wp_raster` places all the rasters it combines on one grid. Results of separate calls need not lie on
+exactly the same grid: before combining results for different areas of interest or products (e.g. population and
+elevation), check that their grids match exactly, e.g. with `xr.align(a, b, join="exact")`, since xarray silently
+drops cells whose coordinates differ. To align one result to the other, use `rio.reproject_match` (it resamples with
+nearest neighbour by default; pass `resampling=` where the resolutions differ).
 
 Every result carries WorldPop's recommended citations, the licence, and a processing history in its attributes.
 Importantly, these attributes describe the result as returned by **WorldPopPy**. After you select data or compute new
