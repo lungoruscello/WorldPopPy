@@ -25,6 +25,7 @@ and that `purge_cache` removes it.
 
 # TODO Actually offer support for continental / global rasters
 
+import os
 import time
 
 import numpy as np
@@ -214,6 +215,7 @@ def test_lazy_merge_rejects_rasters_whose_values_it_would_change(mock_raster_fac
     assert merge_rasters([a, b]).notnull().all()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file permissions")
 def test_read_only_cache_gives_a_clear_error(mock_raster_factory):
     """
     If the cache directory is not writable, a lazy merge of several rasters
