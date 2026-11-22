@@ -168,8 +168,9 @@ class WorldPopDownloader:
 
         Returns
         -------
-        list of pathlib.Path
-            A lexically sorted list of local download paths.
+        tuple of (list of pathlib.Path, pandas.DataFrame)
+            The local paths of the requested files, in the order of their rows
+            in the data manifest, and these manifest rows.
 
         Raises
         ------

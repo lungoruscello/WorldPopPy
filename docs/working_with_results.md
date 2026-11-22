@@ -54,7 +54,9 @@ elevation = elevation.rio.reproject_match(pop_data)
 
 The cell coordinates of such results can differ by tiny floating-point amounts, and xarray, which matches cells by
 exactly equal coordinates, would silently drop the cells that differ. Note that `reproject_match` loads lazy (Dask)
-results into memory.
+results into memory, and that it resamples with nearest neighbour by default: where the resolutions differ, pass
+`resampling=` (e.g. `Resampling.average` from `rasterio.enums`, or `Resampling.sum` to aggregate counts such as
+population to coarser cells).
 
 ## Large areas and memory
 

@@ -41,14 +41,14 @@ Example: `wp_raster('pop_g2_1km_r25a', aoi=bbox, years=[2015, 2024])`.
 | `creator_institution` (ACDD) | the institution that created the data, as given by WorldPop | `WorldPop, University of Southampton, UK` | always |
 | `institution` (CF: where the original data was produced) | the same as `creator_institution` | `WorldPop, University of Southampton, UK` | always |
 | `source` (CF: how this file was produced) | fixed text; the individual processing steps are in `history` | `WorldPop gridded datasets (see 'references'), processed with WorldPopPy (see 'history')` | always |
-| `references` | WorldPop's recommended citations of the source datasets (usually one per data series, incl. the DOI), followed by the official dataset titles with their summary URLs. One entry per line, without duplicates. See "Citing the data" below. | `WorldPop (www.worldpop.org - School of Geography and Environmental Science, University of Southampton; ...) (2018). Global High Resolution Population Denominators Project ... https://dx.doi.org/10.5258/SOTON/WP00645` and `The spatial distribution of population in 2000, Afghanistan: https://hub.worldpop.org/geodata/summary?id=1352` | always (citations only where WorldPop's metadata has them) |
+| `references` | WorldPop's recommended citations of the source datasets (usually one per data series, incl. the DOI), followed by the official dataset titles with their summary URLs. One entry per line, without duplicates. See "Citing the data" below. | `Bondarenko M., Priyatikanto R., ... 2025 Constrained estimates of 2015-2030 total number of people per grid square at a resolution of 30 arc (approximately 1km at the equator) R2025A version v1. ... DOI:10.5258/SOTON/WP00840` and `Cambodia - Spatial Distribution of Population: https://hub.worldpop.org/geodata/summary?id=76645` | always (citations only where WorldPop's metadata has them) |
 | `license` | the datasets' licence, as given by WorldPop (a link to the licence text) | `https://hub.worldpop.org/data/licence.txt` | always (where WorldPop's metadata has it) |
 | `comment` | fixed text: independent client, cite the original datasets, what is inferred | `Retrieved and processed with WorldPopPy (https://github.com/lungoruscello/WorldPopPy), an independent client not affiliated with WorldPop. Please cite the original datasets (see 'references'). The summary URLs in 'references' are inferred by WorldPopPy and may occasionally not resolve; the official dataset titles help to find the pages. The licence and the recommended citations are those of WorldPop's metadata for one sample dataset per data series.` | always |
 | `history` | the processing steps, one line each (see "Processing history" below) | | always |
 | `wpy_version` | WorldPopPy version | `0.5.0` | always |
 | `wpy_product_name` | WorldPopPy's curated product name | `pop_g2_1km_r25a` | always |
 | `wpy_manifest_built_at` | build time of the data manifest used (WorldPopPy's catalogue of WorldPop's files), in UTC | `2026-11-17T19:51:06Z` | always (`unknown` if the manifest does not record it) |
-| `wpy_source_files` | WorldPop file names that contributed data, one per line | `khm_pop_2015_CN_1km_R2025A_UA_v1.tif` | always |
+| `wpy_source_files` | WorldPop file names read for the result (see below), one per line | `khm_pop_2015_CN_1km_R2025A_UA_v1.tif` | always |
 | `wpy_countries` | ISO3 codes of the source files, space-separated | `KHM VNM` | always |
 | `wpy_product_type` | whether the product is static (one dataset per country) or multi-year, in WorldPopPy's terms | `static` or `multi-year` | always |
 | `wpy_years` | the years of the data, space-separated. Static results have no `year` dimension, so for them this is the only record of the year. | `2015 2024` (multi-year); `2024` (static product such as `pop_g2_alt`) | whenever the datasets have a year; absent for static products without one |
@@ -56,8 +56,8 @@ Example: `wp_raster('pop_g2_1km_r25a', aoi=bbox, years=[2015, 2024])`.
 | `wpy_pre_clip_bbox` | the pre-clip box passed by the user (`pre_clip_bbox`). The automatic pre-clipping for bbox and geometry AoIs only speeds up processing and is not recorded. | `97.5 18.0 99.0 20.0` | only if the user passed a pre-clip box |
 | `wpy_read_masked`, `wpy_read_mask_and_scale` | the effective settings used to read the source files (the `wp_raster` parameters `masked` and `mask_and_scale`, which are always equal) | `true` / `false` | always (both) |
 
-`wpy_source_files`, `wpy_countries` and `references` describe only datasets that contributed data
-to the result: files that do not overlap the pre-clip box (the user's `pre_clip_bbox`, or the AoI's
+`wpy_source_files`, `wpy_countries` and `references` describe the datasets read for the result:
+files that do not overlap the pre-clip box (the user's `pre_clip_bbox`, or the AoI's
 slightly enlarged bounding box) are left out, and a log message reports them. (A file that overlaps
 this box but not the AoI itself is still listed; detecting that exactly would need a pixel-level
 check.)

@@ -544,7 +544,7 @@ def show_supported_data_products(
         If 'all' or None (default), products are not filtered by year.
     keywords : str or List[str], optional
         A single search term (str) or a list of search terms.
-        If None or empty, the original DataFrame is returned.
+        If None or empty, products are not filtered by keyword.
     static_only : bool, optional
         If True, only static data products will be shown.
 

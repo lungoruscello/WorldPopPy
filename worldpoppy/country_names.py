@@ -76,7 +76,7 @@ def find_country_code(query=None):
     Search the three-letter country codes (ISO 3166-1 alpha-3) of all
     countries supported by `worldpoppy`, by (part of) their name.
 
-    The search is case- and accent-insensitive and ignores punctuation. It
+    The search is case- and accent-insensitive and treats punctuation as spaces. It
     covers the official ISO names in their short, long and common forms, plus
     common English aliases. For example, 'turk' finds Türkiye (TUR), and
     'ivory' finds Côte d'Ivoire (CIV).
@@ -111,9 +111,10 @@ def resolve_country_name(name):
     Return the country code for a country name, but only if the name
     unambiguously denotes one supported country.
 
-    The name must match one of the country's names or aliases exactly (up to
-    case, accents and punctuation). Each conversion is reported with a
-    warning, so that users can see how the name was interpreted.
+    The name must match one of the country's names or aliases exactly (ignoring
+    case and accents, and treating punctuation as spaces). Each conversion is
+    reported with a logged warning, so that users can see how the name was
+    interpreted.
 
     Parameters
     ----------

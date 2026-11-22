@@ -62,8 +62,9 @@ def load_country_borders():
     Return a GeoDataFrame with simplified, buffered country polygons extracted from
     WorldPop `level0_100m` rasters.
 
-    If the cached border file does not exist, this function will trigger the build
-    process.
+    If the cached border file does not exist, this function rebuilds it from the
+    simplified country polygons shipped with `worldpoppy` (offline, in a few
+    seconds; no GDAL needed).
 
     The result is kept in memory for the rest of the session. If the cache directory
     is changed after the borders were first loaded, the in-memory copy is reused
@@ -111,7 +112,9 @@ def build_country_borders(overwrite=False):
     """
     Build a GeoDataFrame with country borders for the whole world by converting
     WorldPop `admin0` rasters into simplified vector polygons. The output is
-    saved to disk as a Feather file for future use.
+    saved to disk as a Feather file for future use. Users do not need this
+    function: the result ships with `worldpoppy`, and it does nothing if that
+    file exists (unless `overwrite` is True).
 
     Notes
     -----
@@ -129,10 +132,8 @@ def build_country_borders(overwrite=False):
     Raises
     ------
     ModuleNotFoundError
-        If an installation of the optional `ogeo.gdal` library is not available.
+        If an installation of the optional `osgeo.gdal` library is not available.
     """
-    # TODO Document the standard users will not need to call this function.
-
     from worldpoppy.download import WorldPopDownloader  # avoid circularity
 
     if _border_raw_fpath.is_file() and not overwrite:
@@ -140,7 +141,7 @@ def build_country_borders(overwrite=False):
 
     if not GDAL_AVAILABLE:
         raise ModuleNotFoundError(
-            "Error: An installation of 'ogeo.gdal' is required to build country "
+            "Error: An installation of 'osgeo.gdal' is required to build country "
             "borders from scratch. Please install `gdal` using pip, conda, or "
             "mamba (e.g. `conda install -c conda-forge gdal`)."
         )

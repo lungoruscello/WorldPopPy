@@ -3,7 +3,7 @@
 *A Python client for downloading, merging, and processing WorldPop raster data.*
 
 <!-- 
-Keywords: WorldPop Python package, download and combine WorldPop datasets, gridded population data, global raster data, population rasters, land cover rasters, night lights imagery, elevation rasters, xarray, rioxarray, Dask, Python GIS toolkit
+Keywords: WorldPop Python package, download and combine WorldPop datasets, gridded population data, global raster data, population rasters, land-cover distance rasters, night lights imagery, elevation rasters, xarray, rioxarray, Dask, Python GIS toolkit
 -->
 
 [![PyPI Latest Release](https://img.shields.io/pypi/v/WorldPopPy.svg)](https://pypi.org/project/WorldPopPy/)
@@ -130,7 +130,7 @@ plt.show()
         <b><a href="./examples/quickstart/04_west_africa_growth.py">The Abidjan-Lagos Corridor</a></b>
       </div>
       <div align="left">
-        Visualise 10-year population change along the coast of West Africa.
+        Visualise population change from 2015 to 2024 along the coast of West Africa.
       </div>
     </td>
   </tr>
@@ -211,7 +211,8 @@ plt.show()
 To simplify data discovery, **WorldPopPy** organises WorldPop's thousands of raw files into curated data products
 with a consistent naming scheme. For example, `pop_g2_r25a` denotes population counts (`pop`) from WorldPop's
 Global 2 series (`g2`), 2025 alpha release (`r25a`). Products cover population counts, night lights, 
-elevation, land cover, and climate variables, among others, and many are available for several years. Use
+elevation, distances to land-cover classes, and climate variables, among others, and many are available for several
+years. Use
 `show_supported_data_products` for an overview, filtered by keyword, country, or year:
 
 ```python
@@ -249,8 +250,9 @@ pop_warped = wp_warp(pop_data, to_crs="EPSG:32647", res=1_000, resampling="sum")
 ```
 
 Before combining results for different products or areas of interest (e.g. population and elevation), align one
-result to the other with `rio.reproject_match`. Otherwise, xarray can silently drop cells whose coordinates differ by
-tiny floating-point amounts.
+result to the other with `rio.reproject_match` (it resamples with nearest neighbour by default; pass `resampling=`
+where the resolutions differ). Otherwise, xarray can silently drop cells whose coordinates differ by tiny
+floating-point amounts.
 
 Every result carries WorldPop's recommended citations, the licence, and a processing history in its attributes.
 Importantly, these attributes describe the result as returned by **WorldPopPy**. After you select data or compute new

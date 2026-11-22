@@ -7,8 +7,8 @@ trace a product back to WorldPop's official datasets.
 
 To simplify data discovery, **WorldPopPy** organises WorldPop's raw files into curated data products with a
 consistent naming scheme. For example, `pop_g2_r25a` denotes population counts (`pop`) from WorldPop's Global 2
-series (`g2`), 2025 alpha release (`r25a`). Products cover population counts, night lights, elevation, land cover,
-and climate variables, among others, and many are available for several years.
+series (`g2`), 2025 alpha release (`r25a`). Products cover population counts, night lights, elevation, distances to
+land-cover classes, and climate variables, among others, and many are available for several years.
 
 Use `show_supported_data_products` for an overview, with a short description, the spatial resolution, and whether a
 data product covers several years or is static. The overview can be filtered by keyword, country, or year:

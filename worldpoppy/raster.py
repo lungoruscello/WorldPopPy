@@ -155,8 +155,8 @@ def wp_raster(
     along a new 'year' dimension.
 
     By default, this function returns a regular `xarray.DataArray`. If users
-    provide the `chunks` argument, a lazy-loaded  *Dask* array is returned
-    instead.
+    provide the `chunks` argument, the returned DataArray holds a lazy-loaded
+    *Dask* array instead.
 
     This function implements several optimisation techniques to minimise
     the memory footprint involved when working with raster data from large
@@ -171,7 +171,7 @@ def wp_raster(
         this area using:
 
         - one or more three-letter country codes (alpha-3 IS0 codes) or country
-          names. A name is converted into its code (with a warning) only if it
+          names. A name is converted into its code (with a logged warning) only if it
           matches exactly one country; use
           :func:`~worldpoppy.country_names.find_country_code` to look
           up codes;
@@ -230,7 +230,7 @@ def wp_raster(
         used for AoIs given as country codes or names: bounding-box and
         geometry AoIs are pre-clipped **automatically** to their slightly
         enlarged bounding box, and a `pre_clip_bbox` passed with them is
-        ignored (with a warning). Manual pre-clipping is useful when
+        ignored (with a logged warning). Manual pre-clipping is useful when
         working with country-code AoIs like Chile, where remote outlying
         islands result in a merged raster that is largely empty, causing
         RAM explosions. Mutually exclusive with `suppress_pre_clip`.
@@ -543,8 +543,10 @@ def wp_warp(
         If a single float is provided, it is used for both X and Y axes.
         If None, the resolution is determined automatically by rioxarray.
     resampling : str or rasterio.enums.Resampling, optional
-        The resampling method to use (e.g. 'nearest', 'bilinear', 'sum').
-        If None, defaults to 'nearest'.
+        The resampling method to use. Accepted names: 'sum', 'mean', 'max',
+        'min', 'median', 'nearest', 'bilinear' and 'cubic'; for other GDAL
+        methods, pass a `rasterio.enums.Resampling` member (e.g.
+        `Resampling.mode`). If None, defaults to 'nearest'.
     **kwargs : dict
         Additional keyword arguments passed directly to
         `rioxarray.reproject <https://vylor.github.io/rioxarray/stable/rioxarray.html#rioxarray.raster_array.RasterArray.reproject>`__.
