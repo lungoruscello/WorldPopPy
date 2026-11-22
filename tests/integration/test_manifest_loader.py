@@ -113,18 +113,43 @@ def augmented_raw_manifest(tmp_path, monkeypatch):
 def test_bundled_manifest_has_expected_schema():
     """
     The bundled raw manifest has exactly the columns that the manifest builder
-    writes, and every column except 'year' (empty for static products) and
-    'band' (empty for single-band datasets) is filled in for all datasets,
-    incl. the download and summary URLs.
+    writes (the dataset records, plus the result of the URL Check), and every
+    column except 'year' (empty for static products) and 'band' (empty for
+    single-band datasets) is filled in for all datasets, incl. the download and
+    summary URLs.
     """
     from worldpoppy.config import BUNDLED_MANIFEST_PATH
-    from worldpoppy.manifest_builder import RAW_MANIFEST_COLUMNS
+    from worldpoppy.manifest_builder import RAW_MANIFEST_COLUMNS, URL_CHECK_COLUMN
 
     raw_mdf = pd.read_feather(BUNDLED_MANIFEST_PATH)
     empty_counts = raw_mdf.drop(columns=["year", "band"]).isna().sum()
 
-    assert tuple(raw_mdf.columns) == RAW_MANIFEST_COLUMNS
+    assert tuple(raw_mdf.columns) == RAW_MANIFEST_COLUMNS + (URL_CHECK_COLUMN,)
     assert not empty_counts.any(), f"Empty values per column:\n{empty_counts[empty_counts > 0]}"
+
+
+@pytest.mark.integration
+@needs_raw_manifest
+def test_bundled_manifest_has_checked_global1_urls():
+    """
+    The bundled manifest was built with the URL Check: the download URL of
+    Luxembourg's 2020 constrained population (`pop_g1_alt`) points to the
+    folder 'BSGM', where WorldPop stores the file (corrected from the inferred
+    'maxar_v1'; bug 1.41), while Rwanda's stays in 'maxar_v1'. No Global 1 URL
+    is left unchecked. The user-facing manifest does not show the results of
+    the URL Check.
+    """
+    from worldpoppy import wp_manifest
+    from worldpoppy.config import BUNDLED_MANIFEST_PATH
+
+    raw_mdf = pd.read_feather(BUNDLED_MANIFEST_PATH)
+    global1 = raw_mdf["remote_path"].str.contains("/Global_2000_2020")
+    mdf = wp_manifest(product_name="pop_g1_alt", iso3_codes=["LUX", "RWA"]).set_index("iso3")
+
+    assert not (raw_mdf.loc[global1, "url_check"] == "not_checked").any()
+    assert "/2020/BSGM/LUX/" in mdf.loc["LUX", "remote_path"]
+    assert "/2020/maxar_v1/RWA/" in mdf.loc["RWA", "remote_path"]
+    assert "url_check" not in wp_manifest().columns
 
 
 @pytest.mark.integration
