@@ -10,10 +10,11 @@ import pytest
 
 import worldpoppy.manifest_builder as manifest_builder
 from worldpoppy import __version__
-from worldpoppy.config import METADATA_API_URL, get_user_manifest_path
+from worldpoppy.config import DATA_SERVER_URL, GLOBAL1_FILE_LIST_URL, METADATA_API_URL, get_user_manifest_path
 from worldpoppy.manifest_builder import (
     APIRequestError,
     ManifestBuildReport,
+    _fetch_global1_file_list,
     _query_metadata_api,
     _read_manifest_info,
     _select_manifest,
@@ -41,6 +42,12 @@ FAKE_API_TREE = {
     f"{METADATA_API_URL}/pop/bad_branch": APIRequestError("HTTP 503"),
 }
 FAILING_SERIES = {"pop/bad_series"}
+
+# The one raster file of each row in fake builds (a Global 1 file, so that the
+# URL Check applies), and the same file in another folder
+FAKE_FILE_PATH = "GIS/Population/Global_2000_2020_Constrained/2020/maxar_v1/AFG/afg_ppp_2020_constrained.tif"
+FAKE_FILE_URL = f"{DATA_SERVER_URL}/{FAKE_FILE_PATH.removeprefix('GIS/')}"
+MOVED_FILE_PATH = FAKE_FILE_PATH.replace("maxar_v1", "BSGM")
 
 
 # --- Fixtures ---
@@ -107,12 +114,16 @@ def _fake_redirect_loop_handler(calls):
 # --- Fake Build Helpers ---
 
 
-def _patch_build_backend(monkeypatch, api_tree, rows_per_series=1):
+def _patch_build_backend(monkeypatch, api_tree, rows_per_series=1, file_list=(FAKE_FILE_PATH,)):
     """
     Serve `api_tree` as the metadata API, and stub the processing of each
-    data series: it yields `rows_per_series` manifest rows, or fails for
-    FAILING_SERIES. (This keeps build tests independent of real API payload
-    formats.)
+    data series: it yields `rows_per_series` manifest rows (each with the
+    download URL of FAKE_FILE_PATH), or fails for FAILING_SERIES. (This keeps
+    build tests independent of real API payload formats.)
+
+    `file_list` is served as WorldPop's Global 1 File List (by default, it
+    confirms the rows' URL), or raised if it is an exception. With None, the
+    real download function runs (a test then serves the file through httpx).
     """
     def fake_query(url):
         outcome = api_tree[url]
@@ -123,10 +134,18 @@ def _patch_build_backend(monkeypatch, api_tree, rows_per_series=1):
     def fake_process_leaf_node(api_path, node_name, coverage_index):
         if api_path in FAILING_SERIES:
             raise ValueError(f"Cannot parse {api_path}")
-        return [{"api_path": api_path, "iso3": "AFG"}] * rows_per_series
+        row = {"api_path": api_path, "iso3": "AFG", "remote_path": FAKE_FILE_URL}
+        return [row] * rows_per_series
+
+    def fake_fetch_file_list():
+        if isinstance(file_list, Exception):
+            raise file_list
+        return list(file_list)
 
     monkeypatch.setattr(manifest_builder, "_query_metadata_api", fake_query)
     monkeypatch.setattr(manifest_builder, "_process_leaf_node", fake_process_leaf_node)
+    if file_list is not None:
+        monkeypatch.setattr(manifest_builder, "_fetch_global1_file_list", fake_fetch_file_list)
 
 
 def _write_fake_manifest(path, days_old, version=__version__):
@@ -422,6 +441,99 @@ def test_build_summary_caps_long_path_lists():
     assert "- pop/series_0" in summary
     assert f"- {failed[-1]}" not in summary
     assert "... and 5 more" in summary
+
+
+# --- Tests: URL Check ---
+
+
+def test_fetch_global1_file_list_returns_the_raster_paths(monkeypatch):
+    """
+    The Global 1 File List is downloaded from WorldPop's data server, and the
+    paths of its raster files are returned. Rows without a path are skipped.
+    """
+    csv_text = (
+        '"ID","ISO","ISO3","Country","Covariate","PathToRaster","Description"\n'
+        '1,4,"AFG","Afghanistan","ppp_2000","GIS/Population/Global_2000_2020/2000/AFG/afg_ppp_2000.tif","People"\n'
+        '2,4,"AFG","Afghanistan","ppp_2001",,"No path"\n'
+        '3,4,"AFG","Afghanistan","dmsp_100m_2001","GIS/Covariates/Global_2000_2020/AFG/DMSP/afg_dmsp_100m_2001.tif","Lights"\n'
+    )
+    calls = []
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _scripted_handler([csv_text.encode()], calls))
+
+    assert _fetch_global1_file_list() == [
+        "GIS/Population/Global_2000_2020/2000/AFG/afg_ppp_2000.tif",
+        "GIS/Covariates/Global_2000_2020/AFG/DMSP/afg_dmsp_100m_2001.tif",
+    ]
+    assert calls == [GLOBAL1_FILE_LIST_URL]
+
+
+def test_build_corrects_urls_with_the_global1_file_list(monkeypatch, isolated_manifest_assets, caplog):
+    """
+    A build checks the inferred URLs against the Global 1 File List: a URL
+    whose file is listed under another path is saved corrected, with the
+    result of the check in the manifest column 'url_check'. The report counts
+    the results per data series, and its summary names the corrections.
+    """
+    clean_branch = {"data": [{"alias": "ok", "name": "Works"}]}
+    api_tree = {**FAKE_API_TREE, f"{METADATA_API_URL}/pop": clean_branch}
+    _patch_build_backend(monkeypatch, api_tree, rows_per_series=2, file_list=[MOVED_FILE_PATH])
+
+    report = build_raw_manifest_from_api(force_rebuild=True)
+
+    assert report.is_complete
+    assert report.url_check_counts == {"pop/ok": {"corrected": 2}}
+    saved = pd.read_feather(report.saved_to)
+    assert list(saved["url_check"]) == ["corrected", "corrected"]
+    assert set(saved["remote_path"]) == {f"{DATA_SERVER_URL}/{MOVED_FILE_PATH.removeprefix('GIS/')}"}
+    assert "2 corrected" in caplog.text and "- pop/ok: 2 corrected" in caplog.text
+
+
+@pytest.mark.parametrize("file_list, served_csv, expected_error", [
+    (httpx.ConnectError("Connection refused"), None, "Connection refused"),
+    (None, b'"ID","Path"\n1,"GIS/x.tif"\n', "PathToRaster"),
+    ([FAKE_FILE_PATH, None], None, "NoneType"),
+], ids=["download_fails", "column_missing", "unusable_entry"])
+def test_build_without_usable_global1_file_list_is_incomplete(
+    monkeypatch, isolated_manifest_assets, caplog, file_list, served_csv, expected_error
+):
+    """
+    If the Global 1 File List cannot be downloaded or used (e.g. because its
+    format changed), the build does not stop: it counts as incomplete, does
+    not replace an existing manifest, and the summary says why.
+    """
+    from worldpoppy import manifest_loader
+
+    _write_fake_manifest(manifest_builder.BUNDLED_MANIFEST_PATH, days_old=300)
+    clean_branch = {"data": [{"alias": "ok", "name": "Works"}]}
+    api_tree = {**FAKE_API_TREE, f"{METADATA_API_URL}/pop": clean_branch}
+    _patch_build_backend(monkeypatch, api_tree, file_list=file_list)
+    if served_csv is not None:
+        monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _scripted_handler([served_csv], []))
+
+    report = build_raw_manifest_from_api(force_rebuild=True)
+
+    assert expected_error in report.url_check_error
+    assert report.kept_existing and report.saved_to is None and not report.is_complete
+    assert manifest_loader._get_active_manifest_info().source == "bundled"
+    assert "URL check failed" in caplog.text and "NOT saved" in caplog.text
+
+
+def test_build_without_global1_file_list_saves_unchecked_urls_if_no_manifest_exists(
+    monkeypatch, isolated_manifest_assets
+):
+    """
+    Without any existing manifest, a build whose URLs could not be checked is
+    still saved (as other incomplete builds are), with every URL marked as
+    not checked.
+    """
+    clean_branch = {"data": [{"alias": "ok", "name": "Works"}]}
+    api_tree = {**FAKE_API_TREE, f"{METADATA_API_URL}/pop": clean_branch}
+    _patch_build_backend(monkeypatch, api_tree, file_list=httpx.ConnectError("Connection refused"))
+
+    report = build_raw_manifest_from_api(force_rebuild=True)
+
+    assert report.saved_to is not None and not report.is_complete
+    assert list(pd.read_feather(report.saved_to)["url_check"]) == ["not_checked"]
 
 
 # --- Tests: Manifest Files ---

@@ -355,7 +355,8 @@ to understand what you are downloading. WorldPop datasets are often the result o
 the `summary_url` provided in the manifest for details and further notes. To keep the load on WorldPop's servers 
 low, **WorldPopPy** does not request the file listing of every raster dataset when building the manifest. Instead, 
 we infer download and summary URLs from URL patterns, based on one sample dataset per data series, and only spot-check 
-the results. If a summary link does not work, the official dataset title (`api_entry_title`) helps to find the page 
+the results. Download URLs of WorldPop's Global 1 series (2000-2020) are additionally checked against WorldPop's file
+list for that series. If a summary link does not work, the official dataset title (`api_entry_title`) helps to find the page 
 on WorldPop's website.
 
 ```python

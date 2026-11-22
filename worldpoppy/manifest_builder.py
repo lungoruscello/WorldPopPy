@@ -4,6 +4,14 @@ Core "engine" for building a raw data manifest for the `worldpoppy` library.
 This module contains all the logic for traversing the WorldPop metadata API,
 parsing the results, and saving them to a new local cache file.
 
+A build runs in three phases:
+
+    1. Discover the "Leaf Nodes" (data series) of the API hierarchy.
+    2. Process each Leaf Node ("Sample -> Analyse -> Parse"), which yields one
+       manifest row per raster file.
+    3. Check the inferred download URLs of the Global 1 series against
+       WorldPop's Global 1 File List.
+
 Main methods
 ------------------------
 
@@ -26,7 +34,9 @@ The module's size is a result of two challenges:
 
 1.  To minimise API calls, this module implements a "sample and infer"
     strategy, in which a general template for download URLs of a raster-data
-    series is inferred from only a single example per series.
+    series is inferred from only a single example per series. Inferred URLs
+    of the Global 1 series are then checked against WorldPop's Global 1 File
+    List, and corrected where the list gives a different path.
 
 2.  We must parse and "flatten" three different data organisation schemes
     used by the WorldPop project: 'flat' (1-to-1), 'multi-year' (1-to-N by year),
@@ -37,6 +47,7 @@ raw manifest and will hence not be supported by the `worldpoppy` package.
 
 """
 
+import io
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -53,6 +64,9 @@ from tqdm.autonotebook import tqdm
 from worldpoppy import __version__
 from worldpoppy.config import (
     DEBUG,
+    DATA_DOWNLOAD_TIMEOUT,
+    DATA_SERVER_URL,
+    GLOBAL1_FILE_LIST_URL,
     METADATA_API_URL,
     METADATA_API_TIMEOUT,
     BUNDLED_MANIFEST_PATH,
@@ -104,6 +118,19 @@ RAW_MANIFEST_COLUMNS = (
 # about 0 MB to the manifest file instead of about 1 MB (measured on 2026-11-17).
 DICTIONARY_ENCODED_COLUMNS = ("license", "citation", "doi")
 
+# The URL Check (Phase 3 of a build) adds this column to the raw manifest, with
+# one of the values below per row (see `_check_urls_against_global1_file_list`).
+# The manifest loader drops it: it is not part of the user-facing manifest.
+URL_CHECK_COLUMN = "url_check"
+URL_CONFIRMED = "confirmed"
+URL_CORRECTED = "corrected"
+URL_UNCONFIRMED = "unconfirmed"
+URL_NOT_CHECKED = "not_checked"
+
+# Series folders of the Global 1 series on the data server start with this
+# (e.g. 'Global_2000_2020', 'Global_2000_2020_Constrained')
+GLOBAL1_FOLDER_PREFIX = "Global_2000_2020"
+
 
 class APIRequestError(Exception):
     """Raised when an API request fails permanently or after all retries."""
@@ -140,6 +167,12 @@ class ManifestBuildReport:
         True if the build was incomplete and therefore not saved, so that an
         existing manifest stays in use (instead of being shadowed by a newer
         but incomplete one).
+    url_check_counts : dict
+        Results of the URL Check per data series: API path -> {result: number
+        of raster files} (results as in `_check_urls_against_global1_file_list`).
+    url_check_error : str or None
+        Why the URL Check could not be run (WorldPop's Global 1 File List could
+        not be downloaded or read), if it could not.
     """
 
     num_series: int = 0
@@ -149,19 +182,22 @@ class ManifestBuildReport:
     saved_to: Path | None = None
     fatal_error: str | None = None
     kept_existing: bool = False
+    url_check_counts: dict[str, dict[str, int]] = field(default_factory=dict)
+    url_check_error: str | None = None
 
     # The summary lists at most this many paths per kind of failure
     # (all paths remain available in `failed_branches` / `failed_series`)
     MAX_PATHS_IN_SUMMARY = 20
 
     @property
+    def has_failures(self):
+        """True if an API branch, a data series or the URL Check failed."""
+        return bool(self.failed_branches or self.failed_series or self.url_check_error)
+
+    @property
     def is_complete(self):
         """True if the manifest was saved and nothing failed along the way."""
-        return (
-            self.saved_to is not None
-            and not self.failed_branches
-            and not self.failed_series
-        )
+        return self.saved_to is not None and not self.has_failures
 
     def summary(self):
         """Return a human-readable summary of the build."""
@@ -176,9 +212,10 @@ class ManifestBuildReport:
             f"Manifest build finished: {self.num_files:,} {files} from "
             f"{num_ok_series} of {self.num_series} data series, {where}."
         ]
+        lines += self._url_check_lines()
         if self.is_complete:
             lines.append("No failures.")
-            return " ".join(lines)
+            return "\n".join(lines)
 
         if self.failed_branches:
             num = len(self.failed_branches)
@@ -199,6 +236,44 @@ class ManifestBuildReport:
         else:
             lines.append("The saved manifest is likely INCOMPLETE. See the log above for details.")
         return "\n".join(lines)
+
+    def _url_check_lines(self):
+        """
+        Return the summary lines on the URL Check: the total per result, and
+        the data series with corrected or unconfirmed URLs.
+        """
+        if self.url_check_error:
+            return [
+                "URL check failed (WorldPop's Global 1 File List could not be downloaded "
+                f"or read: {self.url_check_error}). No download URL was checked."
+            ]
+        if not self.url_check_counts:
+            return []
+
+        labels = {
+            URL_CONFIRMED: "confirmed",
+            URL_CORRECTED: "corrected",
+            URL_UNCONFIRMED: "unconfirmed",
+            URL_NOT_CHECKED: "not checked",
+        }
+        totals = {
+            result: sum(counts.get(result, 0) for counts in self.url_check_counts.values())
+            for result in labels
+        }
+        lines = [
+            "URL check against WorldPop's Global 1 File List: "
+            + ", ".join(f"{totals[result]:,} {label}" for result, label in labels.items())
+            + "."
+        ]
+        noteworthy = []
+        for api_path, counts in self.url_check_counts.items():
+            parts = [f"{counts[r]:,} {labels[r]}" for r in (URL_CORRECTED, URL_UNCONFIRMED) if counts.get(r)]
+            if parts:
+                noteworthy.append(f"{api_path}: {', '.join(parts)}")
+        if noteworthy:
+            lines.append("Data series with corrected or unconfirmed URLs:")
+            lines += self._format_paths(noteworthy)
+        return lines
 
     def _format_paths(self, paths):
         """Return one summary line per path, capped at MAX_PATHS_IN_SUMMARY."""
@@ -251,17 +326,23 @@ def build_raw_manifest_from_api(force_rebuild=False):
     failure on one Leaf Node will be logged and skipped, allowing the
     raw manifest build to continue.
 
+    Phase 3: Checks the inferred download URLs of the Global 1 series against
+    WorldPop's Global 1 File List (using `_run_url_check`), and corrects URLs
+    whose file is listed under a different path.
+
     **For expert users only.** A rebuild sends more than a hundred requests to
-    WorldPop's meta-data API, so please rebuild sparingly. Most users never need
-    to: `worldpoppy` ships with a manifest of all supported data.
+    WorldPop's meta-data API, and downloads WorldPop's Global 1 File List (about
+    26 MB), so please rebuild sparingly. Most users never need to: `worldpoppy`
+    ships with a manifest of all supported data.
 
     The new manifest is saved to the user's cache directory (see
     `worldpoppy.config.get_user_manifest_path`), never into the installed
     package. From then on, it is used instead of the bundled manifest as long
     as it is the newer of the two and was built by a compatible `worldpoppy`
     version. The manifest loaded in the current session is refreshed as well.
-    If some API branches or data series fail during a rebuild, the incomplete
-    result is not saved, and the existing manifest stays in use.
+    If some API branches or data series fail during a rebuild, or the URL Check
+    cannot be run, the incomplete result is not saved, and the existing manifest
+    stays in use.
 
     Parameters
     ----------
@@ -369,10 +450,16 @@ def _build_manifest(output_path, save_incomplete=True):
         report.fatal_error = "API traversal returned no data (check API status or logs)"
         return _finish_build(report)
 
+    raw_mdf = pd.DataFrame(raw_manifest_rows)
+
+    # --- Phase 3 ---
+    # Check the inferred download URLs against WorldPop's Global 1 File List
+    logger.info("Phase 3: Checking download URLs against WorldPop's Global 1 File List...")
+    raw_mdf = _run_url_check(raw_mdf, report)
+
     # Save build results to disk.
     # (This will be our raw, uncleaned data manifest).
-    raw_mdf = pd.DataFrame(raw_manifest_rows)
-    if not save_incomplete and (report.failed_branches or report.failed_series):
+    if not save_incomplete and report.has_failures:
         report.num_files = len(raw_mdf)
         report.kept_existing = True
         return _finish_build(report)
@@ -1406,3 +1493,112 @@ def _validate_download_url_template(template_string, api_path, required_placehol
             f"The generated template is missing required placeholder(s): {missing}. "
             f"Template was: '{template_string}'."
         )
+
+
+def _run_url_check(mdf, report):
+    """
+    Phase 3 of a manifest build: check the inferred download URLs in `mdf`
+    against WorldPop's Global 1 File List, and count the results per data
+    series in `report`. Return the checked manifest (see
+    `_check_urls_against_global1_file_list`).
+
+    If the Global 1 File List cannot be downloaded or used (e.g. because its
+    format changed), every URL is marked as not checked, and the build counts
+    as incomplete (`report.url_check_error`).
+    """
+    try:
+        file_list = _fetch_global1_file_list()
+        checked = _check_urls_against_global1_file_list(mdf, file_list)
+    except Exception as e:
+        logger.error(f"Could not check the download URLs against WorldPop's Global 1 File List: {e!r}")
+        report.url_check_error = repr(e)
+        return mdf.assign(**{URL_CHECK_COLUMN: URL_NOT_CHECKED})
+
+    for api_path, results in checked.groupby("api_path", sort=True)[URL_CHECK_COLUMN]:
+        report.url_check_counts[api_path] = results.value_counts().to_dict()
+    return checked
+
+
+@backoff.on_exception(
+    backoff.expo,
+    httpx.HTTPError,  # catch all httpx errors
+    max_tries=3,
+    jitter=backoff.full_jitter,
+    logger=logger,
+    giveup=is_fatal_http_error,  # stop retrying if it's a 404, loop, etc.
+    giveup_log_level=logging.WARNING,  # the caller logs the final failure as an error
+)
+def _fetch_global1_file_list():
+    """
+    Download WorldPop's Global 1 File List (one CSV file of about 26 MB) and
+    return the paths of its raster files on the data server (e.g.
+    'GIS/Population/Global_2000_2020/2000/AFG/afg_ppp_2000.tif'). Rows without
+    a path are skipped.
+    """
+    with httpx.Client(timeout=DATA_DOWNLOAD_TIMEOUT, follow_redirects=True) as client:
+        response = client.get(GLOBAL1_FILE_LIST_URL)
+        api_query_log.log_request(GLOBAL1_FILE_LIST_URL)
+        response.raise_for_status()
+    file_list = pd.read_csv(io.BytesIO(response.content), usecols=["PathToRaster"])
+    return file_list["PathToRaster"].dropna().astype(str).tolist()
+
+
+def _check_urls_against_global1_file_list(mdf, file_list):
+    """
+    Return a copy of `mdf` in which each download URL (`remote_path`) of the
+    Global 1 series has been checked against `file_list`, the paths listed in
+    WorldPop's Global 1 File List. The result of each check is recorded in the
+    new column `url_check`:
+
+    - 'confirmed': the URL's path is in the list.
+    - 'corrected': the URL's file name is in the list under exactly one other
+      path, to which the URL is corrected.
+    - 'unconfirmed': the file name is not in the list (or is listed under
+      several paths). The URL is kept as inferred. The list does not include
+      every Global 1 dataset that the meta-data API lists, so the row is kept.
+    - 'not_checked': the URL does not belong to the Global 1 series.
+
+    Paths are compared with doubled slashes collapsed.
+    """
+    listed_paths = {_normalise_data_path(path) for path in file_list}
+    path_by_name = {}
+    for path in listed_paths:
+        name = path.rsplit("/", 1)[-1]
+        path_by_name[name] = None if name in path_by_name else path  # None: listed several times
+
+    urls, results = [], []
+    for url in mdf["remote_path"]:
+        path = _normalise_data_path(url)
+        listed_path = path_by_name.get(path.rsplit("/", 1)[-1])
+        if not _is_global1_path(path):
+            result = URL_NOT_CHECKED
+        elif path in listed_paths:
+            result = URL_CONFIRMED
+        elif listed_path is not None:
+            result = URL_CORRECTED
+            url = f"{DATA_SERVER_URL}/{listed_path.removeprefix('GIS/')}"
+        else:
+            result = URL_UNCONFIRMED
+        urls.append(url)
+        results.append(result)
+
+    return mdf.assign(remote_path=urls, **{URL_CHECK_COLUMN: results})
+
+
+def _normalise_data_path(url_or_path):
+    """
+    Return the path of a file on WorldPop's data server from 'GIS/' on, with
+    doubled slashes collapsed. Accepts a download URL or a path.
+    """
+    _, sep, rest = url_or_path.partition("GIS/")
+    return re.sub("/{2,}", "/", f"GIS/{rest}" if sep else url_or_path)
+
+
+def _is_global1_path(path):
+    """
+    True if `path` (see `_normalise_data_path`) lies in a series folder of the
+    Global 1 series, e.g. 'GIS/Population/Global_2000_2020/...' or
+    'GIS/Population/Global_2000_2020_Constrained/...'.
+    """
+    parts = path.split("/")
+    return len(parts) > 2 and parts[2].startswith(GLOBAL1_FOLDER_PREFIX)

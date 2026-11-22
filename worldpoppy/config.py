@@ -25,6 +25,7 @@ __all__ = [
     "BUNDLED_MANIFEST_PATH",
     "METADATA_API_URL",
     "DATA_SERVER_URL",
+    "GLOBAL1_FILE_LIST_URL",
     "METADATA_API_TIMEOUT",
     "DATA_DOWNLOAD_TIMEOUT",
     "DOWNLOADABLE_ISO3_CODES",
@@ -58,6 +59,9 @@ CUSTOM_MAPPING_TOML_PATH = ASSET_DIR / "product_definitions.toml"
 
 METADATA_API_URL = "https://hub.worldpop.org/rest/data"
 DATA_SERVER_URL = "https://data.worldpop.org/GIS"
+# WorldPop's list of the raster files of its Global 1 series (2000-2020), with
+# their paths on the data server (see `docs/manifest_build_strategy.md`)
+GLOBAL1_FILE_LIST_URL = "https://data.worldpop.org/assets/wpgpDatasets.csv"
 METADATA_API_TIMEOUT = 10.0
 DATA_DOWNLOAD_TIMEOUT = 10.0
 

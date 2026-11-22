@@ -1,3 +1,4 @@
+import pandas as pd
 import pytest
 
 
@@ -78,6 +79,83 @@ def test_series_citation_is_dropped_where_it_names_the_sample_country(citation, 
     assert result == (citation if expected == "kept" else None)
     names_country = bool(citation) and "Afghanistan" in citation
     assert ("names the sample country" in caplog.text) == names_country
+
+
+GLOBAL1_FILE_LIST = [
+    "GIS/Population/Global_2000_2020/2020/LUX/lux_ppp_2020.tif",
+    "GIS/Covariates/Global_2000_2020/LUX/DMSP/lux_dmsp_100m_2001.tif",
+    "GIS/Population/Global_2000_2020_Constrained/2020/BSGM/LUX/lux_ppp_2020_constrained.tif",
+]
+
+
+def test_url_check_confirms_corrects_and_keeps_urls():
+    """
+    A Global 1 URL in the Global 1 File List is confirmed (also if it has a
+    doubled slash). A Global 1 URL whose file name is listed under another
+    path is corrected to that path. Any other Global 1 URL is kept as
+    inferred (unconfirmed), and Global 2 URLs are not checked. No row is
+    dropped, other columns are unchanged, and the input is not modified.
+    """
+    from worldpoppy.config import DATA_SERVER_URL
+    from worldpoppy.manifest_builder import _check_urls_against_global1_file_list
+
+    mdf = pd.DataFrame({
+        "remote_path": [
+            f"{DATA_SERVER_URL}/Population/Global_2000_2020/2020/LUX/lux_ppp_2020.tif",
+            f"{DATA_SERVER_URL}/Covariates/Global_2000_2020/LUX/DMSP//lux_dmsp_100m_2001.tif",
+            f"{DATA_SERVER_URL}/Population/Global_2000_2020_Constrained/2020/maxar_v1/LUX/lux_ppp_2020_constrained.tif",
+            f"{DATA_SERVER_URL}/Covariates/Global_2000_2020/LUX/WDPA/WDPA_1/lux_wdpa_dst_cat1_100m_2015.tif",
+            f"{DATA_SERVER_URL}/Population/Global_2015_2030/R2025A/2020/LUX/v1/100m/constrained/lux_pop_2020_CN_100m_R2025A_v1.tif",
+        ],
+        "iso3": ["LUX", "LUX", "LUX", "LUX", "LUX"],
+    })
+    original = mdf.copy()
+
+    checked = _check_urls_against_global1_file_list(mdf, GLOBAL1_FILE_LIST)
+
+    assert list(checked["url_check"]) == ["confirmed", "confirmed", "corrected", "unconfirmed", "not_checked"]
+    expected_urls = list(original["remote_path"])
+    expected_urls[2] = f"{DATA_SERVER_URL}/Population/Global_2000_2020_Constrained/2020/BSGM/LUX/lux_ppp_2020_constrained.tif"
+    assert list(checked["remote_path"]) == expected_urls
+    assert list(checked["iso3"]) == list(original["iso3"])
+    pd.testing.assert_frame_equal(mdf, original)
+
+
+def test_url_check_ignores_doubled_slashes_in_the_file_list():
+    """
+    Doubled slashes are ignored on both sides of the comparison: a URL is
+    confirmed by a listed path that differs from it only by a doubled slash.
+    """
+    from worldpoppy.config import DATA_SERVER_URL
+    from worldpoppy.manifest_builder import _check_urls_against_global1_file_list
+
+    file_list = ["GIS/Covariates/Global_2000_2020/LUX/DMSP//lux_dmsp_100m_2001.tif"]
+    url = f"{DATA_SERVER_URL}/Covariates/Global_2000_2020/LUX/DMSP/lux_dmsp_100m_2001.tif"
+
+    checked = _check_urls_against_global1_file_list(pd.DataFrame({"remote_path": [url]}), file_list)
+
+    assert list(checked["url_check"]) == ["confirmed"]
+    assert list(checked["remote_path"]) == [url]
+
+
+def test_url_check_does_not_choose_between_listed_paths():
+    """
+    If a file name appears under several paths in the Global 1 File List, the
+    URL is not corrected (there is no way to tell which path is right): it is
+    kept as inferred and marked as unconfirmed.
+    """
+    from worldpoppy.config import DATA_SERVER_URL
+    from worldpoppy.manifest_builder import _check_urls_against_global1_file_list
+
+    folder = "GIS/Population/Global_2000_2020_Constrained/2020"
+    file_list = [f"{folder}/BSGM/LUX/lux.tif", f"{folder}/maxar_v1/LUX/lux.tif"]
+    url = f"{DATA_SERVER_URL}/Population/Global_2000_2020_Constrained/2020/other/LUX/lux.tif"
+
+    checked = _check_urls_against_global1_file_list(pd.DataFrame({"remote_path": [url]}), file_list)
+
+    assert list(checked["url_check"]) == ["unconfirmed"]
+    assert list(checked["remote_path"]) == [url]
+
 
 def test_extract_year_from_filename():
     from worldpoppy.manifest_utils import extract_year_from_filename

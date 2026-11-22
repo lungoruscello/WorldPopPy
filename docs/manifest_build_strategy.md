@@ -33,8 +33,43 @@ the sample's ID with a placeholder gives a URL template, which is then filled in
 in the Coverage Index. For data series that group several years or bands under one entry per country (see 
 below), all datasets of a country therefore share one summary page.
 
-**Download and summary URLs are thus inferred from a sample, not taken from a file listing for each dataset.** The test suite 
-spot-checks a random sample of both (in an opt-in, heavy test), but does not verify every URL.
+**Download and summary URLs are thus inferred from a sample, not taken from a file listing for each dataset.** 
+The test suite spot-checks a random sample of both (in an opt-in, heavy test), but does not verify each individual 
+URL. Download URLs of the Global 1 series are additionally checked against a file list (see "Checking inferred URLs" 
+below).
+
+## Where WorldPop lists its files
+
+WorldPop describes its raster data in three places, which differ in coverage:
+
+- The **meta-data API** lists all data series, and, for each series, the countries or country-years 
+  covered (what we call the Coverage Index above). File names are only returned by what we call a Details 
+  Call, for one specific country.
+- A **file list** for the Global 1 series (2000-2020), `assets/wpgpDatasets.csv` on WorldPop's file 
+  servers, gives the path of each raster file in that particular series (97,261 files as of November 2026). 
+  We refer to that list as the **Global 1 File List**.
+- A **STAC catalogue** (`api.stac.worldpop.org`) lists individual files for some recent Global 2 products.
+
+We have not yet found a complete file list for the Global 2 series (2015-2030).
+
+On WorldPop's file servers, the folder layout differs between data series. Within a series, files of different 
+countries can also be stored in different folders: for example, the constrained population estimates for 
+2020 (Global 1) are stored in one of two folders, depending on the country.
+
+## Checking inferred URLs
+
+Since download URLs are inferred from a single Sample Payload per data series, they are checked against 
+the Global 1 File List where possible. For each dataset of the Global 1 series:
+
+- If the inferred URL is in the Global 1 File List, it is **confirmed**.
+- If the file name appears in the Global 1 File List under a different path, the URL is **corrected** to 
+  that path. (File names in the Global 1 File List are unique.)
+- If the file name does not appear in the Global 1 File List, the URL is kept as inferred and marked as 
+  **unconfirmed**. The Global 1 File List does not cover all Global 1 datasets that the meta-data API 
+  lists, so such datasets are not dropped.
+
+Download URLs of the Global 2 series are not checked (marked as **not checked**). The result of the 
+check is recorded for each dataset in the raw manifest, and counted per data series in the build report.
 
 ## File organisation schemes
 

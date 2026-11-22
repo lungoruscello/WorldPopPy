@@ -176,6 +176,7 @@ from worldpoppy.config import (
 from worldpoppy.func_utils import log_info_context, standardise_iso3_codes
 from worldpoppy.manifest_builder import (
     RAW_MANIFEST_COLUMNS,
+    URL_CHECK_COLUMN,
     build_raw_manifest_from_api,
     _select_manifest,
     _warn_if_stale,
@@ -747,6 +748,9 @@ def _get_cleaned_manifest():
     # Drop processing columns that are not needed
     drop_cols = "base_name band band_alias".split()
     mdf = mdf.drop(columns=drop_cols)
+    # The results of the builder's URL Check are not part of the user-facing
+    # manifest (manifests built before the URL Check lack this column)
+    mdf = mdf.drop(columns=URL_CHECK_COLUMN, errors="ignore")
 
     # Re-order columns
     maj_cols = [
