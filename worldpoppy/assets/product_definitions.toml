@@ -139,14 +139,16 @@
     # --- Population data ---
     "wpgp" = "Estimated total number of people per grid-cell (unconstrained)"
     "wpgpunadj" = """Estimated total number of people per grid-cell (unconstrained), with
-                     country totals adjusted to match the corresponding UN estimate."""
+                     country totals adjusted to match the corresponding UN estimate ("unadj"
+                     stands for "UN-adjusted", not "unadjusted")."""
     "cic2020_100m" = """Estimated total number of people per grid-cell in 2020 (constrained). 'NoData'
                      values represent areas that were mapped as unsettled; the source of this mapping
                      differs by country (see the summary page)."""
     "cic2020_UNadj_100m" = """Estimated total number of people per grid-cell in 2020 (constrained), with
-                           country totals adjusted to match the corresponding UN estimate. 'NoData' values
-                           represent areas that were mapped as unsettled; the source of this mapping
-                           differs by country (see the summary page)."""
+                           country totals adjusted to match the corresponding UN estimate ("unadj" stands
+                           for "UN-adjusted", not "unadjusted"). 'NoData' values represent areas that were
+                           mapped as unsettled; the source of this mapping differs by country (see the
+                           summary page)."""
     "G2_CN_POP_R24B_100m" = "Estimated total number of people per grid-cell (constrained). 2024 beta release (R2024B)."
     "G2_UC_POP_R24B_100m" = "Estimated total number of people per grid-cell (unconstrained). 2024 beta release (R2024B)."
     "G2_CN_POP_R25A_100m" = "Estimated total number of people per grid-cell (constrained). 2025 alpha release (R2025A)."
