@@ -543,8 +543,11 @@ def show_supported_data_products(
         given years for them (e.g. 2023 for `dist_roads_g2`).
         If 'all' or None (default), products are not filtered by year.
     keywords : str or List[str], optional
-        A single search term (str) or a list of search terms.
-        If None or empty, products are not filtered by keyword.
+        A single search term (str) or a list of search terms. A term matches
+        any part of a product's name or notes, regardless of case (e.g.
+        'constrained' also finds unconstrained products). With several terms,
+        a product must match all of them. If None or empty, products are not
+        filtered by keyword.
     static_only : bool, optional
         If True, only static data products will be shown.
 

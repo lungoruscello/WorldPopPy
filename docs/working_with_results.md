@@ -12,6 +12,13 @@ how to keep memory use low for large areas.
 - If several years are requested, the years are stacked along a `year` dimension: `(year, y, x)`.
 - By default (`masked=True`), cells without data are NaN.
 
+For bounding-box and geometry AoIs, the result keeps every cell that the AoI touches, in full, including cells of
+which only a small part intersects with the AoI. Sums over the result can therefore exceed the population inside the
+AoI. The effect is stronger for small AoIs and for products with large cells (e.g. 1 km), because a larger share of
+the result's cells then lies on the AoI's border. Adjacent AoIs both count the cells along their shared border.
+AoIs given as country codes or names are not clipped: the result combines the country files as WorldPop provides
+them, so this effect does not occur.
+
 Every result carries WorldPop's recommended citations, the licence, and a processing history in its attributes.
 Importantly, these attributes describe the result as returned by **WorldPopPy**. After you select data or compute new
 values with xarray, some attributes no longer match the data (e.g. after selecting one year of a multi-year result,

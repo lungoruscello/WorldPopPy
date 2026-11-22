@@ -729,10 +729,12 @@ def merge_rasters(
     Returns
     -------
     xarray.DataArray
-        The merged and optionally clipped raster. Its attributes record how it
-        was produced (see "Metadata of WorldPopPy results", `docs/metadata.md`);
-        since the input files may come from anywhere, they include no WorldPop
-        provenance.
+        The merged and optionally clipped raster, with the dimensions
+        ('band', 'y', 'x') as read by rioxarray, also for single-band files
+        (unlike `wp_raster`, which drops a single band). Its attributes record
+        how it was produced (see "Metadata of WorldPopPy results",
+        `docs/metadata.md`); since the input files may come from anywhere, they
+        include no WorldPop provenance.
 
     Raises
     ------

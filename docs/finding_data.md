@@ -53,7 +53,9 @@ show_supported_data_products(static_only=True, iso3_codes="BRA")
 show_supported_data_products(years=[2015, 2023])
 ```
 
-A product passes the year filter if it has data for at least one of the given years.
+A product passes the year filter if it has data for at least one of the given years. Keywords match any part of a
+product's name or notes, regardless of case, so that `keywords="constrained"` also finds the unconstrained products.
+With several keywords, a product must match all of them.
 
 ## The data manifest
 

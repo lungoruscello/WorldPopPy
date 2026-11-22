@@ -1331,8 +1331,6 @@ def _infer_summary_url_template(sample_details):
     Convert the summary URL for a single WorldPop dataset into
     a more general template.
 
-    Convert a literal summary URL into a replaceable template.
-
     This function handles the simple substitution for summary URLs,
     which only requires replacing the dataset ID.
 
@@ -1351,8 +1349,8 @@ def _infer_summary_url_template(sample_details):
 
     if not sample_summary_url or not sample_id_str:
         logger.info(
-             f"Could not infer 'url_summary' template: "
-             f"Missing sample URL or sample ID."
+            f"Could not infer 'url_summary' template: "
+            f"Missing sample URL or sample ID."
         )
         return None
 
@@ -1361,11 +1359,11 @@ def _infer_summary_url_template(sample_details):
         logger.debug(f"Inferred summary template: {summary_url_template}")
         return summary_url_template
     else:
-         logger.warning(
+        logger.warning(
             f"Could not infer 'url_summary' template: "
             f"Sample ID '{sample_id_str}' not found in sample URL '{sample_summary_url}'."
         )
-         return None
+        return None
 
 def _create_synthetic_entry_for_year(base_country_entry, year):
     """
