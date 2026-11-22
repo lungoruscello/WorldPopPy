@@ -297,6 +297,8 @@ def wp_manifest(
         - If 'all': Returns entries for all available years.
         - If 'first': Returns the earliest available year (requires `product_name`).
         - If 'last': Returns the most recent available year (requires `product_name`).
+        - A list may mix years and 'first' or 'last' (e.g. ``[2015, 'last']``;
+          requires `product_name`).
         - If None (default), no filtering on year is performed.
 
     static_only : bool, optional
@@ -338,13 +340,14 @@ def wp_manifest(
     # --- Keyword Logic for years ---
     # We must resolve 'first'/'last' here because the generic filter logic
     # below does not know about product-specific time ranges.
-    if isinstance(years, str) and years in ('first', 'last'):
+    year_list = [years] if isinstance(years, str) else (years or [])
+    if relative := [y for y in year_list if y in ('first', 'last')]:
         if product_name is None:
             raise ValueError(
-                f"You cannot use the relative year keyword '{years}' without "
+                f"You cannot use the relative year keyword '{relative[0]}' without "
                 "specifying a `product_name`."
             )
-        # This will return a concrete list like [2020]
+        # This will return a concrete list like [2015, 2030]
         years = resolve_product_years(product_name, years)
 
     # get the full manifest

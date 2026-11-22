@@ -52,6 +52,50 @@ def test_categorical_text_comes_back_as_plain_text_with_missing_values():
     assert isinstance(compact["citation"].dtype, pd.CategoricalDtype)
 
 
+# --- Tests: Year Keywords ---
+
+@pytest.fixture
+def fake_year_manifest(monkeypatch):
+    """
+    Replace the cleaned manifest with a small synthetic one: a multi-year
+    product 'prod_a' (2000, 2010, 2020) and a static product 'prod_s'.
+    """
+    mdf = pd.DataFrame({
+        "product_name": ["prod_a", "prod_a", "prod_a", "prod_s"],
+        "iso3": ["AAA", "AAA", "AAA", "AAA"],
+        "year": pd.array([2000, 2010, 2020, None], dtype="Int64"),
+        "multi_year": [True, True, True, False],
+    })
+    monkeypatch.setattr(manifest_loader, "_get_cleaned_manifest", lambda: mdf)
+    monkeypatch.setattr(manifest_loader, "get_all_product_names", lambda: ["prod_a", "prod_s"])
+    monkeypatch.setattr(manifest_loader, "get_all_years", lambda: [2000, 2010, 2020])
+
+
+@pytest.mark.parametrize("years, expected", [
+    ("last", [2020]),
+    ([2010, "last"], [2010, 2020]),
+    (["first", 2010], [2000, 2010]),
+    ([2010], [2010]),
+])
+def test_wp_manifest_resolves_year_keywords_in_lists(fake_year_manifest, years, expected):
+    """
+    `wp_manifest` accepts 'first' and 'last' on their own and within a list
+    of years, as `wp_raster` and `wp_manifest_constrained` do.
+    """
+    result = manifest_loader.wp_manifest(product_name="prod_a", years=years)
+
+    assert sorted(result["year"]) == expected
+
+
+@pytest.mark.parametrize("years", ["last", [2010, "last"]])
+def test_wp_manifest_year_keywords_need_a_product(fake_year_manifest, years):
+    """
+    'first' and 'last' depend on the product, so they require `product_name`.
+    """
+    with pytest.raises(ValueError, match="relative year keyword 'last'"):
+        manifest_loader.wp_manifest(years=years)
+
+
 # --- Tests: Unknown Product Names ---
 
 @pytest.mark.parametrize("typed, suggested", [
